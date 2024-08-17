@@ -1,0 +1,7 @@
+deps/
+build/
+tags
+.o
+.a
+.so
+
