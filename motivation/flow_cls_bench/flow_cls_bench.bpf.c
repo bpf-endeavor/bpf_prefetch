@@ -87,6 +87,8 @@ int xdp_prog(struct xdp_md *xdp)
 	flow_key.dst_port = bpf_ntohs(l4->dest);
 	flow_key.protocol = ip->protocol;
 
+	bpf_printk("recv: 0x%x:%hu", flow_key.src_ip, flow_key.src_port);
+
 	flow_state = bpf_map_lookup_elem(&policy_map, &flow_key);
 	if (flow_state == NULL) {
 		bpf_printk("Unexpected flow not found!");

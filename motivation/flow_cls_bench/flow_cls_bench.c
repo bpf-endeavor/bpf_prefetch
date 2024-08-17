@@ -5,6 +5,8 @@
 #include <linux/in.h>
 #include <linux/if_link.h> // XDP_FLAGS_*
 #include <net/if.h> /* if_nametoindex */
+#include <signal.h>
+
 #include "build/bpf/flow_cls_bench.bpf.h"
 #include "struct_def.h"
 
@@ -95,6 +97,11 @@ int fill_policy_map(struct bpf_map *map)
 	return 0;
 }
 
+void handle_sig(int s)
+{
+	return;
+}
+
 int main(int argc, char **argv)
 {
 	int ret;
@@ -122,8 +129,12 @@ int main(int argc, char **argv)
 		goto clean_up;
 	}
 
+	signal(SIGINT, handle_sig);
+	signal(SIGHUP, handle_sig);
+
 	printf("Hit Ctrl-C ...\n");
 	pause();
+	printf("Done!\n");
 clean_up:
 	detach_xdp(&bpf_req, xdp_flags);
 	flow_cls_bench_bpf__destroy(skel);

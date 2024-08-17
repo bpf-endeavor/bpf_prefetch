@@ -14,7 +14,7 @@ _KERN_OBJECTS = $(addprefix $(OUTPUT_DIR_BPF), $(KERN_OBJECTS))
 _KERN_SKEL    = $(addprefix $(OUTPUT_DIR_BPF), $(addsuffix .h, $(basename $(KERN_SOURCES))))
 KERN_HEADERS  = $(wildcard ./include/mybpf/*.h) struct_def.h
 
-$(info $(_KERN_SKEL))
+# $(info $(_KERN_SKEL))
 
 OUTPUTS = $(_KERN_OBJECTS) $(_KERN_SKEL) build/flow_cls_bench
 
