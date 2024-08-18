@@ -14,7 +14,7 @@ def rand_port():
     return random_bytes(2)
 
 def main():
-    count_flows = 1000000
+    count_flows = 5000
     print('{')
     for i in range(count_flows):
         saddr = rand_ip()

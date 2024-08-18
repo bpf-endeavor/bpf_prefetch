@@ -10,6 +10,9 @@
 #include "build/bpf/flow_cls_bench.bpf.h"
 #include "struct_def.h"
 
+#define SRC_IP 0xC0A8C865
+#define DST_IP 0xC0A8C866
+
 enum attach_type {
 	SK_SKB,
 	XDP,
@@ -55,7 +58,7 @@ int fill_policy_map(struct bpf_map *map)
 	flow_key_t key;
 	FILE *f;
 
-	f = fopen("flows.h", "r");
+	f = fopen("flows.txt", "r");
 	if (f == NULL) {
 		printf("Failed to open file\n");
 		return 1;
@@ -69,24 +72,16 @@ int fill_policy_map(struct bpf_map *map)
 		.verdict = XDP_DROP,
 	};
 
-	/* skip the first line */
-	ret = fscanf(f, "{\n");
-	if (ret != 0) {
-		printf("failed to skip first line %d\n", ret);
-		return 1;
-	}
-
 	for (int i = 0; i < count_rules; i++) {
-		int a = 0, b = 0;
 		short c = 0, d = 0;
-		char e = 0;
-		ret = fscanf(f, "{0x%x, %hu, 0x%x, %hu, %hhu},\n", &a, &c, &b, &d, &e);
-		if (ret != 5) {
+		ret = fscanf(f, "%hu %hu\n", &c, &d);
+		if (ret != 2) {
 			printf("Failed to read flow from file (%d)\n", ret);
 			return 1;
 		}
-		key = (flow_key_t){a, c, b, d, e};
-		/* printf("%d %hu\n", key.src_port, d); */
+		/* key = (flow_key_t){a, c, b, d, e}; */
+		key = (flow_key_t){SRC_IP, c, DST_IP, d, IPPROTO_UDP};
+		printf("%d %hu\n", key.src_port, d);
 		ret = bpf_map__update_elem(map, &key, sizeof(key), &state, sizeof(state), BPF_NOEXIST);
 		if (ret != 0) {
 			printf("Failed to insert rule!\n");
@@ -107,7 +102,8 @@ int main(int argc, char **argv)
 	int ret;
 	struct flow_cls_bench_bpf *skel = NULL;
 	const int xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE;
-	const char *ifname = "enp7s0";
+	const char *ifname = "enp3s0";
+	printf("XDP interface: %s\n", ifname);
 	int ifindex = if_nametoindex(ifname);
 	if (ifindex == 0) {
 		printf("Interface not found!");

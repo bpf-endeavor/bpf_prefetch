@@ -49,5 +49,5 @@ $(_KERN_OBJECTS): $(OUTPUT_DIR_BPF)%.o:$(KERN_DIR)%.c $(KERN_HEADERS)
 $(_KERN_SKEL): %.h:%.o
 	bpftool gen skeleton $< > $@
 
-build/flow_cls_bench: flow_cls_bench.c flows.h struct_def.h $(_KERN_SKEL)
+build/flow_cls_bench: flow_cls_bench.c struct_def.h $(_KERN_SKEL)
 	$(CC) -Wall -g -O2 -o $@ flow_cls_bench.c -L ../../deps/ -lbpf -lz -lpthread -lelf

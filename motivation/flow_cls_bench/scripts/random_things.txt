@@ -1,0 +1,1 @@
+python3 ./scripts/generate_random_flows.py | awk '{printf "%d %d\n",  substr($2,0, length($2)-1),  substr($4, 0, length($4)-1)}' > flows.txt
