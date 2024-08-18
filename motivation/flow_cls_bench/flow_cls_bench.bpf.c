@@ -92,6 +92,8 @@ int xdp_prog(struct xdp_md *xdp)
 		return XDP_ABORTED;
 	}
 
+	/* __sync_fetch_and_add(&flow_state->counter, 1); */
+
 	report_tput();
 	switch (flow_state->verdict) {
 		case XDP_ABORTED:

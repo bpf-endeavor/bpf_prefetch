@@ -94,8 +94,47 @@ int fill_policy_map(struct bpf_map *map)
 	return 0;
 }
 
+static int running = 0;
 void handle_sig(int s)
 {
+	running = 1;
+	return;
+}
+
+void check_key_dist(struct bpf_map *map)
+{
+	int ret;
+	flow_key_t key;
+	flow_state_t state;
+	FILE *f;
+
+	f = fopen("flows.txt", "r");
+	if (f == NULL) {
+		printf("Failed to open file\n");
+		return;
+	}
+
+	memset(&key, 0, sizeof(key));
+	memset(&state, 0, sizeof(state));
+
+	for (int i = 0; i < MAX_COUNT_FLOWS; i++) {
+		short c = 0, d = 0;
+		ret = fscanf(f, "%hu %hu\n", &c, &d);
+		if (ret != 2) {
+			printf("Failed to read flow from file (%d)\n", ret);
+			fclose(f);
+			return;
+		}
+		key = (flow_key_t){SRC_IP, c, DST_IP, d, IPPROTO_UDP};
+		ret = bpf_map__lookup_elem(map, &key, sizeof(key), &state, sizeof(state), 0);
+		if (ret != 0) {
+			printf("Failed to insert rule!\n");
+			fclose(f);
+			return;
+		}
+		printf("%llu\n", state.counter);
+	}
+	fclose(f);
 	return;
 }
 
@@ -129,10 +168,12 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, handle_sig);
 	signal(SIGHUP, handle_sig);
+	running = 1;
 
 	printf("Hit Ctrl-C ...\n");
 	pause();
 	printf("Done!\n");
+	/* check_key_dist(skel->maps.policy_map); */
 clean_up:
 	detach_xdp(&bpf_req, xdp_flags);
 	flow_cls_bench_bpf__destroy(skel);

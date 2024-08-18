@@ -12,5 +12,8 @@ typedef struct {
 	unsigned int mapped_ip;
 	unsigned long long int counter;
 	unsigned int verdict;
-} __attribute__((packed)) flow_state_t;
+}
+/* __attribute__((aligned(32))) */
+__attribute__((packed))
+	flow_state_t;
 #endif 
