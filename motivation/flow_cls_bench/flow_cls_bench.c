@@ -12,6 +12,7 @@
 
 #define SRC_IP 0xC0A8C865
 #define DST_IP 0xC0A8C866
+#define MAX_COUNT_FLOWS 5000
 
 enum attach_type {
 	SK_SKB,
@@ -54,7 +55,6 @@ void detach_xdp(struct attach_request *bpf_req, uint32_t xdp_flags)
 int fill_policy_map(struct bpf_map *map)
 {
 	int ret;
-	unsigned long count_rules = 1000000;
 	flow_key_t key;
 	FILE *f;
 
@@ -72,23 +72,25 @@ int fill_policy_map(struct bpf_map *map)
 		.verdict = XDP_DROP,
 	};
 
-	for (int i = 0; i < count_rules; i++) {
+	for (int i = 0; i < MAX_COUNT_FLOWS; i++) {
 		short c = 0, d = 0;
 		ret = fscanf(f, "%hu %hu\n", &c, &d);
 		if (ret != 2) {
 			printf("Failed to read flow from file (%d)\n", ret);
+			fclose(f);
 			return 1;
 		}
 		/* key = (flow_key_t){a, c, b, d, e}; */
 		key = (flow_key_t){SRC_IP, c, DST_IP, d, IPPROTO_UDP};
-		printf("%d %hu\n", key.src_port, d);
+		/* printf("%d %hu\n", key.src_port, d); */
 		ret = bpf_map__update_elem(map, &key, sizeof(key), &state, sizeof(state), BPF_NOEXIST);
 		if (ret != 0) {
 			printf("Failed to insert rule!\n");
+			fclose(f);
 			return 1;
 		}
 	}
-
+	fclose(f);
 	return 0;
 }
 
@@ -102,11 +104,11 @@ int main(int argc, char **argv)
 	int ret;
 	struct flow_cls_bench_bpf *skel = NULL;
 	const int xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE;
-	const char *ifname = "enp3s0";
+	const char *ifname = "enp202s0f0np0";
 	printf("XDP interface: %s\n", ifname);
 	int ifindex = if_nametoindex(ifname);
 	if (ifindex == 0) {
-		printf("Interface not found!");
+		printf("Interface not found!\n");
 		return 1;
 	}
 	struct attach_request bpf_req = {

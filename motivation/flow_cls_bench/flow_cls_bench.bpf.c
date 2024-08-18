@@ -58,12 +58,10 @@ int xdp_prog(struct xdp_md *xdp)
 	flow_state_t *flow_state = NULL;
 
 	if ((void *)(eth + 1) > data_end) {
-		bpf_printk("this is unexpected! (1)");
-		return XDP_ABORTED;
+		return XDP_PASS;
 	}
 	if (eth->h_proto != bpf_htons(ETH_P_IP)) {
-		bpf_printk("not an IP packet!");
-		return XDP_ABORTED;
+		return XDP_PASS;
 	}
 	ip = (struct iphdr *)(eth + 1);
 	if ((void *)(ip + 1) > data_end) {
@@ -71,8 +69,7 @@ int xdp_prog(struct xdp_md *xdp)
 		return XDP_ABORTED;
 	}
 	if (ip->protocol != IPPROTO_UDP && ip->protocol != IPPROTO_TCP) {
-		bpf_printk("not TCP/UDP packet!");
-		return XDP_ABORTED;
+		return XDP_PASS;
 	}
 	doff = ip->ihl * 4;
 	l4 = (struct udphdr *)((__u8 *)ip + doff);
