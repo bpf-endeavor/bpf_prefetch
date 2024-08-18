@@ -22,13 +22,12 @@ def form_packet(saddr: str, source: int, daddr: str, dest: int, payload: str):
 def create_pcap_file():
     payload = 'hello world\n'
     pkts = []
-    with open('../flows.h', 'r') as f:
+    src_ip = '192.168.200.101'
+    dst_ip = '192.168.200.102'
+    with open('../flows.txt', 'r') as f:
         for line in f:
-            if len(line) <= 3:
-                continue
-            tmp = line[1:-2].split(', ')
-            assert len(tmp) == 5, f'unexpected {len(tmp)}'
-            pkt = form_packet(tmp[0], int(tmp[1]), tmp[2], int(tmp[3]), payload)
+            a, b = map(int, line.split())
+            pkt = form_packet(src_ip, a, dst_ip, b, payload)
             pkts.append(pkt)
     wrpcap("test.pcap", pkts)
 
