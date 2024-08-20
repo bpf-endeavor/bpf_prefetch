@@ -16,7 +16,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__type(key,  flow_key_t);
 	__type(value, flow_state_t);
-	__uint(max_entries, 1000000);
+	__uint(max_entries, 1 << 19);
 } policy_map SEC(".maps");
 
 static __u64 counter = 0;

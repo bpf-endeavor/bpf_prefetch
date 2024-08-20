@@ -14,17 +14,26 @@ def rand_port():
     return random_bytes(2)
 
 def main():
-    count_flows = 5000
-    print('{')
+    flow_set = set()
+    count_flows = 100000
+    # print('{')
     for i in range(count_flows):
-        saddr = rand_ip()
-        daddr = rand_ip()
-        source = rand_port()
-        dest = rand_port()
-        proto = 17 # IPPROTO_UDP
+        while True:
+            # saddr = rand_ip()
+            # daddr = rand_ip()
+            source = rand_port()
+            dest = rand_port()
+            # proto = 17 # IPPROTO_UDP
+            t = (source, dest)
+            if t in flow_set:
+                # repeat
+                continue
+            flow_set.add(t)
+            break
 
-        print(f'{{0x{saddr:x}, {source}, 0x{daddr:x}, {dest}, {proto}}},')
-    print('};')
+        # print(f'{{0x{saddr:x}, {source}, 0x{daddr:x}, {dest}, {proto}}},')
+        print(f'{source} {dest}')
+    # print('};')
 
 
 if __name__ == '__main__':

@@ -12,7 +12,7 @@
 
 #define SRC_IP 0xC0A8C865
 #define DST_IP 0xC0A8C866
-#define MAX_COUNT_FLOWS 5000
+#define MAX_COUNT_FLOWS 100000
 
 enum attach_type {
 	SK_SKB,
