@@ -5,13 +5,13 @@ Generate a pcap file to be used by the workload generator
 from scapy.all import Ether, IP, UDP, Raw, wrpcap
 from argparse import ArgumentParser
 
-#   SRC IP       SPORT  DST IP      DPORT  PROTO
-src_mac = 'f2:66:f2:6a:84:53'
-dst_mac = '4e:10:16:67:71:23'
+src_mac = 'b8:ce:f6:d2:12:c6'
+dst_mac = 'e8:eb:d3:a7:0c:b6'
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument('--num_flows', '-n', default=100, type=int, help='number of flows inside the pcap file')
+    parser.add_argument('--output', '-o', default='test.pcap', type=str, help='output file path')
     args = parser.parse_args()
     return args
 
@@ -27,7 +27,7 @@ def form_packet(saddr: str, source: int, daddr: str, dest: int, payload: str):
     return packet
 
 
-def create_pcap_file(n):
+def create_pcap_file(n, output):
     payload = 'hello world\n'
     pkts = []
     src_ip = '192.168.200.101'
@@ -39,7 +39,7 @@ def create_pcap_file(n):
             a, b = map(int, line.split())
             pkt = form_packet(src_ip, a, dst_ip, b, payload)
             pkts.append(pkt)
-    wrpcap("test.pcap", pkts)
+    wrpcap(output, pkts)
     print('Generated a pcap file with', i, 'flows')
 
 
@@ -48,4 +48,4 @@ if __name__ == "__main__":
     print('Notice: the source/dest MAC address is hardcoded')
     print('src mac:', src_mac)
     print('dst mac:', dst_mac)
-    create_pcap_file(args.num_flows)
+    create_pcap_file(args.num_flows, args.output)
