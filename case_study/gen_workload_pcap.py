@@ -1,3 +1,4 @@
+#! /usr/bin/python3
 """
 Generate a pcap file to be used by the workload generator
 (DPDK Burst Replay)
@@ -92,7 +93,7 @@ def form_packet(saddr: str, source: int, daddr: str, dest: int, payload: str):
     return packet
 
 
-def create_pcap_file(n, output):
+def create_pcap_file(n, r, output):
     payload = 'hello world\n'
     pkts = []
     src_ip = '192.168.200.101'
@@ -105,10 +106,9 @@ def create_pcap_file(n, output):
     random.seed(127)
 
     MSS = 1440
-    PORT_RANGE = (0, 1 << 15)
-    z = Zipf(PORT_RANGE[1], 2)
+    z = Zipf(n, 2)
     I.prime()
-    for i in range(n):
+    for i in range(r):
         src_port = 3030
         dst_port = z.sample()
         payload_size = math.ceil(random.paretovariate(3) * MSS)
@@ -119,12 +119,13 @@ def create_pcap_file(n, output):
     I.out()
 
     wrpcap(output, pkts)
-    print('Generated a pcap file')
+    print(f'Generated a pcap file with {r} record using {n} ports')
 
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument('--num-records', '-n', default=300000, type=int, help='number of records in pcap file')
+    parser.add_argument('--num-flows', '-n', default=1 << 15, type=int, help='number of records in pcap file')
+    parser.add_argument('--num-records', '-r', default=300000, type=int, help='number of records in pcap file')
     parser.add_argument('--output', '-o', default='test.pcap', type=str, help='output file path')
     args = parser.parse_args()
     return args
@@ -134,4 +135,4 @@ if __name__ == "__main__":
     print('Notice: the source/dest MAC address is hardcoded')
     print('src mac:', src_mac)
     print('dst mac:', dst_mac)
-    create_pcap_file(args.num_records, args.output)
+    create_pcap_file(args.num_flows, args.num_records, args.output)
