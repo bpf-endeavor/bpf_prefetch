@@ -1,0 +1,24 @@
+figsize: [5, 2.5]
+subplots:
+  - title: '(A)'
+    x: ['100', '5K', '10K', '50K', '100K']
+    y: [6.4, 5.8, 5.4, 5.1, 5.0]
+    xlabel: 'Working set'
+    ylabel: 'Throughput (Mpps)'
+    grid: true
+    color: 'tab:purple'
+    hatch: '\\'
+  - title: '(B)'
+    x: ['100', '5K', '10K', '50K', '100K']
+    y: [[3.27, 3.28], [4.49, 4.5], [4.5, 4.51], [4.5, 4.58], [4.3, 4.98]]
+    xlabel: 'Working set'
+    ylabel: 'L1+LLC misses (%)'
+    label: ['L1', 'LLC']
+    yticks: [0, 2, 4, 6]
+    color: ['tab:red', 'tab:green']
+    hatch: ['//', 'xx']
+    legend:
+      ncol: 2
+      loc: 'lower center'
+    grid: true
+output: 'bpf_map_cache_locality_bar.pdf'
