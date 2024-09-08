@@ -1,0 +1,26 @@
+figsize: [3, 2]
+x: ['Baseline', 'Naive Prefetch']
+y: [3871.336, 4080.424]
+color: ['purple', 'tab:green']
+hatch: ['//', '++']
+ylabel: 'Throughput (Kpps)'
+yticks: [0, 1000, 2000, 3000, 4000, 5000]
+grid: true
+annotate:
+  - xy: [-0.15, 4000]
+    text: '3871.3'
+  - xy: [0.85, 4200]
+    text: '4080.4'
+  - xy: [0.48, 3750]
+    text: '5.4%'
+arrow:
+  - x: 0.4
+    y: 3600.0
+    dy: 600.1
+    dx: 0
+    color: 'tab:red'
+    length_includes_head: true
+    head_width: 0.05
+    head_length: 200
+
+output: 'naive_jit_prefetch.pdf'

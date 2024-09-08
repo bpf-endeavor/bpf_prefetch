@@ -1,0 +1,25 @@
+figsize: [5, 2.5]
+subplots:
+  - title: '(A)'
+    x: ['0', '0.5', '1.0', '1.5', '2']
+    y: [4.7, 4.8, 5.6, 6.5, 6.7]
+    xlabel: 'Popularity: Zipf parameter'
+    ylabel: 'Throughput (Mpps)'
+    grid: true
+    yticks: [0, 2, 4, 6, 8]
+    color: 'tab:purple'
+    hatch: '\\'
+  - title: '(B)'
+    x: ['0', '0.5', '1.0', '1.5', '2']
+    y: [[5.43, 6.16], [5.41, 5.95], [4.66, 4.73], [3.30, 3.31], [3.17, 3.18]]
+    xlabel: 'Popularity: Zipf parameter'
+    ylabel: 'L1+LLC misses (%)'
+    grid: true
+    label: ['L1', 'LLC']
+    yticks: [0, 2, 4, 6, 8]
+    color: ['tab:red', 'tab:green']
+    hatch: ['//', 'xx']
+    legend:
+      ncol: 2
+      loc: 'upper right'
+output: 'bpf_map_access_pattern_bar.pdf'

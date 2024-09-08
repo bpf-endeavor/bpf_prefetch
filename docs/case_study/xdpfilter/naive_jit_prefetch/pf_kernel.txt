@@ -1,0 +1,28 @@
+# test.pcap : zipf, pareto
+
+   636,149,120      cycles                                                                  ( +-  0.06% )  (83.23%)
+       475,624,281      instructions                     #    0.75  insn per cycle              ( +-  0.12% )  (83.23%)
+        17,934,521      cache-references                                                        ( +-  0.20% )  (83.23%)
+         2,869,448      cache-misses                     #   16.00% of all cache refs           ( +-  1.14% )  (83.23%)
+       202,988,058      L1-dcache-loads                                                         ( +-  0.10% )  (83.46%)
+         7,982,204      L1-dcache-load-misses            #    3.93% of all L1-dcache accesses   ( +-  0.18% )  (83.62%)
+
+         1.0020283 +- 0.0000964 seconds time elapsed  ( +-  0.01% )
+
+throughput: 619578 pps
+
+
+# test_small_rr.pcap: round-robbin 64byte
+ Performance counter stats for 'CPU(s) 7' (3 runs):
+
+     3,289,208,170      cycles                                                                  ( +-  0.01% )  (83.23%)
+     2,809,508,972      instructions                     #    0.85  insn per cycle              ( +-  0.01% )  (83.23%)
+        81,838,787      cache-references                                                        ( +-  0.02% )  (83.23%)
+        22,899,176      cache-misses                     #   27.98% of all cache refs           ( +-  0.03% )  (83.23%)
+     1,198,364,443      L1-dcache-loads                                                         ( +-  0.01% )  (83.51%)
+        51,624,714      L1-dcache-load-misses            #    4.31% of all L1-dcache accesses   ( +-  0.03% )  (83.57%)
+
+          1.002094 +- 0.000125 seconds time elapsed  ( +-  0.01% )
+
+4080424 pps
+

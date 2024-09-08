@@ -1,0 +1,79 @@
+ZIPF=0.0
+ sudo perf stat -C 17 -e cycles -e  instructions -e cache-references -e cache-misses -e L1-dcache-loads -e L1-dcache-load-misses -r 3  -- sleep 1
+
+ Performance counter stats for 'CPU(s) 17' (3 runs):
+
+     2,097,903,351      cycles                                                                  ( +-  0.00% )
+     6,060,429,525      instructions                     #    2.89  insn per cycle              ( +-  0.09% )
+        44,637,161      cache-references                                                        ( +-  0.09% )
+           325,276      cache-misses                     #    0.73% of all cache refs           ( +-  1.77% )
+     1,280,119,897      L1-dcache-loads                                                         ( +-  0.09% )
+        69,514,769      L1-dcache-load-misses            #    5.43% of all L1-dcache accesses   ( +-  0.08% )
+
+         1.0013773 +- 0.0000336 seconds time elapsed  ( +-  0.00% )
+
+
+
+
+ZIPF=0.5
+ sudo perf stat -C 17 -e cycles -e  instructions -e cache-references -e cache-misses -e L1-dcache-loads -e L1-dcache-load-misses -r 3  -- sleep 1
+
+ Performance counter stats for 'CPU(s) 17' (3 runs):
+
+     2,097,907,565      cycles                                                                  ( +-  0.00% )
+     6,123,042,232      instructions                     #    2.92  insn per cycle              ( +-  0.04% )
+        44,031,070      cache-references                                                        ( +-  0.04% )
+           239,164      cache-misses                     #    0.54% of all cache refs           ( +-  1.84% )
+     1,293,479,016      L1-dcache-loads                                                         ( +-  0.04% )
+        69,955,378      L1-dcache-load-misses            #    5.41% of all L1-dcache accesses   ( +-  0.05% )
+
+         1.0013804 +- 0.0000145 seconds time elapsed  ( +-  0.00% )
+
+
+
+ZIPF=1.0
+ sudo perf stat -C 17 -e cycles -e  instructions -e cache-references -e cache-misses -e L1-dcache-loads -e L1-dcache-load-misses -r 3  -- sleep 1
+
+ Performance counter stats for 'CPU(s) 17' (3 runs):
+
+     2,100,033,401      cycles                                                                  ( +-  0.10% )
+     7,212,103,615      instructions                     #    3.43  insn per cycle              ( +-  0.13% )
+        38,784,373      cache-references                                                        ( +-  0.13% )
+            27,718      cache-misses                     #    0.07% of all cache refs           ( +-  4.72% )
+     1,523,609,613      L1-dcache-loads                                                         ( +-  0.13% )
+        70,940,277      L1-dcache-load-misses            #    4.66% of all L1-dcache accesses   ( +-  0.11% )
+
+           1.00239 +- 0.00105 seconds time elapsed  ( +-  0.11% )
+
+
+
+ZIPF=1.5
+ sudo perf stat -C 17 -e cycles -e  instructions -e cache-references -e cache-misses -e L1-dcache-loads -e L1-dcache-load-misses -r 3  -- sleep 1
+
+ Performance counter stats for 'CPU(s) 17' (3 runs):
+
+     2,097,855,281      cycles                                                                  ( +-  0.00% )
+     8,381,458,134      instructions                     #    4.00  insn per cycle              ( +-  0.03% )
+        35,843,014      cache-references                                                        ( +-  0.03% )
+             2,673      cache-misses                     #    0.01% of all cache refs           ( +-  3.55% )
+     1,770,207,461      L1-dcache-loads                                                         ( +-  0.03% )
+        58,353,532      L1-dcache-load-misses            #    3.30% of all L1-dcache accesses   ( +-  0.02% )
+
+         1.0013508 +- 0.0000111 seconds time elapsed  ( +-  0.00% )
+
+
+
+ZIPF=2
+ sudo perf stat -C 17 -e cycles -e  instructions -e cache-references -e cache-misses -e L1-dcache-loads -e L1-dcache-load-misses -r 3  -- sleep 1
+
+ Performance counter stats for 'CPU(s) 17' (3 runs):
+
+     2,097,928,559      cycles                                                                  ( +-  0.00% )
+     8,582,578,213      instructions                     #    4.09  insn per cycle              ( +-  0.01% )
+        36,348,249      cache-references                                                        ( +-  0.02% )
+             2,407      cache-misses                     #    0.01% of all cache refs           ( +-  5.34% )
+     1,812,408,554      L1-dcache-loads                                                         ( +-  0.01% )
+        57,486,605      L1-dcache-load-misses            #    3.17% of all L1-dcache accesses   ( +-  0.07% )
+
+         1.0013820 +- 0.0000144 seconds time elapsed  ( +-  0.00% )
+
