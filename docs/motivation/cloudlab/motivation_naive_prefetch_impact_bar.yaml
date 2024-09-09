@@ -1,0 +1,61 @@
+figsize: [6, 3.0]
+subplots:
+  - title: '(A)'
+    x: ['100', '5K', '10K', '50K', '100K']
+    experiments:
+      - label: 'Baseline'
+        y: [2.76, 2.71, 2.70, 2.71, 2.69]
+        color: 'tab:blue'
+        hatch: '\\'
+      - label: 'Naive Prefetch'
+        y: [2.92, 2.86, 2.85, 2.84, 2.81]
+        color: 'tab:red'
+        hatch: '--'
+    xlabel: 'Working set'
+    ylabel: 'Throughput (Mpps)'
+    grid: true
+    yticks: [0, 1, 2, 3, 4]
+    annotate:
+      - xy: [0.00, 3.2]
+        text: '5.8%'
+      - xy: [1.10, 3.2]
+        text: '5.5%'
+      - xy: [2.20, 3.2]
+        text: '5.5%'
+      - xy: [3.30, 3.2]
+        text: '4.8%'
+      - xy: [4.40, 3.2]
+        text: '4.4%'
+  - title: '(B)'
+    x: ['0', '0.5', '1.0', '1.5', '2']
+    experiments:
+      - label: 'Baseline'
+        y: [2.64, 2.66, 2.72, 2.77, 2.79]
+        color: 'tab:blue'
+        hatch: '\\'
+      - label: 'Naive Prefetch'
+        y: [2.73, 2.75, 2.85, 2.93, 2.95]
+        color: 'tab:red'
+        hatch: '--'
+    xlabel: 'Popularity: Zipf parameter'
+    ylabel: 'Throughput (Mpps)'
+    grid: true
+    yticks: [0, 1, 2, 3, 4]
+    annotate:
+      - xy: [0.00, 3.2]
+        text: '3.4%'
+      - xy: [1.10, 3.2]
+        text: '3.3%'
+      - xy: [2.20, 3.2]
+        text: '4.7%'
+      - xy: [3.30, 3.2]
+        text: '5.7%'
+      - xy: [4.40, 3.2]
+        text: '5.7%'
+legend:
+  _artist_from_label: ['Baseline', 'Naive Prefetch']
+  ncol: 2
+  loc: 'upper center'
+tight_layout:
+  rect: [0, 0, 1, 0.90]
+output: 'naive_prefetch_impact_bar.pdf'

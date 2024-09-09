@@ -1,8 +1,8 @@
 figsize: [3, 2]
 x: ['Baseline', 'Naive Prefetch']
 y: [3871.336, 4080.424]
-color: ['purple', 'tab:green']
-hatch: ['//', '++']
+color: ['gray', 'tab:green']
+hatch: ['/', 'o']
 ylabel: 'Throughput (Kpps)'
 yticks: [0, 1000, 2000, 3000, 4000, 5000]
 grid: true
