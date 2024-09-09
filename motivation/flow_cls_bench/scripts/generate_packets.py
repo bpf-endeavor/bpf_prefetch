@@ -86,7 +86,7 @@ if __name__ == "__main__":
     print('dst mac:', dst_mac)
     print('Notice: the source/dest IP address is hardcoded')
     if args.full_mode:
-        r = 100*1000
+        r = 300*1000
         create_pcap_all_flows_zipf(args.output, r, args.zipf)
     else:
         create_pcap_file(args.num_flows, args.output)

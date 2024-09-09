@@ -7,5 +7,5 @@ done
 
 tmp=( 0 0.5 1 1.5 2 )
 for x in ${tmp[@]}; do
-	python3 ./generate_packets.py -F -z $x -o "full_z$x.pcap"
+	python3 ./generate_packets.py -F -z $x -o ./pcaps/"full_z$x.pcap"
 done
