@@ -1,0 +1,65 @@
+100 flows: 2.92 Mpps
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     3,289,705,314      cycles                                                                  ( +-  0.01% )  (83.23%)
+     3,938,791,840      instructions                     #    1.20  insn per cycle              ( +-  0.29% )  (83.23%)
+        67,583,526      cache-references                                                        ( +-  0.21% )  (83.23%)
+        10,596,434      cache-misses                     #   15.68% of all cache refs           ( +-  0.26% )  (83.23%)
+     1,284,201,353      L1-dcache-loads                                                         ( +-  0.29% )  (83.52%)
+        38,975,999      L1-dcache-load-misses            #    3.04% of all L1-dcache accesses   ( +-  0.36% )  (83.56%)
+
+         1.0021238 +- 0.0000482 seconds time elapsed  ( +-  0.00% )
+
+5000 flows: 2.86
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     3,289,635,265      cycles                                                                  ( +-  0.02% )  (83.23%)
+     3,895,686,253      instructions                     #    1.18  insn per cycle              ( +-  0.06% )  (83.23%)
+        81,056,505      cache-references                                                        ( +-  0.03% )  (83.23%)
+        18,529,126      cache-misses                     #   22.86% of all cache refs           ( +-  0.06% )  (83.23%)
+     1,278,574,183      L1-dcache-loads                                                         ( +-  0.05% )  (83.52%)
+        42,552,188      L1-dcache-load-misses            #    3.33% of all L1-dcache accesses   ( +-  0.05% )  (83.58%)
+
+         1.0021029 +- 0.0000752 seconds time elapsed  ( +-  0.01% )
+
+10K flows: 2.85
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     3,290,736,321      cycles                                                                  ( +-  0.01% )  (83.23%)
+     3,880,385,324      instructions                     #    1.18  insn per cycle              ( +-  0.14% )  (83.23%)
+        82,206,569      cache-references                                                        ( +-  0.07% )  (83.23%)
+        19,601,295      cache-misses                     #   23.84% of all cache refs           ( +-  0.12% )  (83.23%)
+     1,275,509,310      L1-dcache-loads                                                         ( +-  0.14% )  (83.55%)
+        42,455,718      L1-dcache-load-misses            #    3.33% of all L1-dcache accesses   ( +-  0.14% )  (83.54%)
+
+         1.0020741 +- 0.0000479 seconds time elapsed  ( +-  0.00% )
+
+50K: 2.84
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     3,289,751,660      cycles                                                                  ( +-  0.00% )  (83.23%)
+     3,864,285,617      instructions                     #    1.17  insn per cycle              ( +-  0.01% )  (83.23%)
+        80,676,405      cache-references                                                        ( +-  0.03% )  (83.23%)
+        19,475,224      cache-misses                     #   24.14% of all cache refs           ( +-  0.02% )  (83.23%)
+     1,268,531,020      L1-dcache-loads                                                         ( +-  0.02% )  (83.53%)
+        42,144,484      L1-dcache-load-misses            #    3.32% of all L1-dcache accesses   ( +-  0.00% )  (83.55%)
+
+         1.0021090 +- 0.0000606 seconds time elapsed  ( +-  0.01% )
+
+100K: 2.81
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     3,290,463,795      cycles                                                                  ( +-  0.01% )  (83.23%)
+     3,827,723,850      instructions                     #    1.16  insn per cycle              ( +-  0.09% )  (83.23%)
+        79,266,551      cache-references                                                        ( +-  0.15% )  (83.23%)
+        18,626,408      cache-misses                     #   23.50% of all cache refs           ( +-  0.15% )  (83.23%)
+     1,251,581,052      L1-dcache-loads                                                         ( +-  0.08% )  (83.57%)
+        40,676,221      L1-dcache-load-misses            #    3.25% of all L1-dcache accesses   ( +-  0.11% )  (83.52%)
+
+         1.0021074 +- 0.0000711 seconds time elapsed  ( +-  0.01% )
+
+
