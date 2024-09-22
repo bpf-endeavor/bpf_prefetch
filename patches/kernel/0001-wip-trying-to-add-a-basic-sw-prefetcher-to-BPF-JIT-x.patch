@@ -1,16 +1,16 @@
-From c9088f0aaadbf3f467181ccc0ccf18ab8c14b2db Mon Sep 17 00:00:00 2001
+From f4e309d9e31ce8d719297881f31432badfe68214 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 1 Sep 2024 11:52:15 +0000
 Subject: [PATCH] wip: trying to add a basic sw prefetcher to BPF JIT x86
 
 ---
- arch/x86/net/bpf_jit_comp.c | 313 +++++++++++++++++++++++++++++++++++-
+ arch/x86/net/bpf_jit_comp.c | 385 +++++++++++++++++++++++++++++++++++-
  include/linux/bpf.h         |   1 +
  kernel/bpf/Kconfig          |   7 +
- 3 files changed, 319 insertions(+), 2 deletions(-)
+ 3 files changed, 391 insertions(+), 2 deletions(-)
 
 diff --git a/arch/x86/net/bpf_jit_comp.c b/arch/x86/net/bpf_jit_comp.c
-index 919f647c740f..837f21c9942f 100644
+index 919f647c740f..d6718791d675 100644
 --- a/arch/x86/net/bpf_jit_comp.c
 +++ b/arch/x86/net/bpf_jit_comp.c
 @@ -18,6 +18,25 @@
@@ -66,7 +66,7 @@ index 919f647c740f..837f21c9942f 100644
  		default:
  			/*
  			 * By design x86-64 JIT should support all BPF instructions.
-@@ -2929,6 +2968,246 @@ int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_func
+@@ -2929,6 +2968,318 @@ int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_func
  	return emit_bpf_dispatcher(&prog, 0, num_funcs - 1, funcs, image, buf);
  }
  
@@ -150,6 +150,70 @@ index 919f647c740f..837f21c9942f 100644
 +	return fp;
 +}
 +
++static int __fix_prev_inst_jmp_if_needed(struct bpf_insn *insn)
++{
++	/* Currently there is no helper function to just insert a new
++	 * instruction to the list of programs. To have an insert effect we
++	 * submit a patch of size two with first instruciton being the old
++	 * instruction after which the new instruction will be added. The
++	 * second instruciton of the patch is what we actually are inserting.
++	 *
++	 * This causes trouble when the first/old instruction is a jump/call.
++	 * because the helpers assume these instructions do not need
++	 * modification, we need to update the jump address ourself. This is
++	 * what this function is doing.
++	 * */
++	if (bpf_pseudo_func(insn)) {
++		if (insn->imm <= 0)
++			return 0; /* nothing to do */
++		if (((s64)insn->imm) + 1 > S32_MAX) {
++			/* overflow will occur */
++			return -ERANGE;
++		}
++		insn->imm += 1;
++		return 0; /* okay */
++	}
++	u8 code = insn->code;
++	if ((BPF_CLASS(code) != BPF_JMP && BPF_CLASS(code) != BPF_JMP32) ||
++			BPF_OP(code) == BPF_EXIT) {
++		return 0; /* nothing to do */
++	}
++	/* Adjust offset of jmps if we cross patch boundaries. */
++	if (BPF_OP(code) == BPF_CALL) {
++		if (insn->src_reg != BPF_PSEUDO_CALL)
++			return 0; /* nothing to do */
++		if (insn->imm <= 0)
++			return 0; /* nothing to do */
++		if (((s64)insn->imm) + 1 > S32_MAX) {
++			/* overflow will occur */
++			return -ERANGE;
++		}
++		insn->imm += 1;
++	} else {
++		s64 off_max, off;
++
++		if (insn->code == (BPF_JMP32 | BPF_JA)) {
++			off = insn->imm;
++			off_max = S32_MAX;
++		} else {
++			off = insn->off;
++			off_max = S16_MAX;
++		}
++
++		if (off <= 0)
++			return 0; /* nothing to do */
++		off += 1;
++
++		if (off > off_max)
++			return -ERANGE;
++		if (insn->code == (BPF_JMP32 | BPF_JA))
++			insn->imm = off;
++		else
++			insn->off = off;
++	}
++	return 0;
++}
++
 +static struct bpf_prog *bpf_jit_prefetch(struct bpf_prog *prog)
 +{
 +	if (prog->len == 0 || prog->sw_prefetch)
@@ -222,6 +286,14 @@ index 919f647c740f..837f21c9942f 100644
 +		}
 +		memcpy(&insn_buff[0], &clone->insnsi[insn_off],
 +				sizeof(struct bpf_insn));
++		ret = __fix_prev_inst_jmp_if_needed(&insn_buff[0]);
++		if (ret != 0) {
++			/* Overflow when updating jump/call
++			 * Ignore this prefetching opportunity (I am not sure
++			 * if moving further back is a good idea or not)
++			 * */
++			continue;
++		}
 +		__prepare_prefetch_inst(&insn_buff[1], insn);
 +		const int rewritten = 2;
 +		/* Replace instruction at target offset with itself and a
@@ -313,7 +385,7 @@ index 919f647c740f..837f21c9942f 100644
  struct x64_jit_data {
  	struct bpf_binary_header *rw_header;
  	struct bpf_binary_header *header;
-@@ -2945,11 +3224,12 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+@@ -2945,11 +3296,12 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
  {
  	struct bpf_binary_header *rw_header = NULL;
  	struct bpf_binary_header *header = NULL;
@@ -327,7 +399,7 @@ index 919f647c740f..837f21c9942f 100644
  	bool extra_pass = false;
  	bool padding = false;
  	u8 *rw_image = NULL;
-@@ -2971,7 +3251,36 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+@@ -2971,7 +3323,36 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
  	if (tmp != prog) {
  		tmp_blinded = true;
  		prog = tmp;
@@ -339,7 +411,7 @@ index 919f647c740f..837f21c9942f 100644
 +	if (__first_time_running_prefetch == 1) {
 +		__first_time_running_prefetch = 0;
 +		__initialize_prefetching_proc();
- 	}
++	}
 +	/* NOTO: Limit prefetching to XDP programs for now.
 +	 * */
 +	if (prog->type == BPF_PROG_TYPE_XDP && is_sw_prefetching_enable) {
@@ -359,12 +431,12 @@ index 919f647c740f..837f21c9942f 100644
 +				bpf_jit_prog_release_other(prog, blinded);
 +			}
 +		}
-+	}
+ 	}
 +#endif
  
  	jit_data = prog->aux->jit_data;
  	if (!jit_data) {
-@@ -3121,7 +3430,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+@@ -3121,7 +3502,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
  		prog->aux->jit_data = NULL;
  	}
  out:
