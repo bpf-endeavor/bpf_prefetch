@@ -1,7 +1,7 @@
-From 593dc394ddb9440da9fc603afbf9f5b885b55f41 Mon Sep 17 00:00:00 2001
+From a6ecabadb67a7aa69e52307ba015336544f010bf Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 1 Sep 2024 11:52:15 +0000
-Subject: [PATCH] wip: trying to add a basic sw prefetcher to BPF JIT x86
+Subject: [PATCH 1/2] wip: trying to add a basic sw prefetcher to BPF JIT x86
 
 ---
  arch/x86/net/bpf_jit_comp.c | 434 +++++++++++++++++++++++++++++++++++-
