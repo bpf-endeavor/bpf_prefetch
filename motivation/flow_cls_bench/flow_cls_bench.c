@@ -10,6 +10,11 @@
 #include "build/bpf/flow_cls_bench.bpf.h"
 #include "struct_def.h"
 
+#ifndef IFNAME
+#pragma GCC error "IFNAME is not defined"
+/* #define IFNAME  "enp7s0" */
+#endif
+
 #define SRC_IP 0xC0A8C865
 #define DST_IP 0xC0A8C866
 #define MAX_COUNT_FLOWS 100000
@@ -143,7 +148,7 @@ int main(int argc, char **argv)
 	int ret;
 	struct flow_cls_bench_bpf *skel = NULL;
 	const int xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE;
-	const char *ifname = "enp202s0f0np0";
+	const char *ifname = IFNAME;
 	printf("XDP interface: %s\n", ifname);
 	int ifindex = if_nametoindex(ifname);
 	if (ifindex == 0) {
