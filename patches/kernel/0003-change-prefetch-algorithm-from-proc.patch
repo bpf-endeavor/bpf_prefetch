@@ -1,7 +1,7 @@
 From 481b4cec4fdd60dd8b68efbaf901c16553bf7e92 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Fri, 4 Oct 2024 09:27:12 +0000
-Subject: [PATCH 3/3] change prefetch algorithm from /proc/...
+Subject: [PATCH 3/4] change prefetch algorithm from /proc/...
 
 ---
  arch/x86/net/bpf_jit_mem_prefetch.c | 139 +++++++++++++++++-----------

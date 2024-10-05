@@ -1,7 +1,7 @@
 From 2b8ccc46bdeb5a39c1d547728b6639b67fca85e4 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Wed, 25 Sep 2024 18:20:16 +0000
-Subject: [PATCH 2/3] move prefetching logic to seperate files
+Subject: [PATCH 2/4] move prefetching logic to seperate files
 
 ---
  arch/x86/net/Makefile               |   2 +-
