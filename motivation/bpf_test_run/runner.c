@@ -50,7 +50,7 @@ char *read_payload(void)
 	}
 	if (args.payload_size > PAYLOAD_SIZE_LIMIT) {
 		fprintf(stderr, "Requested payload size is too large (limit: %d)\n", PAYLOAD_SIZE_LIMIT);
-		exit(EXIT_FAILURE);
+		/* exit(EXIT_FAILURE); */
 	}
 	char *buf = calloc(1, MAX_BUF);
 	int fd = open(args.input_path, O_RDONLY);
@@ -66,11 +66,14 @@ char *read_payload(void)
 	buf[size] = '\0';
 	close(fd);
 	if (size < args.payload_size) {
-		fprintf(stderr, "Requested payload size is larger than input file content\n");
-		exit(EXIT_FAILURE);
+		/* fprintf(stderr, "Requested payload size is larger than input file content\n"); */
+		/* exit(EXIT_FAILURE); */
+		printf("request size changed to %d\n", size);
+	} else {
+		/* Truncate the payload string to the size specified by user */
+		buf[args.payload_size] = '\0';
 	}
-	/* Truncate the payload string to the size specified by user */
-	buf[args.payload_size] = '\0';
+	/* printf("payload:\n\n%s\n\n", buf); */
 	return buf;
 }
 

@@ -11,7 +11,7 @@ BPF_OUT   = $(addprefix $(OUTDIR)/, $(addsuffix .o, $(basename $(notdir $(BPF_FI
 
 LOADER_CFLAGS  = -I $(CURDIR)/../../deps/usr/include
 LOADER_LDFLAGS = -L $(CURDIR)/../../deps/usr/lib64 -l:libbpf.a -lelf -lrt -lz
-BPF_CFLAGS     = -I $(CURDIR)/../../deps/usr/include
+BPF_CFLAGS     = -I $(CURDIR)/../../deps/usr/include -I ./include/bpf/
 
 .PHONY: default bpf clean
 
