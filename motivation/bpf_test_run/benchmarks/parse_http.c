@@ -5,8 +5,12 @@
 #include <linux/ip.h>
 #include <linux/udp.h>
 
+
 #include "../include/bpf/http_parser.h"
 #define HEADER_SIZE (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr))
+
+/* Define the unofficial helper function */
+static long (*bpf_prefetch)(void *ptr__ign) = (void *) 212;
 
 /* Booking data related to parsing HTTP request are kept in this map */
 struct {

@@ -20,7 +20,9 @@ int prog(struct xdp_md *xdp)
 {
 	void *data = (void *)(__u64)xdp->data;
 	void *data_end = (void *)(__u64)xdp->data_end;
-	bpf_prefetch(data);
+	char *p = (char *)data;
+	bpf_prefetch(p);
+	bpf_printk("hello: %s", p);
 	return XDP_PASS;
 }
 
