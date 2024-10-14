@@ -9,7 +9,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-#define DEBUG 1
+/* #define DEBUG 1 */
 #ifdef DEBUG
 #define BPF_TAG "web_server_offload: "
 #define DUMP(x, args...) { const char fmt[] = BPF_TAG x; \
@@ -191,7 +191,7 @@ enum CACHE_CTRL_TYPE {
  * @returns OKAY on sucess, UNSUPPORTED if the request is not supported in this
  * implementatoin, or INVALID if something is wrong.
  * */
-int parse_http_request_line(CONTEXT *skb, __u16 _off, struct parsing_ctx *pctx)
+sinline int parse_http_request_line(CONTEXT *skb, __u16 _off, struct parsing_ctx *pctx)
 {
 	void *data;
 	void *data_end;
@@ -205,9 +205,10 @@ int parse_http_request_line(CONTEXT *skb, __u16 _off, struct parsing_ctx *pctx)
 
 	data = GET_DATA(skb);
 	data_end = GET_DATAEND(skb);
-	off = _off & 0x0fff;
+	off = _off & OFFSET_MASK;
 	base = (char *)data + off;
-	if (base + 1 > data_end) return INVALID;
+	if (base + 1 > data_end)
+		return INVALID;
 
 	/* off = pctx->head_off & OFFSET_MASK; */
 	/* Find the start of the method */
@@ -247,11 +248,11 @@ method:
 			goto check_method_supported;
 		}
 		/* Invalid character */
-		/* DUMP("Method invalid character"); */
+		DUMP("Method invalid character");
 		return INVALID;
 	}
 	/* Did not found the end of method */
-	/* DUMP("End of method not found"); */
+	DUMP("End of method not found");
 	return INVALID;
 
 check_method_supported:
@@ -263,7 +264,7 @@ check_method_supported:
 	base = (char *)data + (pctx->method_start_off & OFFSET_MASK);
 	BOUND_CHECK_INV(base, 3, data_end);
 	if (! (base[0] == 'G' && base[1] == 'E' && base[2] == 'T')) {
-		/* DUMP("Unsupported method"); */
+		DUMP("Unsupported method");
 		/* TODO check if NGINX supports this method otherwise return invalid*/
 		return UNSUPPORTED;
 	}
@@ -278,7 +279,7 @@ check_method_supported:
 	BOUND_CHECK_INV(base, 1, data_end);
 	if (base[0] == ' ' || base[0] == '\r' || base[0] == '\n') {
 		/* Multiple space between Method and URI */
-		/* DUMP("Invalid character after method"); */
+		DUMP("Invalid character after method");
 		return INVALID;
 	}
 	pctx->uri_start_off = off;
@@ -286,7 +287,7 @@ check_method_supported:
 	base = (char *)data + off;
 
 	/* Find end of URI */
-	for (i = 0; i < MAX_URI_LEGNTH; i++) {
+	for (i = 0; i < MAX_URI_LEGNTH; i++) { // 1
 		BOUND_CHECK_INV(base + i, 1, data_end);
 		if (base[i] == ' ') {
 			off += i;
@@ -295,7 +296,7 @@ check_method_supported:
 		}
 	}
 	/* Did not found end of URI */
-	/* DUMP("END of URI not found"); */
+	DUMP("END of URI not found");
 	return INVALID;
 
 http_version:
@@ -319,7 +320,7 @@ http_version:
 				base[3] == 'P' &&
 				base[4] == '/')) {
 		/* Does not match the version structure */
-		/* DUMP("Did not found HTTP/"); */
+		DUMP("Did not found HTTP/");
 		return INVALID;
 	}
 	off += 5; // 4 (HTTP)  + 1 (/)
@@ -329,7 +330,7 @@ http_version:
 	BOUND_CHECK_INV(base, 5, data_end);
 	/* Expecting value in the form of "d.d" where d is a digit */
 	if (base[1] != '.' || !IS_DIGIT(base[0]) || !IS_DIGIT(base[2])) {
-		/* DUMP("HTTP version format not exptected"); */
+		DUMP("HTTP version format not exptected");
 		return INVALID;
 	}
 	pctx->http_major_ver = CHR_TO_INT(base[0]);
@@ -339,7 +340,7 @@ http_version:
 	/* base = data + off; */
 	/* BOUND_CHECK_INV(base, 2, data_end); */
 	if (base[3] != '\r' ||  base[4] != '\n') {
-		/* DUMP("No end of line after HTTP version %u %u", base[3], base[4]); */
+		DUMP("No end of line after HTTP version %u %u", base[3], base[4]);
 		return INVALID;
 	}
 	if (base[3] == '\n')
@@ -370,7 +371,7 @@ http_version:
  * @returns OKAY on success, UNSUPPORTED if the request is not supported in
  * this implementation or INVALID if somthing is wrong.
  * */
-int parse_http_uri(CONTEXT *skb, struct parsing_ctx *pctx)
+sinline int parse_http_uri(CONTEXT *skb, struct parsing_ctx *pctx)
 {
 	void *data;
 	void *data_end;
@@ -399,10 +400,10 @@ int parse_http_uri(CONTEXT *skb, struct parsing_ctx *pctx)
 	BOUND_CHECK_INV(base, 7, data_end);
 	pctx->has_schema = 1;
 	if (!  (LOWER_CASE(base[0]) == 'h' &&
-				LOWER_CASE(base[1]) == 't' &&
-				LOWER_CASE(base[2]) == 't' &&
-				LOWER_CASE(base[3]) == 'p' &&
-				base[4] == ':' && base[5] == '/' && base[6] == '/')) {
+		LOWER_CASE(base[1]) == 't' &&
+		LOWER_CASE(base[2]) == 't' &&
+		LOWER_CASE(base[3]) == 'p' &&
+		base[4] == ':' && base[5] == '/' && base[6] == '/')) {
 		/* The schema is not supported */
 		return UNSUPPORTED;
 	}
@@ -412,7 +413,6 @@ int parse_http_uri(CONTEXT *skb, struct parsing_ctx *pctx)
 	off += 7;
 	base = data + off;
 	pctx->host_start_off = off;
-	/* TODO: maybe use bpf_for */
 	for (i = 0; i < MAX_HOST_LEGNTH; i++) {
 		BOUND_CHECK_INV(base + i, 1, data_end);
 		if (base[i] == ':') {
@@ -450,7 +450,7 @@ port:
 	/* Read the port from URI */
 	/* A port is maximum 65535. There are at most 5 digits and one
 	 * character is need to determine the next state needed */
-#pragma clang loop unroll(disable)
+/* #pragma clang loop unroll(disable) */
 	for (i = 0; i < 6; i++) {
 		BOUND_CHECK_INV(base + i, 1, data_end);
 		if (IS_DIGIT(base[i])) {
@@ -486,13 +486,20 @@ path:
 	/* base = data + off; */
 	base = data + (off & OFFSET_MASK);
 	/* Read resource path from URI */
-#pragma clang loop unroll(disable)
-	for (i = 0; i < MAX_URI_LEGNTH; i++) {
+/* #pragma clang loop unroll(disable) */
+	for (i = 0; i < MAX_URI_LEGNTH; i++) { // 2
 		BOUND_CHECK_INV(base + i, 1, data_end);
-		if (base[i] == ' ' || base[i] == '?' || base[i] == '#' || base[i] == '\n' || base[i] == '\r') {
-			off += i;
-			pctx->path_end_off = off;
-			goto args;
+		switch (base[i]) {
+			case ' ':
+			case '?':
+			case '#': 
+			case '\n':
+			case '\r':
+				off += i;
+				pctx->path_end_off = off;
+				goto args;
+			default:
+				continue;
 		}
 	}
 	/* Failed to find the end of path */
@@ -508,7 +515,7 @@ done:
 /*
  * Parse one line of HTTP header
  * */
-int parse_http_header_line(CONTEXT *skb,
+sinline int parse_http_header_line(CONTEXT *skb,
 		struct parsing_ctx *pctx, enum HEADER_OPT *_opt)
 {
 	void *data;
@@ -535,8 +542,7 @@ int parse_http_header_line(CONTEXT *skb,
 		pctx->head_off += 1;
 		return OKAY;
 	}
-
-	if (base[0] == '\r') {
+	else if (base[0] == '\r') {
 		if (base[1] == '\n') {
 			pctx->all_header_parsed = 1;
 			pctx->head_off += 2;
@@ -583,9 +589,9 @@ int parse_http_header_line(CONTEXT *skb,
 	if (len == 4) {
 		BOUND_CHECK_INV(base, 4, data_end);
 		if (    LOWER_CASE(base[0]) == 'h' &&
-				LOWER_CASE(base[1]) == 'o' &&
-				LOWER_CASE(base[2]) == 's' &&
-				LOWER_CASE(base[3]) == 't'
+			LOWER_CASE(base[1]) == 'o' &&
+			LOWER_CASE(base[2]) == 's' &&
+			LOWER_CASE(base[3]) == 't'
 		   ) {
 			*_opt = OPT_HOST;
 		}
@@ -607,8 +613,9 @@ int parse_http_header_line(CONTEXT *skb,
 		start = off;
 	}
 
-	/* #pragma clang loop unroll(disable) */
+#pragma clang loop unroll(disable)
 	for (i = 0; i < MAX_HEADER_VALUE_LENGTH; i++) {
+		/* i = i & OFFSET_MASK; */
 		BOUND_CHECK_INV(base + i, 1, data_end);
 		if (base[i] == '\n') {
 			off += i;
