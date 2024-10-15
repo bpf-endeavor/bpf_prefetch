@@ -9,6 +9,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+#include "prefetching.h"
+
 /* #define DEBUG 1 */
 #ifdef DEBUG
 #define BPF_TAG "web_server_offload: "
@@ -72,14 +74,14 @@ typedef unsigned long long  __u64;
 #define CHR_TO_INT(chr) ((chr) - '0')
 #define LOWER_CASE(chr) (chr | 0x20)
 
-#define COPY_HOST_NAME(dst, data, pctx, fail) {                  \
+#define COPY_HOST_NAME(dst, data, pctx, fail) {                      \
 	char *base = data + (pctx->host_start_off & OFFSET_MASK);    \
 	__u16 len = pctx->host_end_off - pctx->host_start_off;       \
 	for (__u16 i = 0; i < len; i++) {                            \
-		BOUND_CHECK(base + i, 1, data_end, fail);                \
-		if (i > MAX_HOST_LEGNTH)                                 \
-			fail;                                                \
-		dst[i] = base[i];                                        \
+		BOUND_CHECK(base + i, 1, data_end, fail);            \
+		if (i > MAX_HOST_LEGNTH)                             \
+			fail;                                        \
+		dst[i] = base[i];                                    \
 	}                                                            \
 }
 
@@ -122,7 +124,6 @@ struct parsing_ctx {
 	__u8 schema_type;
 	__u16 port;
 }; // __attribute__((__packed__));
-
 
 struct update_cache_ctx {
 	__u16 head_off;
@@ -209,8 +210,11 @@ sinline int parse_http_request_line(CONTEXT *skb, __u16 _off, struct parsing_ctx
 	data_end = GET_DATAEND(skb);
 	off = _off & OFFSET_MASK;
 	base = (char *)data + off;
+	P(&base[0]);
+	P(&base[8]);
 	if (base + 1 > data_end)
 		return INVALID;
+
 
 	/* off = pctx->head_off & OFFSET_MASK; */
 	/* Find the start of the method */
@@ -236,6 +240,7 @@ method:
 	/* Go to next char */
 	off += 1;
 	base = (char *)data + off;
+
 	/* Find end of method */
 	for (i = 0; i < MAX_METHOD_LENGTH; i++) {
 		BOUND_CHECK_INV(base + i, 1, data_end)
@@ -264,6 +269,8 @@ check_method_supported:
 	if (len != 3)
 		return UNSUPPORTED;
 	base = (char *)data + (pctx->method_start_off & OFFSET_MASK);
+	P(&base[0]);
+	P(&base[8]);
 	BOUND_CHECK_INV(base, 3, data_end);
 	if (! (base[0] == 'G' && base[1] == 'E' && base[2] == 'T')) {
 		DUMP("Unsupported method");
@@ -277,7 +284,7 @@ check_method_supported:
 	base = (char *)data + off;
 
 	/* Find start of URI */
-	barrier_var(base);
+	/* barrier_var(base); */
 	BOUND_CHECK_INV(base, 1, data_end);
 	if (base[0] == ' ' || base[0] == '\r' || base[0] == '\n') {
 		/* Multiple space between Method and URI */
@@ -290,6 +297,7 @@ check_method_supported:
 
 	/* Find end of URI */
 	for (i = 0; i < MAX_URI_LEGNTH; i++) { // 1
+		P(&base[i+8]);
 		BOUND_CHECK_INV(base + i, 1, data_end);
 		if (base[i] == ' ') {
 			off += i;

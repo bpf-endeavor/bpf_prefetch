@@ -6,19 +6,12 @@
 #include <linux/ip.h>
 #include <linux/udp.h>
 
+#include "prefetching.h"
 #include "report_throughput.h"
 #include "http_parser.h"
 
 #define HEADER_SIZE (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr))
 #define SERVER_PORT 8080
-
-#ifdef PREFETCH /* Use this flag to enable prefetching at compile time */
-/* Define the unofficial helper function */
-static long (*bpf_prefetch)(void *ptr__ign) = (void *) 212;
-#define P(x) bpf_prefetch(x)
-#else
-#define P(x)
-#endif
 
 /* Booking data related to parsing HTTP request are kept in this map */
 struct {
@@ -103,6 +96,8 @@ header_parsed:
 	/* bpf_printk("host: %s", data+ pctx->host_start_off); */
 
 	report_tput();
+	void * data = GET_DATA(skb);
+	P(data + 4096);
 	return XDP_DROP;
 }
 
@@ -158,6 +153,8 @@ int prog(struct xdp_md *ctx)
 		/* ignore packets that are not for our test */
 		return XDP_PASS;
 	}
+	/* report_tput(); */
+	/* return XDP_DROP; */
 
 	/* char *p = data + HEADER_SIZE; */
 	/* bpf_printk("-- %s", p); */
