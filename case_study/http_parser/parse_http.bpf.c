@@ -6,24 +6,11 @@
 #include <linux/ip.h>
 #include <linux/udp.h>
 
-/* #define XDP 1 */
-#define SK_SKB 1
-
-#ifdef XDP
-#define CONTEXT struct xdp_md
-#define ABORTED XDP_ABORTED
-#define PASS XDP_PASS
-#define DROP XDP_DROP
-#else
-#define CONTEXT struct __sk_buff
-#define ABORTED SK_DROP
-#define PASS SK_PASS
-#define DROP SK_DROP
-#endif
-
+#include "common.h"
 #include "prefetching.h"
 #include "report_throughput.h"
 #include "http_parser.h"
+#include "routing.h"
 
 #define HEADER_SIZE (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr))
 #define SERVER_PORT 8080
@@ -76,7 +63,6 @@ static long _parse_headers_loop(int ii, void *_ctx)
 		return 1;
 	}
 
-	P(c->ctx + c->pctx->head_off + 8);
 	return 0; // continue;
 }
 
@@ -119,10 +105,11 @@ header_parsed:
 	/* void *data = GET_DATA(skb); */
 	/* bpf_printk("host: %s", data+ pctx->host_start_off); */
 
-	report_tput();
+	/* report_tput(); */
 	/* void * data = GET_DATA(skb); */
 	/* P(data + 4096); */
-	return DROP;
+	/* return DROP; */
+	return prog_route(skb, pctx->host_start_off, pctx->host_end_off);
 }
 
 int prog_parse_uri(CONTEXT *ctx)
@@ -177,11 +164,9 @@ int prog(CONTEXT *ctx)
 	const int zero = 0;
 	int start_off = 0;
 
-
 #ifdef XDP
 	/* The http message starts at an offset from data */
 	start_off = HEADER_SIZE;
-	void *data = (void *)(__u64)(ctx->data);
 	void *data_end = (void *)(__u64)(ctx->data_end);
 	if (!is_relevant(data, data_end)) {
 		/* ignore packets that are not for our test */
@@ -200,6 +185,16 @@ int prog(CONTEXT *ctx)
 		/* ths never happens */
 		return ABORTED;
 	}
+	P(&pctx->method_start_off);
+
+#ifdef SK_SKB
+	if (bpf_skb_pull_data(ctx, ctx->len) != 0) {
+		return PASS;
+	}
+#endif
+	
+	void *data = (void *)(__u64)(ctx->data);
+	P(data);
 
 	ret = parse_http_request_line(ctx, start_off, pctx);
 	switch (ret) {

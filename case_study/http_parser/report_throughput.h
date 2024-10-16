@@ -17,8 +17,9 @@ void report_tput(void)
 	}
 
 	delta = ts - last_report;
-	if (delta >= 1000000000L) {
-		bpf_printk("throughput: %ld (pps)", counter);
+	if (delta >= 2000000000L) {
+		__u64 t = (counter * 1000000) / delta;
+		bpf_printk("throughput: %ld(kpps)", t);
 		counter = 0;
 		last_report = ts;
 	}

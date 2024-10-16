@@ -9,38 +9,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-#include "prefetching.h"
-
-/* #define DEBUG 1 */
-#ifdef DEBUG
-#define BPF_TAG "web_server_offload: "
-#define DUMP(x, args...) { const char fmt[] = BPF_TAG x; \
-	bpf_trace_printk(fmt, sizeof(fmt), ##args); }
-#else
-#define DUMP(x, args...)
-#endif
-
-/* Make sure these types are defined */
-#ifndef __u32
-typedef unsigned char        __u8;
-typedef unsigned short      __u16;
-typedef unsigned int        __u32;
-typedef unsigned long long  __u64;
-#endif
-
-#ifndef NULL
-#define NULL 0
-#endif
-
-#define sinline static inline __attribute__((__always_inline__))
-#define mem_barrier asm volatile("": : :"memory")
-#ifndef barrier_var
-#define barrier_var(var) asm volatile("" : "=r"(var) : "0"(var))
-#endif
-
-#ifndef memcpy
-#define memcpy(d, s, len) __builtin_memcpy(d, s, len)
-#endif
+#include "common.h"
 
 /* Define limits and upper bounds */
 #define MAX_CONN 1024
@@ -62,17 +31,6 @@ typedef unsigned long long  __u64;
 #define MAX_CACHE_DATA_SIZE 1000
 #define MAX_CACHE_VALUES (1 << 7)
 
-/* Some helper macros */
-#define GET_DATA(ctx) (void *)(__u64)ctx->data
-#define GET_DATAEND(ctx) (void *)(__u64)ctx->data_end
-
-#define BOUND_CHECK(ptr, size, end, action) if (((void *)((char *)ptr + size)) > end) {action;}
-#define BOUND_CHECK_INV(ptr, size, end) BOUND_CHECK(ptr, size, end, return INVALID)
-
-#define IS_DIGIT(chr) (chr >= '0' && chr <= '9')
-#define CHR_TO_INT(chr) ((chr) - '0')
-#define LOWER_CASE(chr) (chr | 0x20)
-
 #define COPY_HOST_NAME(dst, data, pctx, fail) {                      \
 	char *base = data + (pctx->host_start_off & OFFSET_MASK);    \
 	__u16 len = pctx->host_end_off - pctx->host_start_off;       \
@@ -83,11 +41,6 @@ typedef unsigned long long  __u64;
 		dst[i] = base[i];                                    \
 	}                                                            \
 }
-
-/* For masking offset related to the packet pointers
- * I am not sure why masking helps with verifier.
- * */
-#define OFFSET_MASK 0x0fff
 
 /* TODO: support REGEX? */
 /* A location command: what to do for the given URI */
@@ -209,8 +162,6 @@ sinline int parse_http_request_line(CONTEXT *skb, __u16 _off, struct parsing_ctx
 	data_end = GET_DATAEND(skb);
 	off = _off & OFFSET_MASK;
 	base = (char *)data + off;
-	P(&base[0]);
-	P(&base[8]);
 	if (base + 1 > data_end)
 		return INVALID;
 
@@ -268,8 +219,6 @@ check_method_supported:
 	if (len != 3)
 		return UNSUPPORTED;
 	base = (char *)data + (pctx->method_start_off & OFFSET_MASK);
-	P(&base[0]);
-	P(&base[8]);
 	BOUND_CHECK_INV(base, 3, data_end);
 	if (! (base[0] == 'G' && base[1] == 'E' && base[2] == 'T')) {
 		DUMP("Unsupported method");
@@ -296,7 +245,6 @@ check_method_supported:
 
 	/* Find end of URI */
 	for (i = 0; i < MAX_URI_LEGNTH; i++) { // 1
-		P(&base[i+8]);
 		BOUND_CHECK_INV(base + i, 1, data_end);
 		if (base[i] == ' ') {
 			off += i;
