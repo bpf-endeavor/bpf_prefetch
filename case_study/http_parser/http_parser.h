@@ -32,7 +32,6 @@ typedef unsigned long long  __u64;
 #define NULL 0
 #endif
 
-#define CONTEXT struct xdp_md
 #define sinline static inline __attribute__((__always_inline__))
 #define mem_barrier asm volatile("": : :"memory")
 #ifndef barrier_var
