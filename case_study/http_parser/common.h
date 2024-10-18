@@ -1,7 +1,7 @@
 #ifndef __COMMON_H
 #define __COMMON_H
-/* #define XDP 1 */
-#define SK_SKB 1
+#define XDP 1
+/* #define SK_SKB 1 */
 
 #ifdef XDP
 #define CONTEXT struct xdp_md

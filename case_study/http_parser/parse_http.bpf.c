@@ -45,6 +45,8 @@ static long _parse_headers_loop(int ii, void *_ctx)
 	header_loop_ctx_t *c = _ctx;
 	enum HEADER_OPT opt = OPT_NONE;
 	int ret;
+	void *data = GET_DATA(c->ctx);
+	/* P(data + c->pctx->head_off - 128); */
 	/* I need to parse HTTP headers because host header could
 	 * change which server config is selected */
 	ret = parse_http_header_line(c->ctx, c->pctx, &opt);
@@ -163,11 +165,13 @@ int prog(CONTEXT *ctx)
 	struct parsing_ctx *pctx;
 	const int zero = 0;
 	int start_off = 0;
+	
+	void *data = GET_DATA(ctx);
+	void *data_end = GET_DATAEND(ctx);
 
 #ifdef XDP
 	/* The http message starts at an offset from data */
 	start_off = HEADER_SIZE;
-	void *data_end = (void *)(__u64)(ctx->data_end);
 	if (!is_relevant(data, data_end)) {
 		/* ignore packets that are not for our test */
 		return PASS;
@@ -185,7 +189,6 @@ int prog(CONTEXT *ctx)
 		/* ths never happens */
 		return ABORTED;
 	}
-	P(&pctx->method_start_off);
 
 #ifdef SK_SKB
 	if (bpf_skb_pull_data(ctx, ctx->len) != 0) {
@@ -193,8 +196,7 @@ int prog(CONTEXT *ctx)
 	}
 #endif
 	
-	void *data = (void *)(__u64)(ctx->data);
-	P(data);
+	P(data+128);
 
 	ret = parse_http_request_line(ctx, start_off, pctx);
 	switch (ret) {
