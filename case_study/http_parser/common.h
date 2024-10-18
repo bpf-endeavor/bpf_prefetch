@@ -62,4 +62,9 @@ typedef unsigned long long  __u64;
  * */
 #define OFFSET_MASK 0x0fff
 
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+
+#define round(x, y) ((x | (y-1))+1)
+
 #endif

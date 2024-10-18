@@ -45,7 +45,7 @@ static long _parse_headers_loop(int ii, void *_ctx)
 	header_loop_ctx_t *c = _ctx;
 	enum HEADER_OPT opt = OPT_NONE;
 	int ret;
-	void *data = GET_DATA(c->ctx);
+	/* void *data = GET_DATA(c->ctx); */
 	/* P(data + c->pctx->head_off - 128); */
 	/* I need to parse HTTP headers because host header could
 	 * change which server config is selected */
