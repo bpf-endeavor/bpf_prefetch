@@ -1,6 +1,6 @@
 CC = clang
 LLC = llc
-INCLUDES = -I ../deps/usr/include -I ./include/
+INCLUDES = -I ../deps/usr/include -I ./include/ -I ../../libs
 CFLAGS = -g -O2 -Wall
 # Pass the name of interface to which XDP program is attached at compile time
 ifndef NET_IFACE
@@ -22,6 +22,18 @@ KERN_HEADERS  = $(wildcard ./include/mybpf/*.h)
 
 # $(info $(_KERN_SKEL))
 
+BPF_CFLAGS += ${INCLUDES} \
+	    -target bpf \
+	    -S \
+	    -D BPF_PROG \
+	    -D__KERNEL__  \
+	    -D__BPF_TRACING__ \
+	    -D__TARGET_ARCH_x86 \
+	    -Wall \
+	    -Wno-unused-value -Wno-pointer-sign \
+	    -Wno-compare-distinct-pointer-types \
+	    -O2 -g -emit-llvm
+
 OUTPUTS = $(_KERN_OBJECTS) $(_KERN_SKEL) build/bench
 
 .PHONY: all clean check_output_dir
@@ -38,21 +50,15 @@ check_output_dir:
 
 $(_KERN_OBJECTS): $(OUTPUT_DIR_BPF)%.o:$(KERN_DIR)%.c $(KERN_HEADERS)
 	LL_FILE=${OUTPUT_DIR_BPF_LL}/$(notdir $@); \
-		$(CC) ${INCLUDES} \
-		-target bpf \
-		-S \
-		-D BPF_PROG \
-		-D__KERNEL__  \
-		-D__BPF_TRACING__ \
-		-D__TARGET_ARCH_x86 \
-		-Wall \
-		-Wno-unused-value -Wno-pointer-sign \
-		-Wno-compare-distinct-pointer-types \
-		-O2 -g -emit-llvm -c $< -o $$LL_FILE; \
+		$(CC) $(BPF_CFLAGS) -c $< -o $$LL_FILE; \
 		$(LLC) -mcpu=v3 -march=bpf -filetype=obj -o "$@" $$LL_FILE;
+	LL_FILE=${OUTPUT_DIR_BPF_LL}/$(notdir $@.pf); \
+		$(CC) $(BPF_CFLAGS) -c $< -o $$LL_FILE; \
+		$(LLC) -mcpu=v3 -march=bpf -filetype=obj -o "$@.pf" $$LL_FILE;
 
 $(_KERN_SKEL): %.h:%.o
 	bpftool gen skeleton $< > $@
+	bpftool gen skeleton $<.pf name bench_bpf_pf > $@.pf
 
 build/bench: main.c $(_KERN_SKEL)
 	$(CC) $(CFLAGS) -o $@ main.c $(LDFLAGS)

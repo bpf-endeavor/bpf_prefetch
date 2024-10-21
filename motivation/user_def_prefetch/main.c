@@ -8,6 +8,7 @@
 #include <signal.h>
 
 #include "build/bpf/bench.bpf.h"
+#include "build/bpf/bench.bpf.h.pf"
 
 #ifndef IFNAME
 #pragma GCC error "IFNAME is not defined"
@@ -64,8 +65,16 @@ void handle_sig(int s)
 
 int main(int argc, char **argv)
 {
+	int flag_run_with_pf = 0;
+	if ((argc > 1) && (strncmp(argv[1], "prefetch", 8) == 0)) {
+		flag_run_with_pf = 1;
+		printf("running bpf program with prefetch instructions!\n");
+	}
+
 	int ret;
 	struct bench_bpf *skel = NULL;
+	struct bench_bpf_pf *skel_pf = NULL;
+	struct bpf_object *obj = NULL;
 	const int xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE;
 	const char *ifname = IFNAME;
 	printf("XDP interface: %s\n", ifname);
@@ -79,8 +88,22 @@ int main(int argc, char **argv)
 		.bpf_hook = XDP,
 		.ifindex = ifindex,
 	};
-	skel = bench_bpf__open_and_load();
-	ret = load_xdp(skel->obj, &bpf_req, xdp_flags);
+	if (flag_run_with_pf) {
+		skel_pf = bench_bpf_pf__open_and_load();
+		if (skel_pf == NULL) {
+			printf("Failed to open & load bpf binary\n");
+			return 1;
+		}
+		obj = skel_pf->obj;
+	} else {
+		skel = bench_bpf__open_and_load();
+		if (skel == NULL) {
+			printf("Failed to open & load bpf binary\n");
+			return 1;
+		}
+		obj = skel->obj;
+	}
+	ret = load_xdp(obj, &bpf_req, xdp_flags);
 	if (ret != 0) {
 		goto clean_up;
 	}
@@ -94,6 +117,10 @@ int main(int argc, char **argv)
 	printf("Done!\n");
 clean_up:
 	detach_xdp(&bpf_req, xdp_flags);
-	bench_bpf__destroy(skel);
+	if (flag_run_with_pf) {
+		bench_bpf_pf__destroy(skel_pf);
+	} else {
+		bench_bpf__destroy(skel);
+	}
 	return 0;
 }
