@@ -24,6 +24,10 @@
 #define SLICE_SIZE 55
 #define ENTRIES (512 * 1024 * 1024)
 
+#define ROUND(x, y) (((x-1) | (y-1)) + 1)
+#define STRIDE 1025
+#define K 1
+
 typedef struct {
 	char data[VALUE_SIZE];
 } __attribute__((packed)) value_t;
@@ -36,29 +40,76 @@ struct {
 } atable SEC(".maps");
 
 volatile static __u32 has_init = 0;
+volatile static __u32 __my_seed = 0;
+
+#ifdef PREFETCH
+/* Address of the first element of the array */
+volatile static __u64 __tab_addr = 0;
+
+static inline void __prefetch_next_pkt_touch(void)
+{
+	/* __u32 s = seed; /1* it is the current seed *1/ */
+	__u32 tmp, tmp2, index;
+	void *p;
+
+	/*
+	 *
+	 * */
+	/* if (__my_seed % 4 != 0) */
+	/* 	return; */
+	/* This is extra computation cost for prefetching next element */
+	index = (__my_seed + (K * STRIDE)) % ENTRIES;
+	p = (void *)__tab_addr + ROUND((index * VALUE_SIZE), 8);
+	P(p);
+
+	/* for (int i = 0; i < 2 * SLICES; i++) */
+	/* 	s = __rand_seeded(s); */
+
+	/* /1* for (int k = 0; k < 1; k++) { *1/ */
+	/* 	index = 0; */
+	/* 	for (int i = 0; i < SLICES; i++) { */
+	/* 		tmp = s = __rand_seeded(s); */
+	/* 		tmp = tmp % SLICE_SIZE; */
+	/* 		/1* bpf_printk("g: %d -> %d", i, tmp); *1/ */
+	/* 		tmp2 = 1; */
+	/* 		for (int j = SLICES - 1 - i; j > 0; j--) */
+	/* 			tmp2 *= SLICE_SIZE; */
+	/* 		index += tmp * tmp2; */
+	/* 	} */
+	/* 	p = (void *)__tab_addr + ROUND((index * VALUE_SIZE), 8); */
+	/* 	P(p); */
+	/* 	/1* bpf_printk("p: %p  index: %d", p, index); *1/ */
+	/* /1* } *1/ */
+
+}
+#endif
 
 static inline int __touch(void)
 {
 	__u32 tmp, tmp2, index;
 	volatile value_t *v;
 
-	index = 0;
-	for (int i = 0; i < SLICES; i++) {
-		tmp = __rand() % SLICE_SIZE;
-		tmp2 = 1;
-		for (int j = SLICES - 1 - i; j > 0; j--)
-			tmp2 *= SLICE_SIZE;
-		index += tmp * tmp2;
-	}
-	if (index > ENTRIES) {
-		bpf_printk("error when calculating index");
-		return -1;
-	}
+	index = __my_seed % ENTRIES;
+	__my_seed += STRIDE;
+	/* for (int i = 0; i < SLICES; i++) { */
+	/* 	tmp = __rand() % SLICE_SIZE; */
+	/* 	/1* tmp = __rand_predictable(__my_seed++) % SLICE_SIZE; *1/ */
+	/* 	/1* bpf_printk("a: %d -> %d", i, tmp); *1/ */
+	/* 	tmp2 = 1; */
+	/* 	for (int j = SLICES - 1 - i; j > 0; j--) */
+	/* 		tmp2 *= SLICE_SIZE; */
+	/* 	index += tmp * tmp2; */
+	/* } */
+	/* if (index > ENTRIES) { */
+	/* 	bpf_printk("error when calculating index"); */
+	/* 	return -1; */
+	/* } */
 	v = bpf_map_lookup_elem(&atable, &index);
 	if (v == NULL) {
 		bpf_printk("This must never happen!");
 		return -1;
 	}
+	/* bpf_printk("l: %p  index: %d", v, index); */
 	return *(int *)v->data;
 }
 
@@ -75,6 +126,12 @@ static inline void __init(void)
 		}
 		*(int *)v->data = ii;
 	}
+#ifdef PREFETCH
+	ii = 0;
+	v = bpf_map_lookup_elem(&atable, &ii);
+	if (!v) { bpf_printk("failed to init table address!"); return; }
+	__tab_addr = (__u64)v;
+#endif
 }
 
 SEC("xdp")
@@ -91,6 +148,9 @@ int prog(struct xdp_md *xdp)
 	int *out = data;
 	if (!is_relevant(data, data_end))
 		return XDP_PASS;
+#ifdef PREFETCH
+	__prefetch_next_pkt_touch();
+#endif
 	v = __touch();
 	*out = v;
 	report_tput();

@@ -53,7 +53,7 @@ $(_KERN_OBJECTS): $(OUTPUT_DIR_BPF)%.o:$(KERN_DIR)%.c $(KERN_HEADERS)
 		$(CC) $(BPF_CFLAGS) -c $< -o $$LL_FILE; \
 		$(LLC) -mcpu=v3 -march=bpf -filetype=obj -o "$@" $$LL_FILE;
 	LL_FILE=${OUTPUT_DIR_BPF_LL}/$(notdir $@.pf); \
-		$(CC) $(BPF_CFLAGS) -c $< -o $$LL_FILE; \
+		$(CC) $(BPF_CFLAGS) -DPREFETCH=1 -c $< -o $$LL_FILE; \
 		$(LLC) -mcpu=v3 -march=bpf -filetype=obj -o "$@.pf" $$LL_FILE;
 
 $(_KERN_SKEL): %.h:%.o
