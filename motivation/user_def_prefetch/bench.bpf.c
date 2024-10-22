@@ -26,7 +26,6 @@
 
 #define ROUND(x, y) (((x-1) | (y-1)) + 1)
 #define STRIDE 1025
-#define K 1
 
 typedef struct {
 	char data[VALUE_SIZE];
@@ -45,6 +44,7 @@ volatile static __u32 __my_seed = 0;
 #ifdef PREFETCH
 /* Address of the first element of the array */
 volatile static __u64 __tab_addr = 0;
+volatile static __u64 __last_addr = 0;
 
 static inline void __prefetch_next_pkt_touch(void)
 {
@@ -55,12 +55,23 @@ static inline void __prefetch_next_pkt_touch(void)
 	/*
 	 *
 	 * */
-	/* if (__my_seed % 4 != 0) */
+	/* if (__my_seed % 2 != 0) */
 	/* 	return; */
+
 	/* This is extra computation cost for prefetching next element */
-	index = (__my_seed + (K * STRIDE)) % ENTRIES;
-	p = (void *)__tab_addr + ROUND((index * VALUE_SIZE), 8);
-	P(p);
+	/* index = (__my_seed + (1 * STRIDE)) % ENTRIES; */
+	/* p = (void *)__tab_addr + ROUND((index * VALUE_SIZE), 8); */
+	/* P(p); */
+	/* p += STRIDE * VALUE_SIZE; */
+	/* P1(p); */
+
+	p = (void *)__last_addr + STRIDE * ROUND(VALUE_SIZE, 8);
+	/* bpf_printk("p: %p", p); */
+	/* P(p); */
+
+	/* Fetch the two touch from now */
+	p = p + STRIDE * ROUND(VALUE_SIZE, 8);
+	P1(p);
 
 	/* for (int i = 0; i < 2 * SLICES; i++) */
 	/* 	s = __rand_seeded(s); */
@@ -109,6 +120,10 @@ static inline int __touch(void)
 		bpf_printk("This must never happen!");
 		return -1;
 	}
+
+#ifdef PREFETCH
+	__last_addr = (__u64)v;
+#endif
 	/* bpf_printk("l: %p  index: %d", v, index); */
 	return *(int *)v->data;
 }
