@@ -1,0 +1,24 @@
+figsize: [4, 2]
+x: ['Baseline', 'with prefetching']
+y: [5.241, 8.143]
+color: ['tab:red', 'tab:blue']
+hatch: ['++', '--']
+ylabel: 'Throughput (Mpps)'
+yticks: [0, 2.5, 5, 7.5, 10]
+grid: true
+annotate:
+  - xy: [-0.1, 5.4]
+    text: '5.241'
+  - xy: [0.9, 8.3]
+    text: '8.143'
+  - xy: [0.520, 6.2]
+    text: '55.37%'
+arrow:
+  - x: 0.5
+    y: 5.241
+    dx: 0
+    dy: 2.902
+    head_width: 0.03
+    head_length: 0.2
+    length_includes_head: true
+output: 'user_def_prefetch.pdf'
