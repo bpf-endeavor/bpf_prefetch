@@ -10,13 +10,14 @@
 #include <bpf/bpf_endian.h>
 
 #include "common.h"
+#include "honey/prefetching.h"
 
 /* Define limits and upper bounds */
 #define MAX_CONN 1024
 /* These constants are related to the request line
  * <method> <URI [shcema][host][path]> <version> */
 #define MAX_URI_LEGNTH 255
-#define MAX_HOST_LEGNTH 32
+#define MAX_HOST_LEGNTH 72
 #define MAX_METHOD_LENGTH 8
 #define MAX_SCHEMA_LENGTH 8
 /* These constants are related to the header options <name> : <value> */
@@ -30,17 +31,6 @@
 /* Constants related to the cache */
 #define MAX_CACHE_DATA_SIZE 1000
 #define MAX_CACHE_VALUES (1 << 7)
-
-#define COPY_HOST_NAME(dst, data, pctx, fail) {                      \
-	char *base = data + (pctx->host_start_off & OFFSET_MASK);    \
-	__u16 len = pctx->host_end_off - pctx->host_start_off;       \
-	for (__u16 i = 0; i < len; i++) {                            \
-		BOUND_CHECK(base + i, 1, data_end, fail);            \
-		if (i > MAX_HOST_LEGNTH)                             \
-			fail;                                        \
-		dst[i] = base[i];                                    \
-	}                                                            \
-}
 
 /* TODO: support REGEX? */
 /* A location command: what to do for the given URI */
@@ -75,7 +65,7 @@ struct parsing_ctx {
 	/* Some information */
 	__u8 schema_type;
 	__u16 port;
-}; // __attribute__((__packed__));
+} __attribute__((aligned(64))); // __attribute__((__packed__));
 
 struct update_cache_ctx {
 	__u16 head_off;

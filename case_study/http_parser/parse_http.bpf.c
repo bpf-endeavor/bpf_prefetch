@@ -6,10 +6,18 @@
 #include <linux/ip.h>
 #include <linux/udp.h>
 
+#include "honey/prefetching.h"
+#include "honey/report_throughput.h"
+
 #include "common.h"
-#include "prefetching.h"
-#include "report_throughput.h"
 #include "http_parser.h"
+
+#ifdef PREFETCH
+static volatile int __init_flag = 0;
+static __u64 __atable_addr = 0;
+static __u64 __btable_addr = 0;
+#endif
+
 #include "routing.h"
 
 #define HEADER_SIZE (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr))
@@ -40,13 +48,30 @@ typedef struct {
 	__u8 found;
 } header_loop_ctx_t;
 
-static long _parse_headers_loop(int ii, void *_ctx)
+#ifdef PREFETCH
+sinline void __init(void)
+{
+	if (__init_flag == 0) {
+		/* Get the address of first index of the array.
+		 * We use if for prefetching values, later in the code.
+		 * */
+		__init_flag = 1;
+		__u32 zero = 0;
+		__atable_addr = (__u64)bpf_map_lookup_elem(&atable, &zero);
+		__btable_addr = (__u64)bpf_map_lookup_elem(&btable, &zero);
+		bpf_printk("-----");
+	}
+}
+#else 
+#define __init()
+#endif
+
+static long __parse_headers_loop(int ii, void *_ctx)
 {
 	header_loop_ctx_t *c = _ctx;
 	enum HEADER_OPT opt = OPT_NONE;
 	int ret;
-	/* void *data = GET_DATA(c->ctx); */
-	/* P(data + c->pctx->head_off - 128); */
+
 	/* I need to parse HTTP headers because host header could
 	 * change which server config is selected */
 	ret = parse_http_header_line(c->ctx, c->pctx, &opt);
@@ -64,12 +89,12 @@ static long _parse_headers_loop(int ii, void *_ctx)
 		c->found = 1;
 		return 1;
 	}
-
 	return 0; // continue;
 }
 
 int prog_parse_header_opt(CONTEXT *skb)
 {
+	/* void *data = GET_DATA(skb); */
 	struct parsing_ctx *pctx;
 	const int zero = 0;
 
@@ -86,7 +111,7 @@ int prog_parse_header_opt(CONTEXT *skb)
 		.pctx = pctx,
 		.found = 0,
 	};
-	bpf_loop(MAX_HEADER_OPT_LINES, _parse_headers_loop, &c, 0);
+	bpf_loop(MAX_HEADER_OPT_LINES, __parse_headers_loop, &c, 0);
 	if (c.err) {
 		bpf_printk("Header line is invalid (line: %d)", -1);
 		return PASS;
@@ -103,14 +128,7 @@ header_parsed:
 		bpf_printk("host not found!");
 		return ABORTED;
 	}
-
-	/* void *data = GET_DATA(skb); */
-	/* bpf_printk("host: %s", data+ pctx->host_start_off); */
-
-	/* report_tput(); */
-	/* void * data = GET_DATA(skb); */
-	/* P(data + 4096); */
-	/* return DROP; */
+	/* bpf_printk("host: %s (%d)", data+ pctx->host_start_off, pctx->host_end_off - pctx->host_start_off); */
 	return prog_route(skb, pctx->host_start_off, pctx->host_end_off);
 }
 
@@ -161,6 +179,7 @@ SEC("sk_skb/stream_verdict")
 #endif
 int prog(CONTEXT *ctx)
 {
+	__init();
 	int ret;
 	struct parsing_ctx *pctx;
 	const int zero = 0;
@@ -168,6 +187,12 @@ int prog(CONTEXT *ctx)
 	
 	void *data = GET_DATA(ctx);
 	void *data_end = GET_DATAEND(ctx);
+
+	pctx = bpf_map_lookup_elem(&parsing_ctx_map, &zero);
+	if (!pctx) {
+		/* ths never happens */
+		return ABORTED;
+	}
 
 #ifdef XDP
 	/* The http message starts at an offset from data */
@@ -184,19 +209,11 @@ int prog(CONTEXT *ctx)
 	/* char *p = data + HEADER_SIZE; */
 	/* bpf_printk("-- %s", p); */
 
-	pctx = bpf_map_lookup_elem(&parsing_ctx_map, &zero);
-	if (!pctx) {
-		/* ths never happens */
-		return ABORTED;
-	}
-
 #ifdef SK_SKB
 	if (bpf_skb_pull_data(ctx, ctx->len) != 0) {
 		return PASS;
 	}
 #endif
-	
-	P(data+128);
 
 	ret = parse_http_request_line(ctx, start_off, pctx);
 	switch (ret) {

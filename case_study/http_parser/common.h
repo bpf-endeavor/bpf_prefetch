@@ -65,6 +65,10 @@ typedef unsigned long long  __u64;
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 
-#define round(x, y) ((x | (y-1))+1)
+#define round(x, y) ((x-1 | (y-1))+1)
+
+#ifndef offsetof
+#define offsetof(field, type) ((unsigned long)&((type *)0)->field)
+#endif
 
 #endif

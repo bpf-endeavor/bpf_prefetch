@@ -5,11 +5,13 @@
 #include <bpf/bpf_endian.h>
 #include "common.h"
 #include "libs/jhash.h"
-#include "report_throughput.h"
-#include "prefetching.h"
+#include "honey/report_throughput.h"
+#include "honey/prefetching.h"
 
 #define MAX_ROUTES (1 << 20)
 #define ROUTE_MAX_HOST_LENGTH 64
+#define ROUNDED_VALUE_SIZE round(sizeof(routing_elem_t), 8)
+#define ROUNDED_BVAL_SIZE round(sizeof(bucket_t), 8)
 
 typedef struct {
 	__u64 upstream;
@@ -25,13 +27,9 @@ typedef struct {
 #define NUMBER_OF_BUCKETS 50000
 
 typedef struct {
-	__u32 hash;
-	routing_key_t key;
-	__u32 ptr;
-} node_t;
-
-typedef struct {
-	node_t nodes[BUCKET_SIZE];
+	__u32 hash[BUCKET_SIZE];
+	__u32 ptr[BUCKET_SIZE];
+	routing_key_t key[BUCKET_SIZE];
 } bucket_t;
 
 /* a simple pointer to show how far from the atable we have allocated */
@@ -51,76 +49,59 @@ struct {
 	__uint(max_entries, MAX_ROUTES);
 } atable SEC(".maps");
 
-/* struct { */
-/* 	__uint(type, BPF_MAP_TYPE_HASH); */
-/* 	__type(key, routing_key_t); */
-/* 	__type(value, routing_elem_t); */
-/* 	__uint(max_entries, MAX_ROUTES); */
-/* } routing_table SEC(".maps"); */
-
-/* #ifdef PREFETCH */
-/* #define TRACK_B_SIZE 32 */
-/* typedef struct { */
-/* 	__u8 h; */
-/* 	void *b[TRACK_B_SIZE]; */
-/* } __attribute__((aligned(64))) tracker_t; */
-
-/* struct { */
-/* 	__uint(type, BPF_MAP_TYPE_ARRAY); */
-/* 	__type(key, __u32); */
-/* 	__type(value, tracker_t); */
-/* 	__uint(max_entries, MAX_ROUTES); */
-/* } popularity_track SEC(".maps"); */
-/* #endif */
-
-#ifdef PREFETCH
-static volatile int __init = 0;
-static __u64 atable_addr = 0;
-#endif
-
 sinline routing_elem_t *__lookup(routing_key_t *key)
 {
-#ifdef PREFETCH
-	void *__ptr;
-#endif 
+	void *__ptr = NULL;
 	bucket_t *b = NULL;
-	node_t *n = NULL;
 	routing_elem_t *r = NULL;
 	__u32 hash = jhash(key->data, sizeof(*key), 123);
 	__u32 index = hash % NUMBER_OF_BUCKETS;
+	__u32 node_index = hash % BUCKET_SIZE;
+	__u32 ptr;
+#ifdef PREFETCH
+	b = (void *)__btable_addr + index * ROUNDED_BVAL_SIZE;
+	P(b);
+	P(&b->hash[16]);
+	P(&b->key[node_index]);
+#endif
+	/* bpf_printk("btable-index: %d", index); */
 	b = bpf_map_lookup_elem(&btable, &index);
-	if (unlikely(b == NULL))
+	if (b == NULL)
 		return NULL;
 
-	for (__u16 i = 0; i < BUCKET_SIZE; i++) {
-		n = &b->nodes[i];
-		if (n->hash != hash) {
-#ifdef PREFETCH
-			if (i % 2 == 0) {
-				__ptr = &b->nodes[i+4];
-				P(__ptr);
-				P(__ptr + 64);
+	if(b->hash[node_index] == hash) {
+			if (__builtin_memcmp(key, &b->key[node_index], sizeof(*key)) == 0) {
+				ptr = b->ptr[node_index]; 
+				if (ptr == 0) {
+					bpf_printk("__lookup: pointer is null! (fast path)");
+					return NULL;
+				}
+				r = bpf_map_lookup_elem(&atable, &ptr);
+				return r;
 			}
-#endif
+	}
+
+	for (__u16 i = 0; i < BUCKET_SIZE; i++) {
+		if (b->hash[i] != hash) {
 			continue;
 		} else {
-			__u32 ptr = n->ptr; 
+			ptr = b->ptr[i]; 
 #ifdef PREFETCH
-			__ptr = (void *)(round(atable_addr + (ptr * sizeof(routing_elem_t)), 8));
-			/* potential hit: we can prefetch the actual data while we check if keys match */
+			__ptr = (void *)__atable_addr + ptr * ROUNDED_VALUE_SIZE;
 			P(__ptr);
 #endif
-			if (__builtin_memcmp(key, &n->key, sizeof(*key)) == 0) {
+			if (__builtin_memcmp(key, &b->key[i], sizeof(*key)) == 0) {
+				/* bpf_printk("match: %d", i); */
 				/* found the value */
 				if (ptr == 0) {
 					bpf_printk("__lookup: pointer is null!");
 					return NULL;
 				}
 				r = bpf_map_lookup_elem(&atable, &ptr);
-#ifdef PREFETCH
-				/* bpf_printk("prefetched: %p  actual: %p", __ptr, r); */
-#endif
+				/* bpf_printk("p: %p  a: %p", __ptr, r); */
 				return r;
+			} else {
+				/* bpf_printk("same hash not match: %d", i); */
 			}
 		}
 	}
@@ -128,31 +109,47 @@ sinline routing_elem_t *__lookup(routing_key_t *key)
 	return NULL;
 }
 
+static __u32 predictable_index = 0;
 sinline int __update(routing_key_t *key, routing_elem_t *val)
 {
+	__u32 x;
 	bucket_t *b = NULL;
-	node_t *n = NULL;
 	routing_elem_t *r = NULL;
 	__u32 hash = jhash(key->data, sizeof(*key), 123);
 	__u32 index = hash % NUMBER_OF_BUCKETS;
 	b = bpf_map_lookup_elem(&btable, &index);
 	if (b == NULL)
 		return -1;
+	/* make our hash table a bit more predictable */
+	__u32 node_index =  hash % BUCKET_SIZE;
+	if (b->ptr[node_index] == 0) {
+		// oh cool! we got a predictable index
+		predictable_index++;
+		/* bpf_printk("pred: %d", predictable_index); */
+		goto __found_empty_node;
+	}
 	for (__u16 i = 0; i < BUCKET_SIZE; i++) {
 		/* NOTE: this update (also lookup) routing has race conditions */
-		n = &b->nodes[i];
-		if (n->ptr != 0) {
+		if (b->ptr[i] != 0) {
 			// this node is used;
 			continue;
 		}
-		__u32 x = __sync_fetch_and_add(&used_index, 1);
+		node_index = i;
+		goto __found_empty_node;
+	}
+	/* did not found empty node */
+	bpf_printk("__update: bucket was full!");
+	return -1;
+
+__found_empty_node:
+		x = __sync_fetch_and_add(&used_index, 1);
 		if (x > MAX_ROUTES) {
 			bpf_printk("__update: out of value slots");
 			return -1;
 		}
-		n->hash = hash;
-		__builtin_memcpy(&n->key, key, sizeof(*key));
-		n->ptr = x;
+		b->hash[node_index] = hash;
+		__builtin_memcpy(&b->key[node_index], key, sizeof(*key));
+		b->ptr[node_index] = x;
 		r = bpf_map_lookup_elem(&atable, &x);
 		if (r == NULL) {
 			/* this must never happen */
@@ -161,32 +158,17 @@ sinline int __update(routing_key_t *key, routing_elem_t *val)
 		}
 		__builtin_memcpy(r, val, sizeof(*val));
 		return 0;
-	}
-	/* did not found empty node */
-	bpf_printk("__update: bucket was full!");
-	return -1;
 }
 
 int prog_route(CONTEXT *ctx, __u16 host_start_off, __u16 host_end_off)
 {
-#ifdef PREFETCH
-	if (unlikely(__init == 0)) {
-		/* Get the address of first index of the array.
-		 * We use if for prefetching values, later in the code.
-		 * */
-		__init = 1;
-		__u32 zero = 0;
-		routing_elem_t *__tmp = bpf_map_lookup_elem(&atable, &zero);
-		atable_addr = (__u64)__tmp ;
-		bpf_printk("-----");
-	}
-#endif
 	void *data = GET_DATA(ctx);
 	void *data_end = GET_DATAEND(ctx);
 	char *host = data + (host_start_off & OFFSET_MASK);
 	__u16 host_len = host_end_off - host_start_off;
 	routing_elem_t *r = NULL;
 	routing_key_t key;
+	P(host);
 	__builtin_memset(&key, 0, sizeof(key));
 
 	if (host_end_off < host_start_off || host_len > ROUTE_MAX_HOST_LENGTH) {
@@ -197,32 +179,19 @@ int prog_route(CONTEXT *ctx, __u16 host_start_off, __u16 host_end_off)
 		bpf_printk("routing: out of range");
 		return ABORTED;
 	}
-
+	/* Copy the host to the routing key */
 	for (int i = 0; i < ROUTE_MAX_HOST_LENGTH; i++) {
 		if (i >= host_len) break;
 		key.data[i] = host[i];
 	}
 
-/* #ifdef PREFETCH */
-/* 	__u32 hash = jhash(host, host_len, 123); */
-/* 	__u32 index = hash % MAX_ROUTES; */
-/* 	tracker_t *t = bpf_map_lookup_elem(&popularity_track, &index); */
-/* 	if (t == NULL) { */
-/* 		bpf_printk("must never happen"); */
-/* 		return ABORTED; */
-/* 	} */
-/* 	for (int i = 0; i < TRACK_B_SIZE; i++) { */
-/* 		if (t->b[i] == 0) { */
-/* 			break; */
-/* 		} else { */
-/* 			P(t->b[i]); */
-/* 		} */
-/* 	} */
-/* #endif */
-
+	/* Lookup the routing rule */
 	/* r = bpf_map_lookup_elem(&routing_table, &key); */
 	r = __lookup(&key);
-	if (unlikely(r == NULL)) {
+	if (r == NULL) {
+		/* For experiment purposes, if the rule is not found add a rule
+		 * (initializing the rule table)
+		 * */
 		/* bpf_printk("this must never happen %d\n", hash); */
 		/* bpf_printk("this must never happen\n"); */
 		/* insert a value to the map so the test works after some time */
@@ -234,30 +203,7 @@ int prog_route(CONTEXT *ctx, __u16 host_start_off, __u16 host_end_off)
 		return ABORTED;
 	}
 
-/* #ifdef PREFETCH */
-/* 	void *n = (void *)((__u64)r - sizeof(key)); */
-/* 	for (int i = 0; i < TRACK_B_SIZE; i++) { */
-/* 		if (t->b[i] == n) { */
-/* 			goto _out; */
-/* 		} else if (t->b[i] == 0) { */
-/* 			t->b[i] = n; */
-/* 			t->h = i; */
-/* 			goto _out; */
-/* 		} else { */
-/* 			continue; */
-/* 		} */
-/* 	} */
-/* 	if (t->h >= TRACK_B_SIZE) { */
-/* 		bpf_printk("This must not happen"); */
-/* 		return ABORTED; */
-/* 	} */
-/* 	t->b[t->h] = n; */
-/* 	bpf_printk("index: %d:%d %p\n", index, t->h, n); */
-/* 	t->h = (t->h + 1) % TRACK_B_SIZE; */
-/* _out: */
-/* #endif */
-
-	__sync_fetch_and_add(&r->counter, 1);
+	r->counter += 1;
 	if (r->upstream == 2)
 		return DROP;
 	report_tput();

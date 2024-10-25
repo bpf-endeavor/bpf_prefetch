@@ -13,6 +13,7 @@ LOADER_CFLAGS  = -I $(CURDIR)/../../deps/usr/include
 LOADER_LDFLAGS = -L $(CURDIR)/../../deps/usr/lib64 -l:libbpf.a -lelf -lrt -lz
 BPF_CFLAGS     = \
 		 -I $(CURDIR)/../../deps/usr/include -I ./include/bpf/ \
+		 -I ../../libs \
 		 -target bpf \
 		 -D __BPF_TRACING__ \
 		 -Wall \
