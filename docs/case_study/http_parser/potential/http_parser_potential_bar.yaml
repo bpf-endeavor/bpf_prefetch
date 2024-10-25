@@ -1,0 +1,35 @@
+figsize: [4,2]
+x: ["Baseline\n(1 host)", "No prefetch\n(500K hosts)", "With prefetch\n(500K hosts)"]
+y: [ 1.92, 1.42, 1.58]
+color: ["tab:gray", "tab:red", "tab:blue"]
+hatch: ['xx', '++', '--']
+ylabel: 'Throughput (Mpps)'
+yticks: [0, 1, 2, 3]
+grid: true
+annotate:
+  - xy: [-0.1, 2]
+    text: '1.92'
+  - xy: [0.9, 1.5]
+    text: '1.42'
+  - xy: [1.9, 1.6]
+    text: '1.58'
+  # arrow 1:
+  - xy: [1.45, 1.4]
+    text: '11%'
+  # arrow 2:
+  - xy: [0.45, 1.4]
+    text: '35%'
+arrow:
+  # arrow 1
+  - x: 1.4
+    y: 1.42
+    dx: 0
+    dy: 0.16
+    head_width: 0.03
+  # arrow 2
+  - x: 0.4
+    y: 1.42
+    dx: 0
+    dy: 0.5
+    head_width: 0.03
+output: "http_parser_potential_bar.png"

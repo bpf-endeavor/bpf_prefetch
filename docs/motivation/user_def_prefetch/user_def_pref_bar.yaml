@@ -21,4 +21,4 @@ arrow:
     head_width: 0.03
     head_length: 0.2
     length_includes_head: true
-output: 'user_def_prefetch.pdf'
+output: 'user_def_prefetch.png'
