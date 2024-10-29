@@ -15,7 +15,7 @@ git clone https://github.com/fastfloat/fast_float fast_float
 mkdir -p fast_float/_build
 pushd fsat_float/_build/
 cmake ../
-make install
+sudo make install
 
 popd
 ./build_katran.sh
