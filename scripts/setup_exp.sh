@@ -7,13 +7,13 @@ RUN=1
 function on_signal {
 	echo "On signal"
 	RUN=0
-	# sudo cpupower frequency-set -g schedutil &> /dev/null
+	sudo cpupower frequency-set -g schedutil &> /dev/null
 	remove_all_flow_rules $NET_IFACE
-	# sudo x86_energy_perf_policy normal
-	# sudo cpupower idle-set -D 4
+	sudo x86_energy_perf_policy normal
+	sudo cpupower idle-set -D 4
 	echo 1 | sudo tee /proc/sys/kernel/numa_balancing
 	echo 1 | sudo tee /sys/kernel/mm/ksm/run
-	# echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+	echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
 	echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 	echo on | sudo tee /sys/devices/system/cpu/smt/control
 	# sudo sysctl -w kernel.bpf_stats_enabled=1
@@ -76,12 +76,12 @@ function main {
 	report_nic_numa_node $NET_IFACE
 	remove_all_flow_rules $NET_IFACE
 	add_flow_rules $NET_IFACE
-	# sudo cpupower frequency-set -g performance
-	# sudo x86_energy_perf_policy performance
-	# sudo cpupower idle-set -D 1
+	sudo cpupower frequency-set -g performance
+	sudo x86_energy_perf_policy performance
+	sudo cpupower idle-set -D 1
 	echo 0 | sudo tee /proc/sys/kernel/numa_balancing
 	echo 0 | sudo tee /sys/kernel/mm/ksm/run
-	# echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+	echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
 	echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 	echo off | sudo tee /sys/devices/system/cpu/smt/control
 	sudo sysctl -w kernel.bpf_stats_enabled=0
