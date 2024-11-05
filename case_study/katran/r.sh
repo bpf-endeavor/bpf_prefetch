@@ -61,8 +61,12 @@ $(sudo $SERVER \
 
 sleep 2
 
-./bins/katran_goclient -A -u 10.10.0.2:8080
-./bins/katran_goclient -a -u 10.10.0.2:8080 -r 192.168.1.2
+COUNT_VIP=500
+echo "Adding $COUNT_VIP rules"
+for p in $(seq $COUNT_VIP); do
+	./bins/katran_goclient -A -u 10.10.0.2:$p &> /dev/null
+	./bins/katran_goclient -a -u 10.10.0.2:$p -r 192.168.1.2 &> /dev/null
+done 
 ./bins/katran_goclient -l
 
 on_signal() {
