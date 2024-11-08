@@ -73,7 +73,9 @@ $(sudo $SERVER \
 	-server "127.0.0.1:50051" \
 	-shutdown_delay 1000) &
 
+pid=$!
 sleep 2
+ps --pid $pid || ( echo "Failed to run the server" && exit 1 )
 
 # COUNT_VIP=1
 # echo "Adding $COUNT_VIP rules"

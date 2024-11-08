@@ -24,12 +24,34 @@
 
 #include "honey/prefetching.h"
 
+#define USE_SEETHROUGH_HASHMAP 1
+#ifdef USE_SEETHROUGH_HASHMAP
+#pragma message "Katran is configured to use seethrough_hashmap"
+#include "seethrough_hashmap.h"
+/* Farbod: This hash map is to replace the lru_map used in katran for
+ * prefetching experiments
+ * */
+S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 32, 500000, 8000000)
+#endif
+
 #define XSTR(x) STR(x)
 #define STR(x) #x
 #ifdef LPM_SRC_LOOKUP
 #pragma message "Source lookup enabled"
 #endif
 #pragma message "flood limit is " XSTR(MAX_CONN_RATE)
+
+#ifdef PREFETCH
+/* volatile static __u32 __flag_init = 0; */
+// NOTE: _ELEM_HDR is sizeof(struct htab_elem) which might change in different versions of Linux
+#define _ELEM_HDR 48
+// Size of one element in the lru_map used in Katran
+#define ELEM_SIZE (_ELEM_HDR + R8(sizeof(struct flow_key)) + R8(sizeof(struct real_pos_lru)))
+// This will hold the last accessed value from lru_map
+static __u64 last_val_ptr = 0;
+// The stride depends on the workload pattern
+#define STRIDE 1025 
+#endif
 
 
 __attribute__((__always_inline__)) static inline __u32 get_packet_hash(
@@ -173,6 +195,16 @@ __attribute__((__always_inline__)) static inline bool get_packet_dst(
     increment_ch_drop_no_real();
     return false;
   }
+
+#ifdef USE_SEETHROUGH_HASHMAP
+  if (!(vip_info->flags & F_LRU_BYPASS) && !under_flood) {
+    if (pckt->flow.proto == IPPROTO_UDP) {
+      new_dst_lru.atime = cur_time;
+    }
+    new_dst_lru.pos = key;
+    s_map_update(&pckt->flow, &new_dst_lru);
+  }
+#else
   if (lru_map && !(vip_info->flags & F_LRU_BYPASS) && !under_flood) {
     if (pckt->flow.proto == IPPROTO_UDP) {
       new_dst_lru.atime = cur_time;
@@ -180,6 +212,7 @@ __attribute__((__always_inline__)) static inline bool get_packet_dst(
     new_dst_lru.pos = key;
     bpf_map_update_elem(lru_map, &pckt->flow, &new_dst_lru, BPF_ANY);
   }
+#endif
   return true;
 }
 
@@ -191,7 +224,11 @@ __attribute__((__always_inline__)) static inline void connection_table_lookup(
   struct real_pos_lru* dst_lru;
   __u64 cur_time;
   __u32 key;
+#ifdef USE_SEETHROUGH_HASHMAP
+  dst_lru = s_map_lookup(&pckt->flow);
+#else
   dst_lru = bpf_map_lookup_elem(lru_map, &pckt->flow);
+#endif
   if (!dst_lru) {
     return;
   }
@@ -615,7 +652,11 @@ __attribute__((__always_inline__)) static inline int
 check_and_update_real_index_in_lru(
     struct packet_description* pckt,
     void* lru_map) {
+#ifdef USE_SEETHROUGH_HASHMAP
+  struct real_pos_lru* dst_lru = s_map_lookup(&pckt->flow);
+#else
   struct real_pos_lru* dst_lru = bpf_map_lookup_elem(lru_map, &pckt->flow);
+#endif
   if (dst_lru) {
     if (dst_lru->pos == pckt->real_index) {
       return DST_MATCH_IN_LRU;
@@ -630,7 +671,11 @@ check_and_update_real_index_in_lru(
   }
   struct real_pos_lru new_dst_lru = {};
   new_dst_lru.pos = pckt->real_index;
+#ifdef USE_SEETHROUGH_HASHMAP
+  s_map_update(&pckt->flow, &new_dst_lru);
+#else
   bpf_map_update_elem(lru_map, &pckt->flow, &new_dst_lru, BPF_ANY);
+#endif
   return DST_NOT_FOUND_IN_LRU;
 }
 
@@ -803,6 +848,9 @@ process_packet(struct xdp_md* xdp, __u64 off, bool is_ipv6) {
 
   vip_num = vip_info->vip_num;
   __u32 cpu_num = bpf_get_smp_processor_id();
+#ifdef USE_SEETHROUGH_HASHMAP
+  void* lru_map = NULL;
+#else
   void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
   if (!lru_map) {
     lru_map = &fallback_cache;
@@ -816,6 +864,7 @@ process_packet(struct xdp_md* xdp, __u64 off, bool is_ipv6) {
     // We are going to use it for monitoring.
     lru_stats->v1 += 1;
   }
+#endif
 
   // Lookup dst based on id in packet
   if ((vip_info->flags & F_QUIC_VIP)) {

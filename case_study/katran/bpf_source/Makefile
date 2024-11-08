@@ -41,14 +41,20 @@ clean:
 	# @rm -f *~
 
 $(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c
+	LLFILE=$$(mktemp); \
 	$(CLANG) $(INCLUDEFLAGS) $(EXTRA_CFLAGS) \
 	$(DEBUGBPF) -D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
 		-Wno-compare-distinct-pointer-types \
-		-O2 -emit-llvm -c -g $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
+		-O2 -emit-llvm -c -g $< -o $$LLFILE && \
+		$(LLC) -march=bpf -filetype=obj -o $@ $$LLFILE; \
+		rm $$LLFILE
 
 $(obj)/bpf/%.pf.o: $(src)/katran/lib/bpf/%.c
+	LLFILE=$$(mktemp); \
 	$(CLANG) $(INCLUDEFLAGS) $(EXTRA_CFLAGS) -DPREFETCH=1 \
 	$(DEBUGBPF) -D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
 		-Wno-compare-distinct-pointer-types \
-		-O2 -emit-llvm -c -g $< -o -| $(LLC) -march=bpf -filetype=obj -o $@;
+		-O2 -emit-llvm -c -g $< -o $$LLFILE && \
+		$(LLC) -march=bpf -filetype=obj -o $@ $$LLFILE; \
+		rm $$LLFILE
 
