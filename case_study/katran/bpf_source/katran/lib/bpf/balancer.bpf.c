@@ -22,6 +22,16 @@
 #include "katran/lib/bpf/pckt_encap.h"
 #include "katran/lib/bpf/pckt_parsing.h"
 
+#include "honey/prefetching.h"
+
+#define XSTR(x) STR(x)
+#define STR(x) #x
+#ifdef LPM_SRC_LOOKUP
+#pragma message "Source lookup enabled"
+#endif
+#pragma message "flood limit is " XSTR(MAX_CONN_RATE)
+
+
 __attribute__((__always_inline__)) static inline __u32 get_packet_hash(
     struct packet_description* pckt,
     bool hash_16bytes) {

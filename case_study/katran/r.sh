@@ -2,11 +2,25 @@
 source common.sh
 SERVER=./bins/katran_server_grpc
 OTHER_MAC="9c:dc:71:56:fd:d5"
+FORWARDING_CORE="3"
 if [ -z "$NET_IFACE" ]; then
 	echo NET_IFACE is not defined
 	exit 1
 fi
 echo "Make sure the other machines MAC address is correct ($OTHER_MAC)"
+echo "Make sure the core $FORWARDING_CORE are the one running Katran"
+
+_PREFETCH=0
+BALANCER="./bpf_source/bpf/balancer.bpf.o"
+if [ $# -gt 0 ]  && [ "x$1" = "xprefetch" ]; then
+	echo "Will use the binary with prefetching enabled"
+	BALANCER="./bpf_source/bpf/balancer.bpf.pf.o"
+	_PREFETCH=1
+fi
+
+if [ $_PREFETCH -eq 0 ]; then
+	echo "You may pass 'prefetch' as first arg to enable prefetching"
+fi
 
 sudo ip addr show ipip0
 if  [ $? -ne 0 ]; then
@@ -50,9 +64,9 @@ fi
 #
 
 $(sudo $SERVER \
-	-balancer_prog ./bpf_source/bpf/balancer.bpf.o \
+	-balancer_prog $BALANCER \
 	-default_mac $OTHER_MAC \
-	-forwarding_cores "0" \
+	-forwarding_cores $FORWARDING_CORE \
 	-hc_forwarding false \
 	-healthchecker_prog ./bpf_source/bpf/healthchecking_ipip.o \
 	-intf $NET_IFACE \
@@ -61,12 +75,14 @@ $(sudo $SERVER \
 
 sleep 2
 
-COUNT_VIP=500
-echo "Adding $COUNT_VIP rules"
-for p in $(seq $COUNT_VIP); do
-	./bins/katran_goclient -A -u 10.10.0.2:$p &> /dev/null
-	./bins/katran_goclient -a -u 10.10.0.2:$p -r 192.168.1.2 &> /dev/null
-done 
+# COUNT_VIP=1
+# echo "Adding $COUNT_VIP rules"
+# for p in $(seq $COUNT_VIP); do
+# 	./bins/katran_goclient -A -u 10.10.0.2:$p &> /dev/null
+# 	./bins/katran_goclient -a -u 10.10.0.2:$p -r 192.168.1.2 &> /dev/null
+# done 
+./bins/katran_goclient -A -u 10.10.0.2:8080 &> /dev/null
+./bins/katran_goclient -a -u 10.10.0.2:8080 -r 192.168.1.2 &> /dev/null
 ./bins/katran_goclient -l
 
 on_signal() {
