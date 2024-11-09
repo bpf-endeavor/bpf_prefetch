@@ -7,17 +7,32 @@
  * prefetch.
  * */
 
+
+/* How does the map works
+ * 
+ * key -- hash --> index ->[btable] --> bucket_t ->[Compare] --> Match lookup the (atable)
+ *                     Lookup the ntable for the next node <_/
+ *
+ * */
+
+
 #define S_HASH_MAP(__name, __key_t, __val_t, __bucket_size, __num_bucket, __max_entries)            \
                                                                                                     \
 typedef struct {                                                                                    \
-	__u32 hash;                                                                                 \
-	__u32 ptr;                                                                                  \
-	__key_t key;                                                                                \
+	__u32 next; /* next node */                                                                 \
+	__u32 hash; /* hash of the key */                                                           \
+	__u32 ptr;  /* pointer to the value entry (atable index) */                                 \
+	__key_t key; /* key of the stored value */                                                  \
 } __name##_node_t;                                                                                  \
                                                                                                     \
 typedef struct {                                                                                    \
-	__name##_node_t nodes[__bucket_size];                                                       \
+	__name##_node_t first;                                                                      \
 } __name##_bucket_t;                                                                                \
+                                                                                                    \
+typedef struct {                                                                                    \
+	__u32 freelist_next;                                                                        \
+	__val_t v;                                                                                  \
+} __name##_val_entry_t;                                                                             \
                                                                                                     \
 struct {                                                                                            \
 	__uint(type,  BPF_MAP_TYPE_ARRAY);                                                          \
@@ -29,12 +44,19 @@ struct {                                                                        
 struct {                                                                                            \
 	__uint(type,  BPF_MAP_TYPE_ARRAY);                                                          \
 	__type(key,   __u32);                                                                       \
-	__type(value, __val_t);                                                                     \
+	__type(value, __name##_node_t);                                                             \
+	__uint(max_entries, __max_entries);                                                         \
+} __name##_ntable SEC(".maps");                                                                     \
+                                                                                                    \
+struct {                                                                                            \
+	__uint(type,  BPF_MAP_TYPE_ARRAY);                                                          \
+	__type(key,   __u32);                                                                       \
+	__type(value, __name##_val_entry_t);                                                        \
 	__uint(max_entries, __max_entries);                                                         \
 } __name##_atable SEC(".maps");                                                                     \
                                                                                                     \
 /* a simple pointer to show how far from the atable we have allocated */                            \
-static __u32 __name##_used_index = 1;                                                               \
+static __u32 __name##_free2use_index = 1;                                                           \
                                                                                                     \
 static inline __attribute__((always_inline)) __val_t *__name##_lookup(__key_t *key)                 \
 {                                                                                                   \
