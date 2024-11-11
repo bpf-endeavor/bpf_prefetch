@@ -27,6 +27,7 @@ HOSTCFLAGS_bpf_load.o += $(INCLUDEFLAGS) $(PFLAGS) -Wno-unused-variable
 
 # EXTRA_CFLAGS += -DLPM_SRC_LOOKUP=1
 # EXTRA_CFLAGS += -DMAX_CONN_RATE=5000000
+EXTRA_CFLAGS += -DUSE_SEETHROUGH_HASHMAP=1
 
 # Allows pointing LLC/CLANG to a LLVM backend with bpf support, redefine on cmdline:
 #  make samples/bpf/ LLC=~/git/llvm/build/bin/llc CLANG=~/git/llvm/build/bin/clang
@@ -34,13 +35,16 @@ LLC ?= llc
 CLANG ?= clang
 
 # Trick to allow make to be run from this directory
-all: $(always) $(pf)
+all: bpf/ $(always) $(pf)
 	# $(MAKE) -C .. $$PWD/
 
 clean:
 	rm bpf/*
 	# $(MAKE) -C .. M=$$PWD clean
 	# @rm -f *~
+
+bpf/:
+	mkdir -p bpf/
 
 $(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c $(HEADERS)
 	LLFILE=$$(mktemp); \

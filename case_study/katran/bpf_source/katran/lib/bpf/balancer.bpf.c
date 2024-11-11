@@ -1,8 +1,10 @@
+/* Farbod Shainfar
+ * 2024
+ * */
 /*
  * Copyright 2004-present Facebook. All Rights Reserved.
  * This is main balancer's application code
  */
-
 #include <linux/in.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
@@ -24,14 +26,24 @@
 
 #include "honey/prefetching.h"
 
-#define USE_SEETHROUGH_HASHMAP 1
+/* Use Makefile to turn this feature on/off
+ * This hash map replaces the `lru_map' used in katran and we then do
+ * prefetching experiments.
+ * */
 #ifdef USE_SEETHROUGH_HASHMAP
 #pragma message "Katran is configured to use seethrough_hashmap"
 #include "seethrough_hashmap.h"
-/* Farbod: This hash map is to replace the lru_map used in katran for
- * prefetching experiments
- * */
-S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 128, (1 << 22), 8000000)
+
+#define MAX_BUCKET_SIZE 16
+#define NUM_BUCKET (1 << 22)
+#define MAX_ENTRIES 8000000
+
+#ifdef PREFETCH
+S_HASH_MAP_PF(s_map, struct flow_key, struct real_pos_lru, MAX_BUCKET_SIZE, NUM_BUCKET, MAX_ENTRIES)
+#else
+S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, MAX_BUCKET_SIZE, NUM_BUCKET, MAX_ENTRIES)
+#endif
+
 #endif
 
 #define XSTR(x) STR(x)
@@ -39,18 +51,19 @@ S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 128, (1 << 22), 8000000)
 #ifdef LPM_SRC_LOOKUP
 #pragma message "Source lookup enabled"
 #endif
-#pragma message "flood limit is " XSTR(MAX_CONN_RATE)
+#pragma message "Flood limit is " XSTR(MAX_CONN_RATE)
 
 #ifdef PREFETCH
+#pragma message "Prefecting is enabled!"
 /* volatile static __u32 __flag_init = 0; */
 // NOTE: _ELEM_HDR is sizeof(struct htab_elem) which might change in different versions of Linux
-#define _ELEM_HDR 48
+/* #define _ELEM_HDR 48 */
 // Size of one element in the lru_map used in Katran
-#define ELEM_SIZE (_ELEM_HDR + R8(sizeof(struct flow_key)) + R8(sizeof(struct real_pos_lru)))
+/* #define ELEM_SIZE (_ELEM_HDR + R8(sizeof(struct flow_key)) + R8(sizeof(struct real_pos_lru))) */
 // This will hold the last accessed value from lru_map
-static __u64 last_val_ptr = 0;
+/* static __u64 last_val_ptr = 0; */
 // The stride depends on the workload pattern
-#define STRIDE 1025 
+/* #define STRIDE 1025 */ 
 #endif
 
 
