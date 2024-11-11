@@ -75,7 +75,18 @@ $(sudo $SERVER \
 
 pid=$!
 sleep 2
-ps --pid $pid || ( echo "Failed to run the server" && exit 1 )
+ps --pid $pid
+if [ $? -ne 0 ]; then
+	echo "Failed to run the server"
+	exit 1
+fi
+
+# TODO: make this flag automatic
+is_seethrough=1
+if [ $is_seethrough -eq 1 ]; then
+	echo "Configuring seethrough map..."
+	sudo ./ctrlplane/katctrl
+fi
 
 # COUNT_VIP=1
 # echo "Adding $COUNT_VIP rules"
@@ -89,6 +100,7 @@ ps --pid $pid || ( echo "Failed to run the server" && exit 1 )
 
 on_signal() {
 	pkill -SIGINT katran_server_grpc
+	sleep 1
 	running=0
 }
 trap 'on_signal' SIGINT SIGHUP
@@ -97,3 +109,4 @@ running=1
 while [ $running -eq 1 ]; do
 	sleep 3
 done
+echo Done!

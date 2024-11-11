@@ -31,7 +31,7 @@
 /* Farbod: This hash map is to replace the lru_map used in katran for
  * prefetching experiments
  * */
-S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 32, 500000, 8000000)
+S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 8, 1000000, 8000000)
 #endif
 
 #define XSTR(x) STR(x)
