@@ -43,9 +43,9 @@ int main(int argc, char *argv[])
 	printf("Expect the Katran to be running\n");
 
 	// prepare the entries freelist
-	ret = get_shared_map(BTABLE_NAME, &map_res);
+	ret = get_shared_map(ATABLE_NAME, &map_res);
 	if (ret != 0) {
-		fprintf(stderr, "Failed to find the map %s\n", BTABLE_NAME);
+		fprintf(stderr, "Failed to find the map %s\n", ATABLE_NAME);
 		return 1;
 	}
 	tmp_e = calloc(1, map_res.info.value_size);
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	max_entries = map_res.info.max_entries;
-	printf("Found %s with %d entries\n", BTABLE_NAME, max_entries);
+	printf("Found %s with %d entries\n", ATABLE_NAME, max_entries);
 	for (int i = 0; i < max_entries; i++) {
 		tmp_e->freelist_next = (i+1)  % max_entries;
 		bpf_map_update_elem(map_res.fd, &i, tmp_e, BPF_ANY);

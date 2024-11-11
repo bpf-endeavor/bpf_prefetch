@@ -31,7 +31,7 @@
 /* Farbod: This hash map is to replace the lru_map used in katran for
  * prefetching experiments
  * */
-S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 8, 1000000, 8000000)
+S_HASH_MAP(s_map, struct flow_key, struct real_pos_lru, 128, (1 << 22), 8000000)
 #endif
 
 #define XSTR(x) STR(x)
@@ -225,7 +225,7 @@ __attribute__((__always_inline__)) static inline void connection_table_lookup(
   __u64 cur_time;
   __u32 key;
 #ifdef USE_SEETHROUGH_HASHMAP
-  dst_lru = s_map_lookup(&pckt->flow);
+  if (s_map_lookup(&pckt->flow, &dst_lru) != 0) return;
 #else
   dst_lru = bpf_map_lookup_elem(lru_map, &pckt->flow);
 #endif
@@ -653,7 +653,9 @@ check_and_update_real_index_in_lru(
     struct packet_description* pckt,
     void* lru_map) {
 #ifdef USE_SEETHROUGH_HASHMAP
-  struct real_pos_lru* dst_lru = s_map_lookup(&pckt->flow);
+  struct real_pos_lru* dst_lru;
+  if (s_map_lookup(&pckt->flow, &dst_lru) != 0)
+    dst_lru = NULL;
 #else
   struct real_pos_lru* dst_lru = bpf_map_lookup_elem(lru_map, &pckt->flow);
 #endif

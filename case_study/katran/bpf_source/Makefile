@@ -18,6 +18,8 @@ always += bpf/healthchecking.bpf.o
 always += bpf/xdp_pktcntr.o
 always += bpf/xdp_root.o
 
+HEADERS = $(wildcard ./katran/lib/bpf/*.h)
+
 pf = bpf/balancer.bpf.pf.o
 
 HOSTCFLAGS += $(INCLUDEFLAGS) $(PFLAGS)
@@ -40,7 +42,7 @@ clean:
 	# $(MAKE) -C .. M=$$PWD clean
 	# @rm -f *~
 
-$(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c
+$(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c $(HEADERS)
 	LLFILE=$$(mktemp); \
 	$(CLANG) $(INCLUDEFLAGS) $(EXTRA_CFLAGS) \
 	$(DEBUGBPF) -D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
@@ -49,7 +51,7 @@ $(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c
 		$(LLC) -march=bpf -filetype=obj -o $@ $$LLFILE; \
 		rm $$LLFILE
 
-$(obj)/bpf/%.pf.o: $(src)/katran/lib/bpf/%.c
+$(obj)/bpf/%.pf.o: $(src)/katran/lib/bpf/%.c $(HEADERS)
 	LLFILE=$$(mktemp); \
 	$(CLANG) $(INCLUDEFLAGS) $(EXTRA_CFLAGS) -DPREFETCH=1 \
 	$(DEBUGBPF) -D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
