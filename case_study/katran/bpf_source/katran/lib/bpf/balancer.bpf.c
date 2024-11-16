@@ -34,8 +34,9 @@
 #pragma message "Katran is configured to use seethrough_hashmap"
 #include "seethrough_hashmap.h"
 
-#define MAX_BUCKET_SIZE 16
-#define NUM_BUCKET (1 << 22)
+#define MAX_BUCKET_SIZE 8
+/* Num of buckets are selected as 1<<ceil[log_2(max_entries)] in BPF HASH MAP */
+#define NUM_BUCKET (1 << 23)
 #define MAX_ENTRIES 8000000
 
 #ifdef PREFETCH

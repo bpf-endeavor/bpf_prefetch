@@ -93,6 +93,7 @@ static inline unsigned int _x_rol32(unsigned int word, unsigned int shift)
 static inline __attribute__((always_inline))
 __u32 _x_jhash(const void *key, unsigned short length, unsigned int initval)
 {
+	/* P(key); */
 	unsigned int a, b, c;
 	const unsigned char *k = key;
 
@@ -333,7 +334,9 @@ got_the_entry:                                                                  
 }                                                                                               \
 
 
-#define PF_JMP_PTR_DIST 4 // get a jump pointer to the i-th node in the chain
+#define SIZEOF_R8(T) ( ((sizeof(T)-1) | 0x3) + 1 )
+#define PF_PTR_ARR(base, T, index) ((void *)(base + (index * SIZEOF_R8(T))))
+#define PF_JMP_PTR_DIST 1 // get a jump pointer to the i-th node in the chain
 /*
  * TODO: The fact that this code is mostly duplicate is very bad :(
  * */
@@ -344,7 +347,7 @@ typedef struct {                                                                
 	__u32 hash; /* hash of the key */                                                           \
 	__u32 ptr;  /* pointer to the value entry (atable index) */                                 \
 	__u32 freelist_next; /* used for allocating nodes */                                        \
-	__u32 pf_jmp_ptr; /* a pointer to a node further in the chain */                            \
+	/* __u32 pf_jmp_ptr; /1* a pointer to a node further in the chain *1/ */                           \
 	__key_t key; /* key of the stored value */                                                  \
 } __attribute__((aligned(8))) __name##_node_t;                                                  \
                                                                                                 \
@@ -369,6 +372,7 @@ struct {                                                                        
 	__type(key,   __u32);                                                                       \
 	__type(value, __name##_node_t);                                                             \
 	__uint(max_entries, __max_entries);                                                         \
+	__uint(map_flags, BPF_F_MMAPABLE);                                                          \
 } __name##_ntable SEC(".maps");                                                                 \
                                                                                                 \
 struct {                                                                                        \
@@ -376,12 +380,15 @@ struct {                                                                        
 	__type(key,   __u32);                                                                       \
 	__type(value, __name##_val_entry_t);                                                        \
 	__uint(max_entries, __max_entries);                                                         \
+	__uint(map_flags, BPF_F_MMAPABLE);                                                          \
 } __name##_atable SEC(".maps");                                                                 \
                                                                                                 \
 static __u32 __name##_free2use_node_index = 1;                                                  \
 static __u32 __name##_free2use_entry_index = 1;                                                 \
 static __u32 __name##_flag_initialize = 0;                                                      \
 static __u64 __name##_ntable_base_addr = 0;                                                     \
+static __u64 __name##_atable_base_addr = 0;                                                     \
+static __u64 __name##_btable_base_addr = 0;                                                     \
                                                                                                 \
 static __always_inline                                                                          \
 int __name##_lookup(__key_t *key, __val_t **out)                                                \
@@ -392,37 +399,45 @@ int __name##_lookup(__key_t *key, __val_t **out)                                
 	__name##_val_entry_t *e = NULL;                                                             \
 	__u32 hash = _x_jhash(key, sizeof(*key), JHASH_INITVAL);                                    \
 	__u32 index = hash & (__num_bucket - 1);                                                    \
+	void * __pf_ptr;                                                                            \
 	/* bpf_printk("btable-index: %u %u %u", index, hash, __num_bucket); */                      \
 	/* Find the bueckt */                                                                       \
+	/* __pf_ptr = PF_PTR_ARR(__name##_btable_base_addr, __name##_bucket_t, index);  */             \
+	/* P(__pf_ptr);                                                                 */             \
 	b = bpf_map_lookup_elem(&__name##_btable, &index);                                          \
 	if (b == NULL)                                                                              \
 		return -1;                                                                              \
 	/* Walk the nodes in the bucket and check for a match */                                    \
 	index = b->first;                                                                           \
+	/* __pf_ptr = PF_PTR_ARR(__name##_ntable_base_addr, __name##_node_t, index);   */              \
+	/* P(__pf_ptr); */                                                                             \
+	/* bpf_printk("pf: %p", __pf_ptr); */                                                       \
+	P((void *)key + sizeof(*key));                                                       \
 	for (__u16 i = 0; i < __bucket_size; i++) {                                                 \
 		if (index == 0) {                                                                       \
 			/* end of chain of nodes */                                                         \
 			/* bpf_printk("end of chain %d", i); */                                             \
 			return -1;                                                                          \
 		}                                                                                       \
+		/* P((void *)key + sizeof(*key));                         */                            \
 		n = bpf_map_lookup_elem(&__name##_ntable, &index);                                      \
 		if (n == NULL) {                                                                        \
 			bpf_printk("The node chain is broken!");                                            \
 			return -1;                                                                          \
 		}                                                                                       \
-		/* Prefetch next if you can */                                                          \
-		if (n->pf_jmp_ptr != 0) {                                                               \
-			void *pf_ptr = (void *)(__name##_ntable_base_addr + (n->pf_jmp_ptr * ( ((sizeof(__name##_node_t) - 1) | 0x3) + 1 ) )); \
-			P1(pf_ptr);                                                                         \
-		}                                                                                       \
+		/* bpf_printk("ac: %p", n); */                                                          \
 		if (n->hash != hash) {                                                                  \
 			/* not a match go to next */                                                        \
 			index = n->next;                                                                    \
+			__pf_ptr = PF_PTR_ARR(__name##_ntable_base_addr, __name##_node_t, index);           \
+			P(__pf_ptr);                                                                        \
 			continue;                                                                           \
 		}                                                                                       \
 		if (__builtin_memcmp(key, &n->key, sizeof(*key)) != 0) {                                \
 			/* not a match go to next */                                                        \
 			index = n->next;                                                                    \
+			__pf_ptr = PF_PTR_ARR(__name##_ntable_base_addr, __name##_node_t, index);           \
+			P(__pf_ptr);                                                                        \
 			continue;                                                                           \
 		}                                                                                       \
 		/* Get the entry and return the value */                                                \
@@ -431,6 +446,8 @@ int __name##_lookup(__key_t *key, __val_t **out)                                
 			bpf_printk("__lookup: pointer is null!");                                           \
 			return -1;                                                                          \
 		}                                                                                       \
+		/* __pf_ptr = PF_PTR_ARR(__name##_atable_base_addr, __name##_val_entry_t, index) + 4; */ \
+		/* P(__pf_ptr);                                                                       */ \
 		e = bpf_map_lookup_elem(&__name##_atable, &index);                                      \
 		if (e == NULL) {                                                                        \
 			bpf_printk("__lookup: entry pointer was wrong!");                                   \
@@ -451,8 +468,14 @@ void __name##_init_pf(void)                                                     
 		return;                                                                                 \
 	__name##_flag_initialize = 1;                                                               \
 	__u32 zero = 0;                                                                             \
-	void *ptr = bpf_map_lookup_elem(&__name##_ntable, &zero);                                   \
+	void *ptr;                                                                                  \
+	ptr = bpf_map_lookup_elem(&__name##_ntable, &zero);                                         \
 	__name##_ntable_base_addr = (__u64)ptr;                                                     \
+	ptr = bpf_map_lookup_elem(&__name##_atable, &zero);                                         \
+	__name##_atable_base_addr = (__u64)ptr;                                                     \
+	ptr = bpf_map_lookup_elem(&__name##_btable, &zero);                                         \
+	__name##_btable_base_addr = (__u64)ptr;                                                     \
+	bpf_printk("prefetching is enabled");                                                       \
 }                                                                                               \
                                                                                                 \
 /* static inline __attribute__((always_inline)) */                                              \
@@ -541,20 +564,20 @@ int __name##_update(__key_t *key, __val_t *val)                                 
 	__builtin_memcpy(&n->key, key, sizeof(*key));                                               \
 	n->ptr = index;                                                                             \
 	/* Set the jump pointer by following the chain */                                           \
-	index = n->next;                                                                            \
-	for (__u16 i = 0; i < PF_JMP_PTR_DIST; i++) {                                               \
-		if (index == 0) break;                                                                  \
-		n2 = bpf_map_lookup_elem(&__name##_ntable, &index);                                     \
-		if (n2 == NULL) {                                                                       \
-			bpf_printk("failed to set the jump pointer");                                       \
-			break;                                                                              \
-		}                                                                                       \
-		if (i != PF_JMP_PTR_DIST - 1) {                                                         \
-			index = n2->next;                                                                   \
-			continue;                                                                           \
-		}                                                                                       \
-		n->pf_jmp_ptr = index;                                                                  \
-	}                                                                                           \
+	/* index = n->next;                                                    */                      \
+	/* for (__u16 i = 0; i < PF_JMP_PTR_DIST; i++) {                       */                      \
+	/* 	if (index == 0) break;                                             */                   \
+	/* 	n2 = bpf_map_lookup_elem(&__name##_ntable, &index);                */                   \
+	/* 	if (n2 == NULL) {                                                  */                   \
+	/* 		bpf_printk("failed to set the jump pointer");                  */                   \
+	/* 		break;                                                         */                   \
+	/* 	}                                                                  */                   \
+	/* 	if (i != PF_JMP_PTR_DIST - 1) {                                    */                   \
+	/* 		index = n2->next;                                              */                   \
+	/* 		continue;                                                      */                   \
+	/* 	}                                                                  */                   \
+	/* 	n->pf_jmp_ptr = index;                                             */                   \
+	/* }                                                                   */                      \
 got_the_entry:                                                                                  \
 	/* Store value on the entry object */                                                       \
 	__builtin_memcpy(&e->v, val, sizeof(*val));                                                 \

@@ -37,6 +37,7 @@ int main(int argc, char *argv[])
 {
 	int ret;
 	uint32_t max_entries;
+	size_t value_size;
 	entry_t *tmp_e;
 	node_t *tmp_n;
 	struct find_map_res map_res = {};
@@ -55,9 +56,19 @@ int main(int argc, char *argv[])
 	}
 	max_entries = map_res.info.max_entries;
 	printf("Found %s with %d entries\n", ATABLE_NAME, max_entries);
-	for (int i = 0; i < max_entries; i++) {
-		tmp_e->freelist_next = (i+1)  % max_entries;
-		bpf_map_update_elem(map_res.fd, &i, tmp_e, BPF_ANY);
+	if (map_res.mmap_area != NULL) {
+		printf("%s is memory mapped\n", ATABLE_NAME);
+		value_size = map_res.info.value_size;
+		for (int i = 0; i < max_entries; i++) {
+			tmp_e->freelist_next = (i+1)  % max_entries;
+			void *ptr = map_res.mmap_area + (i * value_size);
+			memcpy(ptr, tmp_e, sizeof(*tmp_e));
+		}
+	} else {
+		for (int i = 0; i < max_entries; i++) {
+			tmp_e->freelist_next = (i+1)  % max_entries;
+			bpf_map_update_elem(map_res.fd, &i, tmp_e, BPF_ANY);
+		}
 	}
 
 	// prepare the nodes freelist
@@ -73,9 +84,19 @@ int main(int argc, char *argv[])
 	}
 	max_entries = map_res.info.max_entries;
 	printf("Found %s with %d entries\n", NTABLE_NAME, max_entries);
-	for (int i = 0; i < max_entries; i++) {
-		tmp_n->freelist_next = (i+1) % max_entries;
-		bpf_map_update_elem(map_res.fd, &i, tmp_n, BPF_ANY);
+	if (map_res.mmap_area != NULL) {
+		printf("%s is memory mapped\n", ATABLE_NAME);
+		value_size = map_res.info.value_size;
+		for (int i = 0; i < max_entries; i++) {
+			tmp_n->freelist_next = (i+1) % max_entries;
+			void *ptr = map_res.mmap_area + (i * value_size);
+			memcpy(ptr, tmp_n, sizeof(*tmp_n));
+		}
+	} else {
+		for (int i = 0; i < max_entries; i++) {
+			tmp_n->freelist_next = (i+1) % max_entries;
+			bpf_map_update_elem(map_res.fd, &i, tmp_n, BPF_ANY);
+		}
 	}
 
 	printf("configuring done!\n");

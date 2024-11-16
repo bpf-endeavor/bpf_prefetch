@@ -1,16 +1,11 @@
 obj := .
 src := .
 
-
 DEBUGBPF = -DDEBUG
-DEBUGFLAGS = -O0 -g -Wall
-PFLAGS = $(DEBUGFLAGS)
-
 INCLUDEFLAGS = -I$(obj)/usr/include \
 	       -I$(obj)/include \
 	       -I$(obj) \
 	       -I ../../../libs/
-
 
 always = bpf/balancer.bpf.o
 always += bpf/healthchecking_ipip.o
@@ -18,15 +13,13 @@ always += bpf/healthchecking.bpf.o
 always += bpf/xdp_pktcntr.o
 always += bpf/xdp_root.o
 
-HEADERS = $(wildcard ./katran/lib/bpf/*.h)
-
 pf = bpf/balancer.bpf.pf.o
 
-HOSTCFLAGS += $(INCLUDEFLAGS) $(PFLAGS)
-HOSTCFLAGS_bpf_load.o += $(INCLUDEFLAGS) $(PFLAGS) -Wno-unused-variable
+HEADERS = $(wildcard ./katran/lib/bpf/*.h)
+
 
 # EXTRA_CFLAGS += -DLPM_SRC_LOOKUP=1
-# EXTRA_CFLAGS += -DMAX_CONN_RATE=5000000
+EXTRA_CFLAGS += -DMAX_CONN_RATE=5000000
 EXTRA_CFLAGS += -DUSE_SEETHROUGH_HASHMAP=1
 
 # Allows pointing LLC/CLANG to a LLVM backend with bpf support, redefine on cmdline:
