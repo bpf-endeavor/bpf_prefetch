@@ -1,5 +1,5 @@
 figsize: [4,2]
-x: ["Baseline\n(1 host)", "No prefetch\n(500K hosts)", "With prefetch\n(500K hosts)"]
+x: ["Upper bound\n(1 host)", "No prefetch\n(500K hosts)", "With prefetch\n(500K hosts)"]
 y: [ 1.92, 1.42, 1.58]
 color: ["tab:gray", "tab:red", "tab:blue"]
 hatch: ['xx', '++', '--']
