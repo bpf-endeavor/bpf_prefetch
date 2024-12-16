@@ -1,0 +1,25 @@
+figsize: [5, 2.5]
+x: ['1 flow', '7M flows']
+experiments:
+  - label: 'Baseline'
+    y: [3.8, 1.8]
+    color: "tab:orange"
+    hatch: "+"
+  - label: 'With Prefetch'
+    y: [2.8, 2.17]
+    color: "tab:green"
+    hatch: "//"
+yticks: [0, 1, 2, 3, 4]
+grid: true
+ylabel: 'Throughput (Mpps)'
+legend: true
+output: 'lookup_tput_bar.png'
+annotate:
+  - xy: [-0.05, 4]
+    text: '3.8'
+  - xy: [0.95, 2.0]
+    text: '1.8'
+  - xy: [0.3, 3]
+    text: '2.8'
+  - xy: [1.3, 2.4]
+    text: '2.17'
