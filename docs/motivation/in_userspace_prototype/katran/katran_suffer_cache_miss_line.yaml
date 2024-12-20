@@ -1,0 +1,14 @@
+figsize: [3.0, 3.0]
+subplots:
+  - lines:
+    - label: 'Katran'
+      x: [1, 100, 10000, 100000, 1000000, 8000000]
+      y: [0.02, 0.02, 0.43, 1.56, 44.61, 51.78]
+      color: 'black'
+      marker: 'o'
+    xlogscale: 10
+    ylabel: 'Last Level Cache Misses (%)'
+    xlabel: 'Num. Active Flows'
+    xticks: [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]
+output: 'katran_suffer_cache_miss_bar.pdf'
+comment: "Katran cache miss"

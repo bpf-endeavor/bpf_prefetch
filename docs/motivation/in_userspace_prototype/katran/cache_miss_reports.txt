@@ -1,0 +1,95 @@
+flows: 1
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     2,600,164,684      cycles                                                                  ( +-  0.00% )  (62.15%)
+     3,372,121,267      instructions                     #    1.30  insn per cycle              ( +-  0.01% )  (74.90%)
+       249,630,123      L1-dcache-loads                                                         ( +-  0.02% )  (75.30%)
+        10,219,748      L1-dcache-load-misses            #    4.09% of all L1-dcache accesses   ( +-  0.10% )  (75.30%)
+         4,324,295      l2_rqsts.all_demand_data_rd                                             ( +-  0.17% )  (75.30%)
+         3,796,847      l2_rqsts.demand_data_rd_miss                                            ( +-  0.12% )  (75.30%)
+         3,806,170      LLC-loads                                                               ( +-  0.16% )  (49.41%)
+               898      LLC-load-misses                  #    0.02% of all LL-cache accesses    ( +- 14.79% )  (49.40%)
+
+         1.0040063 +- 0.0000185 seconds time elapsed  ( +-  0.00% )
+
+
+flows: 100
+
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     2,607,066,263      cycles                                                                  ( +-  0.26% )  (62.05%)
+     3,380,831,628      instructions                     #    1.30  insn per cycle              ( +-  0.27% )  (74.70%)
+       250,284,979      L1-dcache-loads                                                         ( +-  0.27% )  (74.70%)
+        11,374,437      L1-dcache-load-misses            #    4.54% of all L1-dcache accesses   ( +-  0.18% )  (75.10%)
+         5,383,377      l2_rqsts.all_demand_data_rd                                             ( +-  0.24% )  (75.49%)
+         3,819,173      l2_rqsts.demand_data_rd_miss                                            ( +-  0.22% )  (75.49%)
+         3,830,185      LLC-loads                                                               ( +-  0.23% )  (49.81%)
+               883      LLC-load-misses                  #    0.02% of all LL-cache accesses    ( +- 33.85% )  (49.41%)
+
+           1.00667 +- 0.00267 seconds time elapsed  ( +-  0.27% )
+
+
+flows: 10000
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     2,606,661,472      cycles                                                                  ( +-  0.27% )  (62.05%)
+     3,341,132,345      instructions                     #    1.28  insn per cycle              ( +-  0.27% )  (74.70%)
+       247,341,510      L1-dcache-loads                                                         ( +-  0.26% )  (74.70%)
+        20,324,267      L1-dcache-load-misses            #    8.22% of all L1-dcache accesses   ( +-  0.30% )  (75.10%)
+        13,962,408      l2_rqsts.all_demand_data_rd                                             ( +-  0.28% )  (75.49%)
+         7,256,771      l2_rqsts.demand_data_rd_miss                                            ( +-  0.30% )  (75.49%)
+         7,265,733      LLC-loads                                                               ( +-  0.25% )  (49.81%)
+            31,035      LLC-load-misses                  #    0.43% of all LL-cache accesses    ( +-  1.74% )  (49.41%)
+
+           1.00664 +- 0.00270 seconds time elapsed  ( +-  0.27% )
+
+flows: 100000
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     2,599,697,658      cycles                                                                  ( +-  0.00% )  (62.15%)
+     3,207,836,124      instructions                     #    1.23  insn per cycle              ( +-  0.02% )  (74.90%)
+       237,511,389      L1-dcache-loads                                                         ( +-  0.02% )  (75.30%)
+        23,356,975      L1-dcache-load-misses            #    9.83% of all L1-dcache accesses   ( +-  0.09% )  (75.30%)
+        15,634,662      l2_rqsts.all_demand_data_rd                                             ( +-  0.05% )  (75.30%)
+        10,807,759      l2_rqsts.demand_data_rd_miss                                            ( +-  0.10% )  (75.30%)
+        10,815,754      LLC-loads                                                               ( +-  0.11% )  (49.41%)
+           168,757      LLC-load-misses                  #    1.56% of all LL-cache accesses    ( +-  0.59% )  (49.40%)
+
+         1.0040109 +- 0.0000196 seconds time elapsed  ( +-  0.00% )
+
+
+flows: 1000000
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     2,599,616,675      cycles                                                                  ( +-  0.00% )  (62.15%)
+     2,261,198,959      instructions                     #    0.87  insn per cycle              ( +-  0.02% )  (74.90%)
+       167,723,323      L1-dcache-loads                                                         ( +-  0.02% )  (75.30%)
+        19,475,280      L1-dcache-load-misses            #   11.61% of all L1-dcache accesses   ( +-  0.11% )  (75.30%)
+        12,853,323      l2_rqsts.all_demand_data_rd                                             ( +-  0.07% )  (75.30%)
+         8,873,986      l2_rqsts.demand_data_rd_miss                                            ( +-  0.09% )  (75.30%)
+         8,881,268      LLC-loads                                                               ( +-  0.08% )  (49.41%)
+         3,961,872      LLC-load-misses                  #   44.61% of all LL-cache accesses    ( +-  0.06% )  (49.40%)
+
+        1.00406494 +- 0.00000796 seconds time elapsed  ( +-  0.00% )
+
+
+flows: 8000000
+
+ Performance counter stats for 'CPU(s) 0' (3 runs):
+
+     2,599,578,388      cycles                                                                  ( +-  0.00% )  (62.15%)
+     1,722,018,204      instructions                     #    0.66  insn per cycle              ( +-  0.02% )  (74.90%)
+       129,002,592      L1-dcache-loads                                                         ( +-  0.02% )  (75.30%)
+        18,869,179      L1-dcache-load-misses            #   14.63% of all L1-dcache accesses   ( +-  0.05% )  (75.30%)
+        13,259,946      l2_rqsts.all_demand_data_rd                                             ( +-  0.05% )  (75.30%)
+        10,839,824      l2_rqsts.demand_data_rd_miss                                            ( +-  0.05% )  (75.30%)
+        10,843,473      LLC-loads                                                               ( +-  0.06% )  (49.41%)
+         5,614,477      LLC-load-misses                  #   51.78% of all LL-cache accesses    ( +-  0.03% )  (49.40%)
+
+         1.0040485 +- 0.0000104 seconds time elapsed  ( +-  0.00% )
+
