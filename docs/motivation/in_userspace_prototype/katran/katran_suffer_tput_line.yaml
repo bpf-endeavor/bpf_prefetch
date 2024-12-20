@@ -2,43 +2,40 @@ figsize: [3.0, 3.0]
 subplots:
   - lines:
     - label: 'Katran'
-      x: [1, 100, 10000, 100000, 1000000, 8000000]
-      y: [3.43, 3.43, 3.39, 3.27, 2.3, 1.75]
+      x: [1, 100, 10000, 100000, 1000000, 2500000, 5000000, 8000000]
+      y: [2.42, 2.42, 2.38, 2.28, 1.74, 1.65, 1.58, 1.50]
       color: 'black'
       marker: 'o'
-    xlogscale: 10
+      xscale: 0.000001
     ylabel: 'Throughput (Mpps)'
-    xlabel: 'Num. Active Flows'
-    yticks: [0, 1.5, 3, 4.5]
-    xticks: [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]
+    xlabel: 'Num. Active Flows (Millions)'
+    yticks: [0, 1, 2, 3]
     annotate_line:
-      - xy1: [0, 2.3]
+      - xy1: [0, 1.74]
         slope: 0
         linestyle: ':'
-        color: 'tab:blue'
+        color: 'blue'
     annotate:
-      - xy: [0.9, 3.7]
-        text: '3.43'
-      - xy: [99.9, 3.7]
-        text: '3.43'
-      - xy: [9999.9, 3.7]
-        text: '3.39'
-      - xy: [150000, 3.4]
-        text: '3.27'
-      - xy: [999999.0, 2.5]
-        text: '2.3'
-      - xy: [5000000.0, 2.0]
-        text: '1.75'
-      - xy: [400, 2.7]
-        text: '-32%'
+      - xy: [0.1, 2.6]
+        text: '2.42'
+      - xy: [1, 1.9]
+        text: '1.74'
+      - xy: [2.4, 1.80]
+        text: '1.65'
+      - xy: [4.8, 1.70]
+        text: '1.58'
+      - xy: [7.4, 1.6]
+        text: '1.5'
+      # - xy: [0, 2.0]
+      #   text: '-26.8%'
     arrow:
-      - x: 10000
-        y: 3.39
-        dy: -1.09
+      - x: 0.010
+        y: 2.38
+        dy: -0.64
         dx: 0
         length_includes_head: true
-        color: 'tab:blue'
-        head_width: 5000
+        color: 'blue'
+        head_width: 0.3
         head_length: 0.2
 output: 'katran_suffer_tput_bar.pdf'
 comment: "Katran throughput"

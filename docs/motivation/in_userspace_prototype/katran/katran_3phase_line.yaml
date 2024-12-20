@@ -1,0 +1,37 @@
+figsize: [3.0, 3.0]
+subplots:
+  - lines:
+    - label: 'Katran'
+      x: [1, 100, 10000, 100000, 1000000, 2500000, 5000000, 8000000]
+      y: [2.42, 2.42, 2.38, 2.28, 1.74, 1.65, 1.58, 1.50]
+      color: 'black'
+      marker: 'o'
+      xscale: 0.000001
+    - label: '3 Phase Lookup'
+      x: [1, 100, 10000, 100000, 1000000, 2500000, 5000000, 8000000]
+      y: [2.06, 2.06, 2.06, 2.04, 1.94, 1.9, 1.85, 1.78]
+      color: 'tab:purple'
+      marker: 's'
+      xscale: 0.000001
+    ylabel: 'Throughput (Mpps)'
+    xlabel: 'Num. Active Flows (Millions)'
+    yticks: [0, 1, 2, 3]
+    # xticks: [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]
+    legend: true
+    # annotate:
+    #   - xy: [1, 1.8]
+    #     text: '-14.9%'
+    #   # - xy: [100, 1.8]
+    #   #   text: '-14.9%'
+    #   - xy: [10000, 1.8]
+    #     text: '-13.4%'
+    #   # - xy: [100000, 1.8]
+    #   #   text: '-10.5%'
+    #   # - xy: [1000000, 1.9]
+    #   #   text: '11.5%'
+    #   - xy: [500000, 2.2]
+    #     text: '+18.7%'
+output: 'katran_3phase_line.pdf'
+# output: 'katran_3phase_line.png'
+comment: "Katran throughput"
+
