@@ -4,4 +4,5 @@ tags
 .o
 .a
 .so
-
+*.pyc
+*.pcap
