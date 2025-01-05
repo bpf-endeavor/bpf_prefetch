@@ -2,7 +2,7 @@ figsize: [5, 2.5]
 x: ['1 flow', '7M flows']
 experiments:
   - label: 'Baseline'
-    y: [3.4, 2.9]
+    y: [3.4, 1.9]
     color: "tab:orange"
     hatch: "+"
   - label: 'With Prefetch'
@@ -20,8 +20,8 @@ annotate:
     text: '3.4'
   - xy: [0.3, 3]
     text: '2.8'
-  - xy: [0.95, 3.1]
-    text: '2.9'
+  - xy: [0.95, 2.1]
+    text: '1.9'
   - xy: [1.3, 2.7]
     text: '2.5'
 comment: "The experiment compares a 3 stage batch processing of packets which

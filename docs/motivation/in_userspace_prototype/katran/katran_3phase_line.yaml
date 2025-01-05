@@ -31,7 +31,7 @@ subplots:
     #   #   text: '11.5%'
     #   - xy: [500000, 2.2]
     #     text: '+18.7%'
-output: 'katran_3phase_line.pdf'
-# output: 'katran_3phase_line.png'
+# output: 'katran_3phase_line.pdf'
+output: 'katran_3phase_line.png'
 comment: "Katran throughput"
 

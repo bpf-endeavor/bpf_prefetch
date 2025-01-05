@@ -11,5 +11,6 @@ subplots:
     ylabel: 'Last Level Cache Misses (%)'
     xlabel: 'Num. Active Flows (Millions)'
     # xticks: [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]
-output: 'katran_suffer_cache_miss_bar.pdf'
+# output: 'katran_suffer_cache_miss_bar.pdf'
+output: 'katran_suffer_cache_miss_bar.png'
 comment: "Katran cache miss"
