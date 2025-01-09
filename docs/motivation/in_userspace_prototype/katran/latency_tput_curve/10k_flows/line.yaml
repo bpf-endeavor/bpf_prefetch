@@ -1,0 +1,44 @@
+figsize: [8, 2.5]
+subplots:
+  - lines:
+    - label: 'baseline'
+      x: [0.01, 0.1, 1, 1.3, 1.6, 1.9, 2, 2.3, 2.6]
+      y: [7392,8020,8800,11711,15851,19290,13570,28350,385826]
+      marker: 'o'
+      scale: 0.001
+      color: 'black'
+    - label: '3 phased lookup'
+      x: [0.01, 0.1, 1, 1.3, 1.6, 1.9, 2, 2.3, 2.6]
+      y: [7087,7994,8765,12122,16189,19319,13584,29481,369523]
+      scale: 0.001
+      marker: 'd'
+      color: 'tab:orange'
+      linestyle: '-.'
+    xticks: [0.01, 0.5, 1, 1.5, 2, 2.5]
+    ylabel: 'Median Latency (µs)'
+    xlabel: 'Offered load (Mpps)'
+    legend: true
+    ylim: [0, 100]
+    title: 'Median'
+  - lines:
+    - label: 'baseline'
+      x: [0.01, 0.1, 1, 1.3, 1.6, 1.9, 2, 2.3, 2.6]
+      y: [18620,10846,20779,20506,27516,49335,76866,216143,391797]
+      scale: 0.001
+      marker: 'o'
+      color: 'black'
+    - label: '3 phased lookup'
+      x: [0.01, 0.1, 1, 1.3, 1.6, 1.9, 2, 2.3, 2.6]
+      y: [16991,9312,20879,21870,26892,41427,105150,212687,409605]
+      scale: 0.001
+      marker: 'd'
+      color: 'tab:orange'
+      linestyle: '-.'
+    xticks: [0.01, 0.5, 1, 1.5, 2, 2.5]
+    ylabel: 'Median Latency (µs)'
+    xlabel: 'Offered load (Mpps)'
+    # legend: true
+    ylim: [0, 100]
+    title: '@99 Percentile'
+suptitle: 'Active flows: 10K'
+output: '10k_flow_lat_tput_line.png'
