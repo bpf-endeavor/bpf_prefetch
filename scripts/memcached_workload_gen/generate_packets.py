@@ -15,6 +15,8 @@ distribution. Increasing it will create a more skewed workload.
 """
 import os
 import sys
+from socket import htons
+import ctypes
 from scapy.all import Ether, IP, UDP, Raw, wrpcap
 from argparse import ArgumentParser
 from multiprocessing import Pool
@@ -23,13 +25,29 @@ common_lib_dir = os.path.join(curdir, '../../libs/common/')
 sys.path.insert(0, common_lib_dir)
 from zipf import Zipf
 
-src_mac = '00:8c:fa:f7:1c:5c'
-dst_mac = 'e8:eb:d3:a7:0c:b6'
+src_mac = '9c:dc:71:5d:61:01'
+dst_mac = '9c:dc:71:5b:42:81'
 src_ip = '192.168.1.2'
 dst_ip = '192.168.1.1'
 src_port = 5432
 dst_port = 8080
 payload = 'get {0}\r\n\0'
+
+class UDPMeta(ctypes.Structure):
+    """
+    typedef struct __attribute__ ((__packed__)) {
+  uint16_t req_id;
+  uint16_t seq_no;
+  uint16_t datagrams;
+  uint16_t reserved;
+} udp_header_t;
+    """
+    _fields_ = [
+            ('req_id', ctypes.c_int16),
+            ('seq_no', ctypes.c_int16),
+            ('dtagrams', ctypes.c_int16),
+            ('reserved', ctypes.c_int16),
+            ]
 
 
 def parse_args():
@@ -58,8 +76,14 @@ def format_key(key_index: int, key_len: int):
     return ('0' * leading_zeros) + tmp
 
 
-def fn(key):
-    return form_packet(src_ip, src_port, dst_ip, dst_port, key)
+def fn(arg):
+    req_id, key_index, key_len = arg
+    key = format_key(key_index, key_len)
+    req = payload.format(key)
+    meta = bytes(UDPMeta(htons(req_id), 0, htons(1), 0))
+    assert(len(meta) == 8)
+    body = meta + req.encode('ascii')
+    return form_packet(src_ip, src_port, dst_ip, dst_port, body)
 
 
 def main(args):
@@ -68,15 +92,14 @@ def main(args):
     # distribution of packets
     r = args.records * 4
     z = Zipf(args.records, args.zipf)
-    keys = []
+    pkt_info = []
     for i in range(r):
         key_index = z.sample()
-        key = format_key(key_index, args.key_len)
-        req = payload.format(key)
-        keys.append(req)
+        req_id = i % (1 << 15)
+        pkt_info.append((req_id, key_index, args.key_len))
     print('Generating packets...')
     with Pool(10) as p:
-        pkts = p.map(fn, keys)
+        pkts = p.map(fn, pkt_info)
     print('Writing packets to disk...')
     wrpcap(args.output, pkts)
     print('Generated a pcap file with', r, 'packets. Zipf=', args.zipf,
