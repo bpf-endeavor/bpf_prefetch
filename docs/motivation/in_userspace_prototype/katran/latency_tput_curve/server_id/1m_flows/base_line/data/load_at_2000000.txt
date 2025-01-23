@@ -1,0 +1,72 @@
+EAL: Detected CPU lcores: 20
+EAL: Detected NUMA nodes: 1
+EAL: Detected shared linkage of DPDK
+EAL: Multi-process socket /var/run/dpdk/rte/mp_socket
+EAL: Selected IOVA mode 'VA'
+EAL: Probe PCI driver: mlx5_pci (15b3:1015) device: 0000:03:00.1 (socket 0)
+TELEMETRY: No legacy callbacks, legacy socket not created
+Count core: 1
+Number of queues: 1
+Connecting to port 0 with 1 queues
+ip: 192.168.1.1
+server port is 8080
+Expect the server to change the location of timestamp by 20 bytes
+sending ARP requests
+mac address for server 192.168.1.1 received: 9c:dc:71:5e:f:41
+ARP requests finished
+-------------------------------------
+708394
+718400
+683658
+695303
+713101
+719099
+712046
+708649
+705280
+719469
+710190
+705901
+712516
+714363
+702047
+709815
+692915
+719520
+724899
+725289
+700646
+717072
+715602
+713779
+721720
+717684
+682743
+694311
+724142
+701102
+709442
+719066
+712229
+706683
+687134
+700835
+722003
+706323
+721104
+706198
+714671
+697566
+902556
+705980
+720015
+713192
+720281
+714635
+726244
+708697
+719242
+707062
+703029
+-------------------------------------
+
