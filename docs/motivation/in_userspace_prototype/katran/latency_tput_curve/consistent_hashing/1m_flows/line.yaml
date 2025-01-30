@@ -13,7 +13,7 @@ subplots:
       color: 'tab:orange'
       linestyle: '-.'
     xticks: [0.01, 0.5, 1, 1.5, 2, 2.5]
-    ylabel: 'Median Latency (µs)'
+    ylabel: 'Latency (µs)'
     xlabel: 'Offered load (Mpps)'
     legend: true
     ylim: [0, 100]
@@ -31,7 +31,7 @@ subplots:
       color: 'tab:orange'
       linestyle: '-.'
     xticks: [0.01, 0.5, 1, 1.5, 2, 2.5]
-    ylabel: 'Median Latency (µs)'
+    ylabel: 'Latency (µs)'
     xlabel: 'Offered load (Mpps)'
     # legend: true
     ylim: [0, 100]

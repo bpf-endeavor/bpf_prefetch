@@ -1,7 +1,7 @@
-figsize: [4, 2]
+figsize: [3, 2]
 x: ['Baseline', 'with prefetching']
 y: [5.241, 8.143]
-color: ['tab:red', 'tab:blue']
+color: ['tab:green', 'tab:red']
 hatch: ['++', '--']
 ylabel: 'Throughput (Mpps)'
 yticks: [0, 2.5, 5, 7.5, 10]
@@ -11,10 +11,10 @@ annotate:
     text: '5.241'
   - xy: [0.9, 8.3]
     text: '8.143'
-  - xy: [0.520, 6.2]
-    text: '55.37%'
+  - xy: [0.490, 6.2]
+    text: '55%'
 arrow:
-  - x: 0.5
+  - x: 0.47
     y: 5.241
     dx: 0
     dy: 2.902
