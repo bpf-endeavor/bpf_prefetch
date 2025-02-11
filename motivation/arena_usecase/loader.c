@@ -15,7 +15,7 @@
 #include "include/shared_struct.h"
 #include "include/bpf_arena_htab.h"
 #include "macchiato.skel.h"
-// #include "cappuccino.skel.h"
+#include "cappuccino.skel.h"
 
 /* Some global vars */
 static char *ifacename;
@@ -24,7 +24,7 @@ static int xdp_flags;
 static bool use_arena;
 static volatile int running = 0;
 static struct macchiato *xskel = NULL;
-/* static struct cappuccino *cskel = NULL; */
+static struct cappuccino *cskel = NULL;
 
 static void handle_signal(int s)
 {
@@ -104,6 +104,7 @@ int launch_macchiato(void)
         /* Attach XDP */
         int prog_fd = bpf_program__fd(xskel->progs.macchiato_main);
         if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
             bpf_xdp_detach(ifindex, xdp_flags, NULL);
             macchiato__destroy(xskel);
             return EXIT_FAILURE;
@@ -126,6 +127,57 @@ int launch_macchiato(void)
 
 int launch_cappuccino(void)
 {
+    int ret;
+    cskel = cappuccino__open();
+    if (!cskel) {
+        fprintf(stderr, "Failed to open cappuccino skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    if (cappuccino__load(cskel)) {
+        fprintf(stderr, "Failed to load cappuccino program\n");
+        cappuccino__destroy(cskel);
+        return EXIT_FAILURE;
+    }
+
+    /* load entries into map */
+    for (int i = 0; i < 128; i++) {
+        my_key_t k = {
+            .zero = 0,
+            .dport = htons(8000 + i),
+        };
+        my_value_t v;
+        memset(&v, 0, sizeof(v));
+        sprintf(v.msg, "hello %d\n", i);
+        ret = bpf_map__update_elem(cskel->maps.rules, &k, sizeof(k), &v,
+                sizeof(v), 0);
+        if (ret != 0) {
+            fprintf(stderr, "Failed to update hash map\n");
+        }
+    }
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(cskel->progs.cappuccino_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            cappuccino__destroy(cskel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    cappuccino__destroy(cskel);
+    printf("Done!\n");
     return 0;
 }
 

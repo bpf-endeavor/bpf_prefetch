@@ -10,7 +10,7 @@ CFLAGS += -I $(skeleton_dir)
 LDFLAGS = $(shell pkg-config --libs libbpf)
 
 # Skeleton header files that loader relies on
-bpf_names = macchiato
+bpf_names = macchiato cappuccino
 skeletons = $(addprefix $(skeleton_dir), $(addsuffix .skel.h, $(bpf_names)))
 $(info $(skeletons))
 
