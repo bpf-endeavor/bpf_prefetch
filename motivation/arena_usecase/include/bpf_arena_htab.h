@@ -30,13 +30,13 @@ typedef __u16 valsz_t;
 #endif
 
 struct htab_bucket {
-	struct arena_list_head head;
+    struct arena_list_head head;
 };
 typedef struct htab_bucket __arena htab_bucket_t;
 
 struct htab {
-	htab_bucket_t *buckets;
-	int n_buckets;
+    htab_bucket_t *buckets;
+    int n_buckets;
     /* NOTE: use a free list or maple tree for tracking the elements slabs :)!
      * What am I doing here is just a hack to test the idea */
     void *elems;
@@ -48,20 +48,20 @@ typedef struct htab __arena htab_t;
 
 static inline htab_bucket_t *__select_bucket(htab_t *htab, __u32 hash)
 {
-	htab_bucket_t *b = htab->buckets;
+    htab_bucket_t *b = htab->buckets;
 
-	cast_kern(b);
-	return &b[hash & (htab->n_buckets - 1)];
+    cast_kern(b);
+    return &b[hash & (htab->n_buckets - 1)];
 }
 
 static inline arena_list_head_t *select_bucket(htab_t *htab, __u32 hash)
 {
-	return &__select_bucket(htab, hash)->head;
+    return &__select_bucket(htab, hash)->head;
 }
 
 struct hashtab_elem {
-	struct arena_list_node hash_node;
-	int hash;
+    struct arena_list_node hash_node;
+    int hash;
     /* Key, and value would be here */
 };
 typedef struct hashtab_elem __arena hashtab_elem_t;
@@ -216,18 +216,41 @@ static inline size_t round_down_pow_two(size_t x)
     return 1 << counter;
 }
 
-static inline int htab_init_userspace(void *area, __u32 max_entries,
-        htab_t **htab_ptr)
+static inline size_t round_up_pow_two(size_t x)
 {
-#define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
-    const int count_bucket_page = 4;
-    const int count_value_page = 6;
+    // check if it is already power of two
+    if ((x & (x - 1)) == 0) {
+        return x;
+    }
+    return round_down_pow_two(x) << 1;
+}
+
+static inline int htab_init_userspace(void *area, __u32 max_entries,
+        htab_t **htab_ptr /* out */)
+{
+#define COUNT_OBJ(A, B) ((((A) + (B)) - 1) / (B))
+#define ROUND_UP(N, S) (COUNT_OBJ(N, S) * (S))
+
+    /* memory size that I need for the htab structure it self */
+    uint64_t htab_size_rounded = ROUND_UP(sizeof(htab_t), 64);
+    /* number of buckets that I want */
+    const int n_buckets = round_up_pow_two(max_entries);
+    /* amount of memory that I want to allocate for bucket and htab */
+    const int mem_sz_buckets =
+        n_buckets * sizeof(htab_bucket_t) + htab_size_rounded;
+    /* amount of memory that I want for the entries */
+    const int mem_sz_entries = max_entries *  sizeof(my_value_t);
+    const int count_bucket_page = COUNT_OBJ(mem_sz_buckets, PAGE_SIZE);
+    const int count_value_page = COUNT_OBJ(mem_sz_entries, PAGE_SIZE);
+    /* total number of pages that I need */
     const int count_pages = count_bucket_page + count_value_page; 
+    printf("requred number of pages: %d (%d + %d)\n",
+            count_pages, count_bucket_page, count_value_page);
+
     {
         /* Make sure the requested number of pages are allocated. Try to access
-         * them to make sure. If it is not allocated the fault signal should cause
-         * the kernel to allocate it.
-         * */
+         * them to make sure. If it is not allocated the fault signal should
+         * cause the kernel to allocate it.  */
         __u8 *ptr = area;
         for (size_t i = 0; i < count_pages; i++) {
             *(__u32 *)&ptr[PAGE_SIZE * i + 0] = 0x0000;
@@ -235,18 +258,14 @@ static inline int htab_init_userspace(void *area, __u32 max_entries,
     }
 
     htab_t *htab = area; 
-    uint64_t htab_size_rounded = ROUND_UP(sizeof(htab_t), 64);
     void __arena *buckets = area + htab_size_rounded;
     void __arena *elems = area + (count_bucket_page * PAGE_SIZE);
-
-    const uint64_t bucket_mem_sz = count_bucket_page *  PAGE_SIZE - htab_size_rounded;
-    const uint64_t num_buckets = round_down_pow_two(bucket_mem_sz / sizeof(htab_bucket_t));
 
     /* NOTE: I think we do not need to initilize buckets (linked-lists)
      * because they are all set to zero uppon allocation (test this).
      * */
     htab->buckets = buckets;
-    htab->n_buckets = num_buckets;
+    htab->n_buckets = n_buckets;
     /*printf("number of buckets: %lu\n", num_buckets);*/
     htab->elems = elems;
     htab->elems_sz = count_value_page * PAGE_SIZE;
@@ -266,6 +285,7 @@ static inline int htab_update_elem_userspace(htab_t *htab __arg_arena,
     head = select_bucket(htab, hash);
     l_old = lookup_elem_raw(head, hash, key, sizeof(my_key_t));
 
+    /* TODO: I need a memory management on top of this raw memory */
     const __u64 elem_sz = sizeof(hashtab_elem_t) + sizeof(my_key_t) +
         sizeof(my_value_t);
     if (htab->elems_sz - htab->elems_used > elem_sz) {
@@ -285,6 +305,9 @@ static inline int htab_update_elem_userspace(htab_t *htab __arg_arena,
     /*printf("l_val: %s @%llu\n", (char *)l_val, (__u64)l_val - (__u64)l_new);*/
     /*printf("sizeof hash_elem_t: %llu\n", sizeof(hashtab_elem_t));*/
 
+    /* TODO: make sure the depth of list does not exceed a value (BPF is
+     * bounded, it is fine if XDP can not find it but just to control the
+     * experiments, I must know what conditions arises)*/
     list_add_head_userspace(&l_new->hash_node, head);
     if (l_old) {
         printf("THIS MUST NOT HAPPEN\n");
