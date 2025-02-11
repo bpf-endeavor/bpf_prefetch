@@ -1,3 +1,4 @@
+// vim: et st=4 sw=4:
 #include <arpa/inet.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -6,21 +7,37 @@
 #include <unistd.h>
 #include <net/if.h>
 
+#include <linux/if_link.h> // XDP_FLAGS_*
+
 #include "include/compiler.h"
 #include <bpf/bpf.h>
 
 #include "include/shared_struct.h"
-
 #include "include/bpf_arena_htab.h"
-
 #include "macchiato.skel.h"
+// #include "cappuccino.skel.h"
 
 /* Some global vars */
+static char *ifacename;
+static int ifindex;
+static int xdp_flags;
+static bool use_arena;
 static volatile int running = 0;
 static struct macchiato *xskel = NULL;
+/* static struct cappuccino *cskel = NULL; */
 
-static void handle_signal(int s) {
+static void handle_signal(int s)
+{
     running = 0;
+}
+
+static void usage(void)
+{
+    printf("Usage: prog OPTIONS\n"
+           "OPTIONS:\n"
+           "\t--arena: use the hash map made with Arena"
+           "ENV Vars:\n"
+           "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
 
 static void prepare_arena_htab_for_xdp(void)
@@ -41,19 +58,18 @@ static void prepare_arena_htab_for_xdp(void)
             sizeof(my_value_t));
 
     /* Initialize the htab data-structure */
-    htab_init_userspace(area, &htab);
+    htab_init_userspace(area, 8000000 /*max entries*/, &htab);
+    printf("Number of buckets: %d\n", htab->n_buckets);
 
     const __u16 base_port = 8000;
-    for (int i = 0; i < 1; i++) {
-        /* printf("i = %d\n", i); */
+    for (int i = 0; i < 128; i++) {
         __u16 tmp_port = htons(base_port + i);
         my_key_t tmp_key;
         memset(&tmp_key, 0, sizeof(tmp_key));
         tmp_key.dport = tmp_port;
         my_value_t tmp_val;
         memset(&tmp_val, 0, sizeof(tmp_val));
-        sprintf(tmp_val.msg, "hello %d\0", i);
-        /* printf("%s\n", tmp_val.msg); */
+        sprintf(tmp_val.msg, "hello %d\n", i);
         if(htab_update_elem_userspace(htab, &tmp_key, &tmp_val) != 0) {
             fprintf(stderr, "Failed to insert a value into the hash map\n");
             break;
@@ -67,18 +83,8 @@ static void prepare_arena_htab_for_xdp(void)
     return;
 }
 
-int main(int argc, char *argv[])
+int launch_macchiato(void)
 {
-    char *ifacename = "veth1";
-    const int ifindex = if_nametoindex(ifacename);
-    const int xdp_flags = 0;
-
-    if (!ifindex) {
-        fprintf(stderr, "Failed to find the interface (%s) for XDP program!\n",
-                ifacename);
-        return EXIT_FAILURE;
-    }
-
     xskel = macchiato__open();
     if (!xskel) {
         fprintf(stderr, "Failed to open macchiato skeleton\n");
@@ -91,7 +97,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    sleep(1);
     /* The XDP program is loaded but is not receiving packets right now */
     prepare_arena_htab_for_xdp();
 
@@ -117,4 +122,40 @@ int main(int argc, char *argv[])
     macchiato__destroy(xskel);
     printf("Done!\n");
     return 0;
+}
+
+int launch_cappuccino(void)
+{
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    /*  The program relies on NET_IFACE env variable */
+    ifacename = getenv("NET_IFACE");
+    if (ifacename == NULL) {
+        ifacename = "veth1";
+    }
+    ifindex = if_nametoindex(ifacename);
+    /* TODO: make sure it is running in zero copy mode */
+    xdp_flags = 0;
+    use_arena = false;
+
+    if (argc > 1) {
+        if (strncmp(argv[1], "--arena", 7) == 0) {
+            use_arena = true;
+        }
+    }
+
+    if (!ifindex) {
+        fprintf(stderr, "Failed to find the interface (%s) for XDP program!\n",
+                ifacename);
+        return EXIT_FAILURE;
+    }
+
+    if (use_arena) {
+        return launch_macchiato();
+    } else {
+        return launch_cappuccino();
+    }
 }

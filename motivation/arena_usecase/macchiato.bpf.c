@@ -15,7 +15,6 @@
 
 #include "stddef.h"
 #include "compiler.h"
-#include "csum_helper.h"
 
 /* I need this dummy function to register arena with the XDP while not using
  * any sleepable function (it is from a kernel module that you have to load) */
@@ -31,66 +30,13 @@ struct {
 /* The htab requires an Arena MAP named ``arena'' to be defined before */
 #include "bpf_arena_htab.h"
 
+#include "xdp_helpers.h"
+
 htab_t *rules = NULL;
-
-static inline int
-__prepare_headers_before_send(struct xdp_md *xdp)
-{
-  struct ethhdr *eth = (void *)(__u64)xdp->data;
-  struct iphdr *ip = (struct iphdr *)(eth + 1);
-  struct udphdr *udp = (struct udphdr *)(ip + 1);
-  if ((void *)(udp + 1) > (void *)(__u64)xdp->data_end)
-    return -1;
-  /* Swap MAC */
-  __u8 tmp;
-  for (int i = 0; i < 6; i++) {
-    tmp = eth->h_source[i];
-    eth->h_source[i] = eth->h_dest[i];
-    eth->h_dest[i] = tmp;
-  }
-  /* Swap IP */
-  __u32 tmp_ip = ip->saddr;
-  ip->saddr = ip->daddr;
-  ip->daddr = tmp_ip;
-  /* Swap port */
-  __u16 tmp_port = udp->source;
-  udp->source = udp->dest;
-  udp->dest = tmp_port;
-
-  const __u32 new_packet_len = ((__u64)xdp->data_end - (__u64)xdp->data);
-  const __u32 new_ip_len  = new_packet_len - sizeof(struct ethhdr);
-  const __u32 new_udp_len = new_ip_len - sizeof(struct iphdr);
-  __u64 csum;
-
-  /* IP fields */
-  ip->tot_len = bpf_htons(new_ip_len);
-  ip->ttl = 64;
-  ip->frag_off = 0;
-  ip->check = 0;
-  csum = 0;
-  ipv4_csum_inline(ip, &csum);
-  ip->check = bpf_htons(csum);
-
-  /* UDP  fields */
-  udp->len = bpf_htons(new_udp_len);
-  /* UDP checksum ? */
-  /* udp->check = 0; */
-  /* csum = 0; */
-  /* ipv4_l4_csum_inline((void *)(__u64)xdp->data_end, udp, ip, */
-  /*     &csum); */
-  /* udp->check = bpf_ntohs(csum); */
-
-  /* no checksum */
-  udp->check = 0;
-  /* bpf_printk("data: %s", (char *)(__u64)xdp->data + DATA_OFFSET); */
-  return 0;
-}
 
 SEC("xdp")
 int macchiato_main(struct xdp_md *xdp)
 {
-    bpf_printk("macchiato: hello world");
-
     if (rules == NULL) {
         /* just to make sure this program uses the arena */
         my_kfunc_reg_arena(&arena);
@@ -109,7 +55,6 @@ int macchiato_main(struct xdp_md *xdp)
     if (!(tmp_port >= 8000 && tmp_port < 8128))
         return XDP_PASS;
 
-    bpf_printk("macchiato: about to do the lookup");
     my_key_t k = {
         .zero = 0,
         .dport = udp->dest,
@@ -119,13 +64,11 @@ int macchiato_main(struct xdp_md *xdp)
         bpf_printk("macchiato: did not found anything!");
         return XDP_PASS;
     }
-    bpf_printk("macchiato: says %s (%p)", v->msg, v);
-    for (int i = 0; i < 30; i++) {
-        bpf_printk("%x", ((__u8 *)v)[i]);
-    }
+    /*bpf_printk("macchiato: says %s (%p)", (void *)v->msg, v);*/
+    /*for (int i = 0; i < 30; i++) {*/
+    /*    bpf_printk("%x", ((__u8 *)v)[i]);*/
+    /*}*/
     /*return XDP_PASS;*/
-    char tmp[32];
-    my_memcpy(tmp, (void *)v, 30);
 
     char *payload = (char *)(udp + 1);
     const __u16 target_size = sizeof(my_value_t);
@@ -135,7 +78,7 @@ int macchiato_main(struct xdp_md *xdp)
         short delta = target_size - payload_len;
         if (delta != 0) {
             if (bpf_xdp_adjust_tail(xdp, delta) != 0) {
-                bpf_printk("failed to resize the packet (%d)", delta);
+                bpf_printk("macchiato: failed to resize the packet (%d)", delta);
                 return XDP_PASS;
             }
             data = (void *)(__u64)xdp->data;
@@ -147,10 +90,8 @@ int macchiato_main(struct xdp_md *xdp)
         bpf_printk("Not enough space even after resizing. This must never happen!");
         return XDP_DROP;
     }
-    __builtin_memcpy(payload, tmp, 31); // <------- 
+    __builtin_memcpy(payload, (void *)v, target_size);
     // send reply back to netcat!
-    //
-    bpf_printk("about to TX!");
     __prepare_headers_before_send(xdp);
     return XDP_TX;
 }

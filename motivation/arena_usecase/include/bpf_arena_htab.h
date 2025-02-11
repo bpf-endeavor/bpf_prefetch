@@ -216,7 +216,8 @@ static inline size_t round_down_pow_two(size_t x)
     return 1 << counter;
 }
 
-static inline int htab_init_userspace(void *area, htab_t **htab_ptr)
+static inline int htab_init_userspace(void *area, __u32 max_entries,
+        htab_t **htab_ptr)
 {
 #define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
     const int count_bucket_page = 4;
