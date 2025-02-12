@@ -56,7 +56,6 @@ int macchiato_main(struct xdp_md *xdp)
         return XDP_PASS;
 
     my_key_t k = {
-        .zero = 0,
         .dport = udp->dest,
     };
     my_value_t __arena *v = htab_lookup_elem(rules, &k);

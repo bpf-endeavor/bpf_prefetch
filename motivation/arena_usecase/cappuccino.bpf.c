@@ -19,8 +19,19 @@ struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __type(key,  my_key_t);
     __type(value, my_value_t);
-    __uint(max_entries, 1 << 19);
+    __uint(max_entries, 8000000);
 } rules SEC(".maps");
+
+struct _value_batch {
+    my_value_t vals[32];
+} __packed;
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __type(key,  __u32);
+    __type(value, struct _value_batch);
+    __uint(max_entries, 1);
+} scratch_map SEC(".maps");
 
 SEC("xdp")
 int cappuccino_main(struct xdp_md *xdp)
@@ -30,21 +41,46 @@ int cappuccino_main(struct xdp_md *xdp)
     struct ethhdr *eth = data;
     struct iphdr *ip = (void *)(eth+1);
     struct udphdr *udp = (void *)(ip + 1);
-    if ((void *)(udp + 1) > data_end)
+    req_t *r = (void *)(udp + 1);
+    if ((void *)(r + 1) > data_end)
         return XDP_PASS;
     __u16 tmp_port = bpf_ntohs(udp->dest);
     if (!(tmp_port >= 8000 && tmp_port < 8128))
         return XDP_PASS;
 
-    my_key_t k = { .zero = 0, .dport = udp->dest, };
-    my_value_t *v = bpf_map_lookup_elem(&rules, &k);
-    if (v == NULL) {
-        bpf_printk(TAG"did not found anything!");
-        return XDP_PASS;
+    __u16 count_req = r->count_req;
+    if (count_req > 32) {
+        bpf_printk(TAG"To many requested keys");
+        return XDP_DROP;
     }
 
+    int zero = 0;
+    struct _value_batch *scratch = bpf_map_lookup_elem(&scratch_map, &zero);
+    if (scratch == NULL) {
+        bpf_printk(TAG"faild to get scratch memory");
+        return XDP_DROP;
+    }
+
+    for (int i = 0; i < count_req; i++) {
+        if ((void *)&r->reqs[i + 1] > data_end) {
+            bpf_printk(TAG"requested id @%d out of packet range", i);
+            return XDP_DROP;
+        }
+        my_key_t k = {
+            .dport = r->reqs[i],
+        };
+        my_value_t *v = bpf_map_lookup_elem(&rules, &k);
+        if (v == NULL) {
+            bpf_printk(TAG"did not id=%d (@%d)!", k.dport, i);
+            return XDP_DROP;
+        }
+        /* TODO: can I avoid copying the data into the scratch ? */
+        /* keep the data on the scratch */
+        scratch->vals[i] = *v;
+    }
+
+    __u16 target_size = sizeof(my_value_t) * count_req;
     char *payload = (char *)(udp + 1);
-    const __u16 target_size = sizeof(my_value_t);
     {
         // check if we need to change the payload size to match our reply
         __u16 payload_len = (__u64)data_end - (__u64)payload;
@@ -59,11 +95,17 @@ int cappuccino_main(struct xdp_md *xdp)
             payload = data + sizeof(*eth) + sizeof(*ip) + sizeof(*udp);
         }
     }
-    if ((void *)(payload + target_size) > data_end) {
-        bpf_printk(TAG"Not enough space even after resizing. This must never happen!");
-        return XDP_DROP;
+
+    for (int i = 0; i < count_req; i++) {
+        if ((void *)(payload + sizeof(my_value_t)) > data_end) {
+            bpf_printk(TAG"not enough space after adjusting the packet size");
+            return XDP_DROP;
+        }
+
+        __builtin_memcpy(payload, &scratch->vals[i], sizeof(my_value_t));
+        payload += sizeof(my_value_t);
     }
-    __builtin_memcpy(payload, (void *)v, target_size);
+
     // send reply back to netcat!
     __prepare_headers_before_send(xdp);
     return XDP_TX;

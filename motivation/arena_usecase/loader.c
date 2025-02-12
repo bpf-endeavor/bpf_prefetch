@@ -1,4 +1,4 @@
-// vim: et st=4 sw=4:
+// vim: et sw=4 ts=4:
 #include <arpa/inet.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -25,6 +25,7 @@ static bool use_arena;
 static volatile int running = 0;
 static struct macchiato *xskel = NULL;
 static struct cappuccino *cskel = NULL;
+const static int number_of_items = 2000000;
 
 static void handle_signal(int s)
 {
@@ -59,18 +60,16 @@ static void prepare_arena_htab_for_xdp(void)
 
     /* Initialize the htab data-structure */
     htab_init_userspace(area, 8000000 /*max entries*/, &htab);
-    printf("Number of buckets: %d\n", htab->n_buckets);
+    /* printf("Number of buckets: %d\n", htab->n_buckets); */
 
-    const __u16 base_port = 8000;
-    for (int i = 0; i < 128; i++) {
-        __u16 tmp_port = htons(base_port + i);
-        my_key_t tmp_key;
-        memset(&tmp_key, 0, sizeof(tmp_key));
-        tmp_key.dport = tmp_port;
-        my_value_t tmp_val;
-        memset(&tmp_val, 0, sizeof(tmp_val));
-        sprintf(tmp_val.msg, "hello %d\n", i);
-        if(htab_update_elem_userspace(htab, &tmp_key, &tmp_val) != 0) {
+    for (int i = 0; i < number_of_items; i++) {
+        my_key_t k = {
+            .dport = i,
+        };
+        my_value_t v;
+        memset(&v, 0, sizeof(v));
+        sprintf(v.msg, "hello %d\n", i);
+        if(htab_update_elem_userspace(htab, &k, &v) != 0) {
             fprintf(stderr, "Failed to insert a value into the hash map\n");
             break;
         }
@@ -141,10 +140,9 @@ int launch_cappuccino(void)
     }
 
     /* load entries into map */
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < number_of_items; i++) {
         my_key_t k = {
-            .zero = 0,
-            .dport = htons(8000 + i),
+            .dport = i,
         };
         my_value_t v;
         memset(&v, 0, sizeof(v));
@@ -152,7 +150,7 @@ int launch_cappuccino(void)
         ret = bpf_map__update_elem(cskel->maps.rules, &k, sizeof(k), &v,
                 sizeof(v), 0);
         if (ret != 0) {
-            fprintf(stderr, "Failed to update hash map\n");
+            fprintf(stderr, "Failed to update hash map (%d)\n", ret);
         }
     }
 
