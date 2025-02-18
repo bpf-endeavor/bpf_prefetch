@@ -76,7 +76,7 @@ int cappuccino_main(struct xdp_md *xdp)
         }
         /* TODO: can I avoid copying the data into the scratch ? */
         /* keep the data on the scratch */
-        scratch->vals[i] = *v;
+        __builtin_memcpy(&scratch->vals[i], v, sizeof(my_value_t));
     }
 
     __u16 target_size = sizeof(my_value_t) * count_req;

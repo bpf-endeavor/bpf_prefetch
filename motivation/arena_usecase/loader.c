@@ -181,6 +181,7 @@ int launch_cappuccino(void)
 
 int main(int argc, char *argv[])
 {
+    usage();
     /*  The program relies on NET_IFACE env variable */
     ifacename = getenv("NET_IFACE");
     if (ifacename == NULL) {
