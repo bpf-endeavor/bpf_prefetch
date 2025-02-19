@@ -35,9 +35,10 @@ struct {
 
 htab_t *rules = NULL;
 
+#define BATCH_SIZE 32
 struct _value_batch {
-    int hashes[32];
-    my_value_t vals[32];
+    my_key_t keys[BATCH_SIZE];
+    my_value_t vals[BATCH_SIZE];
 } __packed;
 
 struct {
@@ -72,7 +73,7 @@ int lungo_main(struct xdp_md *xdp)
         return XDP_PASS;
 
     __u16 count_req = r->count_req;
-    if (count_req > 32) {
+    if (count_req > BATCH_SIZE) {
         bpf_printk(TAG"To many requested keys");
         return XDP_DROP;
     }
@@ -84,40 +85,37 @@ int lungo_main(struct xdp_md *xdp)
         return XDP_DROP;
     }
 
-    arena_list_head_t *buckets[32] = {};
-
+    void *tmp[BATCH_SIZE] = {};
+    arena_list_head_t *head = 0;
+    hashtab_elem_t *el = 0;
     cast_kern(rules);
     /* Stage one, find the bucket and prefetch the bucket */
-    for (int i = 0; i < count_req; i++) {
+    for (int i = 0; i < count_req && i < BATCH_SIZE; i++) {
         if ((void *)&r->reqs[i + 1] > data_end) {
             bpf_printk(TAG"requested id @%d out of packet range", i);
             return XDP_DROP;
         }
-        my_key_t k = {
-            .dport = r->reqs[i],
-        };
-        int hash = htab_hash(&k , sizeof(my_key_t));
-        arena_list_head_t *head = select_bucket(rules, hash);
-        P((void *)head);
-        scratch->hashes[i] = hash;
-        buckets[i] = head;
+        scratch->keys[i].dport = r->reqs[i];
+        int hash = htab_hash(&scratch->keys[i] , sizeof(my_key_t));
+        head = select_bucket(rules, hash);
+        cast_kern(head);
+        tmp[i] = (void *)head;
+        P(tmp[i]);
+    }
+    
+    for (int i = 0; i < count_req && i < BATCH_SIZE; i++) {
+        head = (arena_list_head_t *)tmp[i];
+        el = arena_container_of(head->first, hashtab_elem_t, hash_node);
+        cast_kern(el);
+        tmp[i] = (void *)el;
+        P(tmp[i]);
     }
 
     /* Stage two, fetch the data from the bucket */
     for (int i = 0; i < count_req; i++) {
-        if ((void *)&r->reqs[i + 1] > data_end) {
-            bpf_printk(TAG"requested id @%d out of packet range", i);
-            return XDP_DROP;
-        }
-        my_key_t k = {
-            .dport = r->reqs[i],
-        };
-        int hash = scratch->hashes[i];
-        arena_list_head_t *head = buckets[i];
-        hashtab_elem_t *el =
-            lookup_elem_raw(head, hash, &k, sizeof(my_key_t));
+        el = (hashtab_elem_t *)tmp[i];
         if (el == NULL) {
-            bpf_printk(TAG"did not id=%d (@%d)!", k.dport, i);
+            bpf_printk(TAG"did not id=%d (@%d)!", scratch->keys[i].dport, i);
             return XDP_DROP;
         }
         my_value_t __arena *v = EXTRACT_VAL(rules, el);
@@ -127,6 +125,9 @@ int lungo_main(struct xdp_md *xdp)
         /* NOTE: for some reason I have to cast `v' to void*, and I don't know
          * why */
         __builtin_memcpy(&scratch->vals[i], (void *)v, sizeof(my_value_t));
+
+        // for making sure the responses are correct
+        /* bpf_printk("- %d: %s", scratch->keys[i], scratch->vals[i].msg); */
     }
 
     __u16 target_size = sizeof(my_value_t) * count_req;
@@ -154,9 +155,10 @@ int lungo_main(struct xdp_md *xdp)
 
         __builtin_memcpy(payload, &scratch->vals[i], sizeof(my_value_t));
         payload += sizeof(my_value_t);
+        /* prefetch the memory area for next response */
     }
 
-    // send reply back to netcat!
+    /* send reply back to netcat! */
     __prepare_headers_before_send(xdp);
     return XDP_TX;
 }
