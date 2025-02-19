@@ -1,6 +1,6 @@
-/* This is the baseline program, using the BPF_MAP_TYPE_HASH for implementing a
- * key-value store
+/* This program uses prefetching to improve the performance
  * */
+
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
@@ -13,19 +13,30 @@
 
 #include "stddef.h"
 #include "compiler.h"
-#include "shared_struct.h"
-#include "xdp_helpers.h"
 
-#define TAG "cappucchino: "
+#define PREFETCH
+#include "honey/prefetching.h"
+
+/* I need this dummy function to register arena with the XDP while not using
+ * any sleepable function (it is from a kernel module that you have to load) */
+long my_kfunc_reg_arena(void *p__map) __ksym;
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key,  my_key_t);
-    __type(value, my_value_t);
-    __uint(max_entries, 8000000);
-} rules SEC(".maps");
+    __uint(type, BPF_MAP_TYPE_ARENA);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __uint(max_entries, 100000); /* number of pages */
+} arena SEC(".maps");
+
+#include "shared_struct.h"
+/* The htab requires an Arena MAP named ``arena'' to be defined before */
+#include "bpf_arena_htab.h"
+
+#include "xdp_helpers.h"
+
+htab_t *rules = NULL;
 
 struct _value_batch {
+    int hashes[32];
     my_value_t vals[32];
 } __packed;
 
@@ -36,9 +47,18 @@ struct {
     __uint(max_entries, 1);
 } scratch_map SEC(".maps");
 
+#define TAG "macchiato: "
+
 SEC("xdp")
-int cappuccino_main(struct xdp_md *xdp)
+int lungo_main(struct xdp_md *xdp)
 {
+    if (rules == NULL) {
+        /* just to make sure this program uses the arena */
+        my_kfunc_reg_arena(&arena);
+        bpf_printk(TAG"not seeing the memory!");
+        return XDP_PASS;
+    }
+
     void *data = (void *)(__u64)(xdp->data);
     void *data_end = (void *)(__u64)(xdp->data_end);
     struct ethhdr *eth = data;
@@ -64,6 +84,10 @@ int cappuccino_main(struct xdp_md *xdp)
         return XDP_DROP;
     }
 
+    arena_list_head_t *buckets[32] = {};
+
+    cast_kern(rules);
+    /* Stage one, find the bucket and prefetch the bucket */
     for (int i = 0; i < count_req; i++) {
         if ((void *)&r->reqs[i + 1] > data_end) {
             bpf_printk(TAG"requested id @%d out of packet range", i);
@@ -72,14 +96,37 @@ int cappuccino_main(struct xdp_md *xdp)
         my_key_t k = {
             .dport = r->reqs[i],
         };
-        my_value_t *v = bpf_map_lookup_elem(&rules, &k);
-        if (v == NULL) {
+        int hash = htab_hash(&k , sizeof(my_key_t));
+        arena_list_head_t *head = select_bucket(rules, hash);
+        P((void *)head);
+        scratch->hashes[i] = hash;
+        buckets[i] = head;
+    }
+
+    /* Stage two, fetch the data from the bucket */
+    for (int i = 0; i < count_req; i++) {
+        if ((void *)&r->reqs[i + 1] > data_end) {
+            bpf_printk(TAG"requested id @%d out of packet range", i);
+            return XDP_DROP;
+        }
+        my_key_t k = {
+            .dport = r->reqs[i],
+        };
+        int hash = scratch->hashes[i];
+        arena_list_head_t *head = buckets[i];
+        hashtab_elem_t *el =
+            lookup_elem_raw(head, hash, &k, sizeof(my_key_t));
+        if (el == NULL) {
             bpf_printk(TAG"did not id=%d (@%d)!", k.dport, i);
             return XDP_DROP;
         }
+        my_value_t __arena *v = EXTRACT_VAL(rules, el);
+        cast_kern(v);
         /* TODO: can I avoid copying the data into the scratch ? */
         /* keep the data on the scratch */
-        __builtin_memcpy(&scratch->vals[i], v, sizeof(my_value_t));
+        /* NOTE: for some reason I have to cast `v' to void*, and I don't know
+         * why */
+        __builtin_memcpy(&scratch->vals[i], (void *)v, sizeof(my_value_t));
     }
 
     __u16 target_size = sizeof(my_value_t) * count_req;

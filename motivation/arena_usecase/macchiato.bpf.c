@@ -1,6 +1,4 @@
-/* This program tries to use the Arena map from Mogu to reply to network
- * queries from XDP hook point
- * (Basically sharing Arena between two eBPF programs but one is XDP)
+/* This program uses the Arena to implement a hashtable
  * */
 
 #include <linux/bpf.h>
@@ -97,7 +95,9 @@ int macchiato_main(struct xdp_md *xdp)
         }
         /* TODO: can I avoid copying the data into the scratch ? */
         /* keep the data on the scratch */
-        __builtin_memcpy(&scratch->vals[i], v, sizeof(my_value_t));
+        /* NOTE: for some reason I have to cast `v' to void*, and I don't know
+         * why */
+        __builtin_memcpy(&scratch->vals[i], (void *)v, sizeof(my_value_t));
     }
 
     __u16 target_size = sizeof(my_value_t) * count_req;

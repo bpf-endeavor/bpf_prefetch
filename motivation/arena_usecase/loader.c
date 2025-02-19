@@ -16,15 +16,20 @@
 #include "include/bpf_arena_htab.h"
 #include "macchiato.skel.h"
 #include "cappuccino.skel.h"
+#include "lungo.skel.h"
+
+typedef enum {
+    CAPPUCCINO,
+    MACCHIATO,
+    LUNGO
+} prog_t;
 
 /* Some global vars */
 static char *ifacename;
 static int ifindex;
 static int xdp_flags;
-static bool use_arena;
+static prog_t selected_prog;
 static volatile int running = 0;
-static struct macchiato *xskel = NULL;
-static struct cappuccino *cskel = NULL;
 const static int number_of_items = 2000000;
 
 static void handle_signal(int s)
@@ -36,24 +41,20 @@ static void usage(void)
 {
     printf("Usage: prog OPTIONS\n"
            "OPTIONS:\n"
-           "\t--arena: use the hash map made with Arena"
+           "\t--arena: use the hash map made with Arena\n"
+           "\t--lungo: use the hash map made with Arena + software prefetching\n"
            "ENV Vars:\n"
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
 
-static void prepare_arena_htab_for_xdp(void)
+static void prepare_arena_htab_for_xdp(void *arena, void **mem_ptr)
 {
-    if (xskel == NULL) {
-        /* This must never happen */
-        return;
-    }
-
     size_t area_sz = 0;
     void *area = NULL;
     htab_t *htab = NULL;
 
     /* Get the begining of the mmapped address */
-    area = bpf_map__initial_value(xskel->maps.arena, &area_sz);
+    area = bpf_map__initial_value(arena, &area_sz);
 
     printf("key size is: %ld  value size is: %ld\n", sizeof(my_key_t),
             sizeof(my_value_t));
@@ -76,14 +77,58 @@ static void prepare_arena_htab_for_xdp(void)
     }
 
     /* Expose the htab to the XDP program */
-    xskel->bss->rules = htab;
+    *mem_ptr = htab;
 
     /* Done initilizing the hash map */
     return;
 }
 
+int launch_lungo(void)
+{
+    struct lungo *lskel = NULL;
+    lskel = lungo__open();
+    if (!lskel) {
+        fprintf(stderr, "Failed to open macchiato skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    if (lungo__load(lskel)) {
+        fprintf(stderr, "Failed to load Macchiato program\n");
+        lungo__destroy(lskel);
+        return EXIT_FAILURE;
+    }
+
+    /* The XDP program is loaded but is not receiving packets right now */
+    prepare_arena_htab_for_xdp(lskel->maps.arena, (void **)&lskel->bss->rules);
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(lskel->progs.lungo_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            lungo__destroy(lskel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    lungo__destroy(lskel);
+    printf("Done!\n");
+    return 0;
+}
+
 int launch_macchiato(void)
 {
+    struct macchiato *xskel = NULL;
     xskel = macchiato__open();
     if (!xskel) {
         fprintf(stderr, "Failed to open macchiato skeleton\n");
@@ -97,7 +142,7 @@ int launch_macchiato(void)
     }
 
     /* The XDP program is loaded but is not receiving packets right now */
-    prepare_arena_htab_for_xdp();
+    prepare_arena_htab_for_xdp(xskel->maps.arena, (void **)&xskel->bss->rules);
 
     {
         /* Attach XDP */
@@ -127,6 +172,7 @@ int launch_macchiato(void)
 int launch_cappuccino(void)
 {
     int ret;
+    struct cappuccino *cskel = NULL;
     cskel = cappuccino__open();
     if (!cskel) {
         fprintf(stderr, "Failed to open cappuccino skeleton\n");
@@ -190,11 +236,13 @@ int main(int argc, char *argv[])
     ifindex = if_nametoindex(ifacename);
     /* TODO: make sure it is running in zero copy mode */
     xdp_flags = 0;
-    use_arena = false;
+    selected_prog = CAPPUCCINO;
 
     if (argc > 1) {
         if (strncmp(argv[1], "--arena", 7) == 0) {
-            use_arena = true;
+            selected_prog = MACCHIATO;
+        } else if (strncmp(argv[1], "--lungo", 7) == 0) {
+            selected_prog = LUNGO;
         }
     }
 
@@ -204,9 +252,15 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (use_arena) {
-        return launch_macchiato();
-    } else {
-        return launch_cappuccino();
+    switch (selected_prog) {
+        case CAPPUCCINO:
+            return launch_cappuccino();
+            break;
+        case MACCHIATO:
+            return launch_macchiato();
+            break;
+        case LUNGO:
+            return launch_lungo();
+            break;
     }
 }

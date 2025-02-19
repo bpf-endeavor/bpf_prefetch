@@ -4,7 +4,7 @@ CLANG ?= clang-19
 build_dir ?= build
 skel_dir = $(build_dir)/skel
 # bpf_src = pubtrafstat.bpf.c
-bpf_src = macchiato.bpf.c cappuccino.bpf.c
+bpf_src = macchiato.bpf.c cappuccino.bpf.c lungo.bpf.c
 # define headers as dependencies so the program is recompiled after changes
 bpf_headers=$(shell find ./include/ -name '*.h')
 out_obj = $(addprefix $(skel_dir)/, $(patsubst %.bpf.c, %.skel.h, $(bpf_src)))
@@ -22,6 +22,7 @@ BPF_CFLAGS += -Wno-pointer-sign
 BPF_CFLAGS += -Wno-compare-distinct-pointer-types
 BPF_CFLAGS += -Wno-address-of-packed-member
 BPF_CFLAGS += -I ./include/
+BPF_CFLAGS += -I ../../libs/ 
 BPF_CFLAGS += -D __KERNEL__ -D __BPF__
 BPF_CFLAGS += -D __BPF_FEATURE_ADDR_SPACE_CAST
 
