@@ -13,6 +13,7 @@
 
 #include "stddef.h"
 #include "compiler.h"
+#include "arena_lpm_trie.h"
 
 /* I need this dummy function to register arena with the XDP while not using
  * any sleepable function (it is from a kernel module that you have to load) */
@@ -25,12 +26,14 @@ struct {
 } arena SEC(".maps");
 
 #include "shared_struct.h"
+#include "arena_lpm_trie.h"
 #include "xdp_helpers.h"
 
-/* htab_t *rules = NULL; */
+arena_lpm_trie_t *lpm = NULL;
 
+#define BATCH_SIZE 32
 struct _value_batch {
-    my_value_t vals[32];
+    my_value_t vals[BATCH_SIZE];
 } __packed;
 
 struct {
@@ -40,12 +43,90 @@ struct {
     __uint(max_entries, 1);
 } scratch_map SEC(".maps");
 
-#define TAG "macchiato: "
+#define TAG "arena router: "
 
 SEC("xdp")
 int arena_router_main(struct xdp_md *xdp)
 {
-    return XDP_PASS;
+    if (lpm == NULL) { 
+        bpf_printk(TAG"can not see the lpm-trie");
+        my_kfunc_reg_arena(&arena);
+        return XDP_PASS;
+    }
+    void *data = (void *)(__u64)(xdp->data);
+    void *data_end = (void *)(__u64)(xdp->data_end);
+    struct ethhdr *eth = data;
+    struct iphdr *ip = (void *)(eth+1);
+    struct udphdr *udp = (void *)(ip + 1);
+    req_t *r = (void *)(udp + 1);
+    if ((void *)(r + 1) > data_end)
+        return XDP_PASS;
+    __u16 tmp_port = bpf_ntohs(udp->dest);
+    if (!(tmp_port >= 8000 && tmp_port < 8128))
+        return XDP_PASS;
+
+    __u16 count_req = r->count_req;
+    if (count_req > BATCH_SIZE) {
+        bpf_printk(TAG"To many requested keys");
+        return XDP_DROP;
+    }
+
+    int zero = 0;
+    struct _value_batch *scratch = bpf_map_lookup_elem(&scratch_map, &zero);
+    if (scratch == NULL) {
+        bpf_printk(TAG"faild to get scratch memory");
+        return XDP_DROP;
+    }
+
+    for (int i = 0; i < count_req; i++) {
+        if ((void *)&r->reqs[i + 1] > data_end) {
+            bpf_printk(TAG"requested id @%d out of packet range", i);
+            return XDP_DROP;
+        }
+        my_key_t k = {
+            .prefixlen = 32,
+            .data = r->reqs[i],
+        };
+        my_value_t __arena *v = arena_trie_lookup_elem(lpm, &k);
+        if (v == NULL) {
+            bpf_printk(TAG"did not id=%d (@%d)!", k.data, i);
+            return XDP_DROP;
+        }
+        /* TODO: can I avoid copying the data into the scratch ? */
+        /* keep the data on the scratch */
+        __builtin_memcpy(&scratch->vals[i], (void *)v, sizeof(my_value_t));
+    }
+
+    __u16 target_size = sizeof(my_value_t) * count_req;
+    char *payload = (char *)(udp + 1);
+    {
+        // check if we need to change the payload size to match our reply
+        __u16 payload_len = (__u64)data_end - (__u64)payload;
+        short delta = target_size - payload_len;
+        if (delta != 0) {
+            if (bpf_xdp_adjust_tail(xdp, delta) != 0) {
+                bpf_printk(TAG"failed to resize the packet (%d)", delta);
+                return XDP_PASS;
+            }
+            data = (void *)(__u64)xdp->data;
+            data_end = (void *)(__u64)xdp->data_end;
+            payload = data + sizeof(*eth) + sizeof(*ip) + sizeof(*udp);
+        }
+    }
+
+    for (int i = 0; i < count_req; i++) {
+        if ((void *)(payload + sizeof(my_value_t)) > data_end) {
+            bpf_printk(TAG"not enough space after adjusting the packet size");
+            return XDP_DROP;
+        }
+
+        __builtin_memcpy(payload, &scratch->vals[i], sizeof(my_value_t));
+        payload += sizeof(my_value_t);
+    }
+
+    // send reply back to netcat!
+    __prepare_headers_before_send(xdp);
+    return XDP_TX;
 }
 
 char _license[] SEC("license") = "GPL";

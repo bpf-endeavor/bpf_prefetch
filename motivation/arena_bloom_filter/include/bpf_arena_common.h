@@ -55,7 +55,7 @@ void bpf_arena_free_pages(void *map, void __arena *ptr, __u32 page_cnt) __ksym _
 #define __arg_arena
 #define cast_kern(ptr) /* nop for user space */
 #define cast_user(ptr) /* nop for user space */
-__weak char arena[1];
+/* __weak char arena[1]; */
 
 #ifndef offsetof
 #define offsetof(type, member)  ((unsigned long)&((type *)0)->member)
