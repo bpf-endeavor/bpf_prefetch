@@ -26,7 +26,7 @@ typedef struct {
     __u8 data[0];
 } __packed _key_t;
 
-#define TRIE_MAX_HEIGHT 24
+#define TRIE_MAX_HEIGHT 1 << 15
 #define LPM_TREE_NODE_FLAG_IM 0x1
 #define MIN_KEY_SIZE sizeof(_key_t)
 #define NODE_SIZE(trie) (sizeof(arena_lpm_trie_node_t) + (trie)->value_size + (trie)->key_size)
@@ -80,11 +80,16 @@ static __always_inline __u32 fls(__u32 x)
 
 static __always_inline int extract_bit(const __u8 *data, __u64 index)
 {
-    return !!(data[index / 8] & (1 << (7 - (index % 8))));
+    if (index >= 32)
+        return 0;
+
+    __u8 byte = index / 8;
+    __u8 off = 7 - (index % 8);
+    __u8 mask = 1 << off;
+    return !!(data[byte] & mask); 
 }
 
-static __always_inline
-__u64 __longest_prefix_match(const arena_lpm_trie_t *trie,
+static __u64 __longest_prefix_match(const arena_lpm_trie_t *trie,
         const arena_lpm_trie_node_t *node,
         const _key_t *key)
 {
@@ -110,8 +115,6 @@ __u64 __longest_prefix_match(const arena_lpm_trie_t *trie,
             if (diff)
                 return prefixlen;
             break;
-        default:
-            return 0;
     }
     return prefixlen;
 }
@@ -119,61 +122,80 @@ __u64 __longest_prefix_match(const arena_lpm_trie_t *trie,
 #ifdef __BPF__
 /* BPF helpers */
 
-static void __arena *arena_trie_lookup_elem(arena_lpm_trie_t *trie, void *_key)
-{
-    arena_lpm_trie_node_t *node, *found = NULL;
-    _key_t *key = _key;
+typedef struct {
+    _key_t *key;
+    arena_lpm_trie_t *trie;
+    arena_lpm_trie_node_t *node;
+    arena_lpm_trie_node_t * found;
+    int err;
+} walk_state_t;
 
-    if (key->prefixlen > trie->max_prefixlen)
+static long __lookup_walk_nodes(__u64 _i, void *_ctx)
+{
+    walk_state_t *ws = _ctx;
+    if (ws->node == NULL) {
+        return 1;
+    }
+    unsigned int next_bit = 0;
+    __u64 matchlen = 0;
+
+    /* Determine the longest prefix of @node that matches @key.
+     * If it's the maximum possible prefix for this trie, we have
+     * an exact match and can return it directly.
+     */
+    matchlen = __longest_prefix_match(ws->trie, ws->node, ws->key);
+    if (matchlen == ws->trie->max_prefixlen) {
+        ws->found = ws->node;
+        return 1;
+    }
+
+    /* If the number of bits that match is smaller than the prefix
+     * length of @node, bail out and return the node we have seen
+     * last in the traversal (ie, the parent).
+     */
+    if (matchlen < ws->node->prefixlen)
+        return 1;
+
+    /* Consider this node as return candidate unless it is an
+     * artificially added intermediate one.
+     */
+    if (!(ws->node->flags & LPM_TREE_NODE_FLAG_IM))
+        ws->found = ws->node;
+
+    /* If the node match is fully satisfied, let's see if we can
+     * become more specific. Determine the next bit in the key and
+     * traverse down.
+     */
+    next_bit = extract_bit(ws->key->data, ws->node->prefixlen);
+    ws->node = ws->node->child[next_bit];
+    return 0;
+}
+
+static __always_inline
+void __arena *arena_trie_lookup_elem(arena_lpm_trie_t *trie, void *_key)
+{
+    walk_state_t ws = {
+        .key = _key,
+        .trie = trie,
+        .node = trie->root,
+        .found = NULL,
+        .err = 0,
+    };
+
+    if (ws.key->prefixlen > trie->max_prefixlen)
         return NULL;
 
     /* Start walking the trie from the root node ... */
 
     /* TODO: should I use an iterator here ? */
-
-    node = trie->root;
-    for (int h = 0; h < TRIE_MAX_HEIGHT; h++) {
-        if (node == NULL) {
-            break;
-        }
-        unsigned int next_bit = 0;
-        __u64 matchlen = 0;
-
-        /* Determine the longest prefix of @node that matches @key.
-         * If it's the maximum possible prefix for this trie, we have
-         * an exact match and can return it directly.
-         */
-        matchlen = __longest_prefix_match(trie, node, key);
-        if (matchlen == trie->max_prefixlen) {
-            found = node;
-            break;
-        }
-
-        /* If the number of bits that match is smaller than the prefix
-         * length of @node, bail out and return the node we have seen
-         * last in the traversal (ie, the parent).
-         */
-        if (matchlen < node->prefixlen)
-            break;
-
-        /* Consider this node as return candidate unless it is an
-         * artificially added intermediate one.
-         */
-        if (!(node->flags & LPM_TREE_NODE_FLAG_IM))
-            found = node;
-
-        /* If the node match is fully satisfied, let's see if we can
-         * become more specific. Determine the next bit in the key and
-         * traverse down.
-         */
-        next_bit = extract_bit(key->data, node->prefixlen);
-        node = node->child[next_bit];
+    if (bpf_loop(TRIE_MAX_HEIGHT, __lookup_walk_nodes, &ws, 0) < 0) {
+        return NULL;
     }
 
-    if (!found)
+    if (ws.found == NULL)
         return NULL;
 
-    return found->data + trie->key_size;
+    return ws.found->data + trie->key_size;
 }
 
 #else
@@ -200,11 +222,12 @@ static int userspace_arena_trie_alloc(arena_lpm_alloc_args_t *arg)
         return -EINVAL;
 
     /* Allocate all the pages required for the data structure */
-    const __u64 node_sz = NODE_SIZE(arg);
+    const __u64 node_sz = NODE_SIZE(arg) + sizeof(mem_region_t); // the second part is the overhead memory allocator
     const __u64 mem_pool_sz = (arg->max_entries * node_sz);
     __u64 mem_sz = sizeof(arena_lpm_trie_t) + mem_pool_sz;
     __u64 num_pages = COUNT_OBJ(mem_sz, PAGE_SIZE);
     userspace_alloc_pages(arg->area, num_pages);
+    printf("number of pages we are using: %lu\n", num_pages);
 
     arena_lpm_trie_t *trie = arg->area;
     void *area = trie+1; /* mem region that we can use for nodes */
@@ -276,6 +299,7 @@ static long userspace_arena_trie_update_elem(arena_lpm_trie_t *trie,
      * an intermediate node.
      */
     slot = &trie->root;
+    height++;
     while ((node = *slot) != NULL) {
         /* how much do these two node match ? */
         matchlen = __longest_prefix_match(trie, node, key);
