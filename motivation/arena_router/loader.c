@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <net/if.h>
+#include <assert.h>
 
 #include <linux/if_link.h> // XDP_FLAGS_*
 
@@ -44,6 +45,88 @@ static void usage(void)
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
 
+/* 
+ * @out, a pointer to another pointer, it will be set to the memory allocated
+ * for the rules.
+ * @returns number of the rules
+ * */
+int load_routing_dataset(my_key_t **out)
+{
+    // TODO: this is hardcoded and might brake if the user invoke the program
+    // from somewhere else
+    const char * file_path = "./dataset/ipv4.txt";
+    FILE *f = fopen(file_path, "r");
+    char buf[256];
+    size_t sz = 0;
+    size_t num_entries = 0;
+    while ((sz = fread(&buf, 1, 1, f)) != 0) {
+        for (size_t i = 0; i < sz; i++) {
+            if (buf[i] == '\n')
+                num_entries++;
+        }
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fprintf(stderr, "failed to seek to the begining of the file\n");
+        return -1;
+    }
+
+    size_t key_o = 0;
+    char ipv4[16]; size_t ipv4_o = 0;
+    char pref[8]; size_t pref_o = 0;
+    enum {
+        READING_IP,
+        READING_PREFIX,
+    }state = 0;
+    my_key_t *keys = calloc(num_entries, sizeof(my_key_t));
+    assert(keys != NULL);
+    while ((sz = fread(&buf, 1, 1, f)) > 0) {
+        for (size_t i = 0; i < sz; i++) {
+            char c = buf[i];
+            if (c == '\0')
+                break;
+            switch (state) {
+                case READING_IP:
+                    if ((c >= '0' && c <= '9') || (c == '.')) {
+                        ipv4[ipv4_o++] = c;
+                        assert(ipv4_o < 16);
+                    } else if (c == '/') {
+                        state = READING_PREFIX;
+                        ipv4[ipv4_o++] = '\0';
+                        assert(ipv4_o < 16);
+                        /* printf("ip: %s\n", ipv4); */
+                    } else {
+                        printf("READING_IP && saw: %c key-index: %lu\n", c, key_o);
+                        assert (0);
+                    }
+                    break;
+                case READING_PREFIX:
+                    if (c >= '0' && c <= '9') {
+                        pref[pref_o++] = c;
+                    } else if (c == '\n') {
+                        state = READING_IP;
+                        pref[pref_o++] = '\0';
+                        // we should have key now
+                        my_key_t *k = &keys[key_o++];
+                        k->prefixlen = atoi(pref);
+                        inet_pton(AF_INET, ipv4, &k->data);
+
+                        pref_o = 0;
+                        ipv4_o = 0;
+                    } else {
+                        assert (0);
+                    }
+                    break;
+                default:
+                    assert (0);
+                    break;
+            }
+        }
+    }
+
+    *out = keys;
+    return num_entries;
+}
+
 int launch_arena(void)
 {
     int ret;
@@ -74,17 +157,25 @@ int launch_arena(void)
         return -1;
     }
 
+    printf("Updating the routing table. Please wait...\n");
+    my_key_t *keys = NULL;
+    const int number_of_items = load_routing_dataset(&keys);
     for (int i = 0; i < number_of_items; i++) {
-        my_key_t k = {
-            .prefixlen = 32,
-            .data = i,
-        };
+        my_key_t *k = &keys[i];
+        /* printf("%x/%d\n", k->data, k->prefixlen); */
         my_value_t v;
         memset(&v, 0, sizeof(v));
         sprintf(v.msg, "hello %d\n", i);
-        ret = userspace_arena_trie_update_elem(lpm, &k, &v, 0);
+        ret = userspace_arena_trie_update_elem(lpm, k, &v, 0);
         if (ret != 0) {
             fprintf(stderr, "Failed to update hash map (%d)\n", ret);
+            assert(0);
+        }
+        if(i % 1024 == 0) {
+            printf("                                           \r");
+            printf("%d/%d", i, number_of_items);
+            printf("\r");
+            fflush(stdout);
         }
     }
 
@@ -103,6 +194,7 @@ int launch_arena(void)
     running = 1;
     signal(SIGINT, handle_signal);
     signal(SIGHUP, handle_signal);
+    printf("Ready!\n");
     printf("Hit Ctrl+C to terminate ...\n");
 
     while (running) { pause(); }
@@ -124,18 +216,26 @@ int launch_baseline(void)
     }
 
     /* load entries into map */
+    printf("Updating the routing table. Please wait...\n");
+    my_key_t *keys = NULL;
+    const int number_of_items = load_routing_dataset(&keys);
     for (int i = 0; i < number_of_items; i++) {
-        my_key_t k = {
-            .prefixlen = 32,
-            .data = i,
-        };
+        my_key_t *k = &keys[i];
+        /* printf("%x/%d\n", k->data, k->prefixlen); */
         my_value_t v;
         memset(&v, 0, sizeof(v));
         sprintf(v.msg, "hello %d\n", i);
-        ret = bpf_map__update_elem(skel->maps.ipv4_lpm_map, &k, sizeof(k), &v,
+        ret = bpf_map__update_elem(skel->maps.ipv4_lpm_map, k, sizeof(k), &v,
                 sizeof(v), 0);
         if (ret != 0) {
             fprintf(stderr, "Failed to update hash map (%d)\n", ret);
+            assert(0);
+        }
+        if(i % 1024 == 0) {
+            printf("                                           \r");
+            printf("%d/%d", i, number_of_items);
+            printf("\r");
+            fflush(stdout);
         }
     }
 
@@ -154,6 +254,7 @@ int launch_baseline(void)
     running = 1;
     signal(SIGINT, handle_signal);
     signal(SIGHUP, handle_signal);
+    printf("Ready!\n");
     printf("Hit Ctrl+C to terminate ...\n");
 
     while (running) { pause(); }

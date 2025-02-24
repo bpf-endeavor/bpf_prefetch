@@ -75,7 +75,7 @@ int baseline_main(struct xdp_md *xdp)
         };
         my_value_t *v = bpf_map_lookup_elem(&ipv4_lpm_map, &k);
         if (v == NULL) {
-            bpf_printk(TAG"did not id=%d (@%d)!", k.data, i);
+            bpf_printk(TAG"did not found! id=%d (@%d)!", k.data, i);
             return XDP_DROP;
         }
         /* TODO: can I avoid copying the data into the scratch ? */
