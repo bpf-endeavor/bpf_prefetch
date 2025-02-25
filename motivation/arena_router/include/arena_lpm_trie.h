@@ -28,12 +28,11 @@ typedef struct {
 
 #define TRIE_MAX_HEIGHT 1 << 15
 #define LPM_TREE_NODE_FLAG_IM 1
-#define MIN_KEY_SIZE sizeof(_key_t)
-#define NODE_SIZE(trie) (sizeof(arena_lpm_trie_node_t) + (trie)->value_size + (trie)->key_size)
 
 #define KEY_DATA_OFFSET (offsetof(_key_t, data))
 #define get_node_key(trie, node) ((void __arena *)(node)->data)
 #define get_node_value(trie, node)((void __arena *)(node)->data + ((trie)->key_size - KEY_DATA_OFFSET))
+#define NODE_SIZE(trie) (sizeof(arena_lpm_trie_node_t) + (trie)->value_size + (trie)->key_size - KEY_DATA_OFFSET)
 
 struct lpm_trie_node;
 
@@ -64,6 +63,7 @@ typedef struct lpm_trie __arena arena_lpm_trie_t;
 #define be16_to_cpu(x) bpf_ntohs(x)
 #define be32_to_cpu(x) bpf_htonl(x)
 #define assert(x)
+#define printf(...)
 #else
 #include <arpa/inet.h>
 #include <assert.h>
@@ -84,12 +84,13 @@ static __always_inline __u32 fls(__u32 x)
         i++;
         x >>= 1;
     }
+    i++;
     return i;
 #else
     // This is 100x (or more ) faster than what is above! (eBPF is fucked)
     int r = __builtin_ffs(x);
-    printf("%d\n", r);
-    return r - 1;
+    /* printf("!! %d\n", r); */
+    return r;
 #endif
 }
 
@@ -124,7 +125,9 @@ static __u64 __longest_prefix_match(const arena_lpm_trie_t *trie,
             /* TODO: ... */
             break;
         case 4: /* ipv4 */
-            diff = be32_to_cpu(*(__u32 *)node_key ^ *(__u32 *)key->data);
+            diff = *(__u32 *)node_key ^ *(__u32 *)key->data;
+            /* diff = be32_to_cpu(*(__u32 *)node_key ^ *(__u32 *)key->data); */
+            /* printf("%x ^ %x = %x\n", *(__u32 *)node_key, *(__u32 *)key->data, diff); */
             if (diff == 0) {
                 prefixlen = 32;
             } else {
@@ -269,7 +272,7 @@ typedef struct {
 
 static int userspace_arena_trie_alloc(arena_lpm_alloc_args_t *arg)
 {
-    if (arg->key_size < MIN_KEY_SIZE)
+    if (arg->key_size < KEY_DATA_OFFSET)
         return -EINVAL;
 
     // only support key size of 8(ipv4) and 20(ipv6)
@@ -308,10 +311,11 @@ static arena_lpm_trie_node_t *lpm_trie_node_alloc(arena_lpm_trie_t *trie)
     arena_lpm_trie_node_t *node;
     const __u64 node_size = NODE_SIZE(trie);
 
-    static __u64 counter = 0;
-    node = (void *)trie->mem.first + (counter * node_size);
-    counter++;
-    /* node = just_alloc(&trie->mem, node_size); */
+    /* static __u64 counter = 0; */
+    /* node = (void __arena*)trie->mem.first + (counter * node_size); */
+    /* counter++; */
+
+    node = just_alloc(&trie->mem, node_size);
     if (!node)
         return NULL;
 
@@ -393,6 +397,7 @@ static long userspace_arena_trie_update_elem(arena_lpm_trie_t *trie,
      */
     if (!node) {
         *slot = new_node;
+        /* printf("here 1\n"); */
         goto out;
     }
 
@@ -409,6 +414,7 @@ static long userspace_arena_trie_update_elem(arena_lpm_trie_t *trie,
         *slot = new_node;
         free_node = node;
 
+        /* printf("here 2\n"); */
         goto out;
     }
 
@@ -419,6 +425,19 @@ static long userspace_arena_trie_update_elem(arena_lpm_trie_t *trie,
         next_bit = extract_bit(node->data, matchlen);
         new_node->child[next_bit] = node;
         *slot = new_node;
+
+        /* printf("here 3\n"); */
+        /* printf("root val: %x\n", *(int *)trie->root->data); */
+        /* arena_lpm_trie_node_t *c = trie->root->child[0]; */
+        /* printf("root left child: %p\n", c); */
+        /* if (c != NULL) { */
+        /*     printf("root left child val: %x\n", *(int *)c->data); */
+        /* } */
+        /* c = trie->root->child[1]; */
+        /* printf("root right child: %p\n", c); */
+        /* if (c != NULL) { */
+        /*     printf("root right child val: %x\n", *(int *)c->data); */
+        /* } */
         goto out;
     }
 

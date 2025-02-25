@@ -2,7 +2,7 @@
 #include <linux/bpf.h>
 #include "compiler.h"
 
-#define MAX_ENTRIES 1
+#define MAX_ENTRIES 2000000
 
 typedef struct ipv4_lpm_key {
     __u32 prefixlen;
