@@ -29,7 +29,6 @@ static int ifindex;
 static int xdp_flags;
 static prog_t selected_prog;
 static volatile int running = 0;
-const static int number_of_items = MAX_ENTRIES;
 
 static void handle_signal(int s)
 {
@@ -40,17 +39,17 @@ static void usage(void)
 {
     printf("Usage: prog OPTIONS\n"
            "OPTIONS:\n"
-           "\t--arena: use the hash map made with Arena\n"
+           "\t--arena: use the Arena version\n"
            "ENV Vars:\n"
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
 
-/* 
+/*
  * @out, a pointer to another pointer, it will be set to the memory allocated
  * for the rules.
  * @returns number of the rules
  * */
-int load_routing_dataset(my_key_t **out)
+static int load_routing_dataset(my_key_t **out)
 {
     // TODO: this is hardcoded and might brake if the user invoke the program
     // from somewhere else
@@ -159,7 +158,8 @@ int launch_arena(void)
 
     printf("Updating the routing table. Please wait...\n");
     my_key_t *keys = NULL;
-    const int number_of_items = load_routing_dataset(&keys);
+    int number_of_items = load_routing_dataset(&keys);
+    number_of_items = MIN(number_of_items, MAX_ENTRIES);
     for (int i = 0; i < number_of_items; i++) {
         my_key_t *k = &keys[i];
         /* printf("%x/%d\n", k->data, k->prefixlen); */
@@ -178,7 +178,9 @@ int launch_arena(void)
             fflush(stdout);
         }
     }
+    printf("\n");
 
+    skel->bss->lpm = lpm;
     {
         /* Attach XDP */
         int prog_fd = bpf_program__fd(skel->progs.arena_router_main);
@@ -202,7 +204,7 @@ int launch_arena(void)
     bpf_xdp_detach(ifindex, xdp_flags, NULL);
     arena_router__destroy(skel);
     printf("Done!\n");
-    
+
     return 0;
 }
 
@@ -218,7 +220,8 @@ int launch_baseline(void)
     /* load entries into map */
     printf("Updating the routing table. Please wait...\n");
     my_key_t *keys = NULL;
-    const int number_of_items = load_routing_dataset(&keys);
+    int number_of_items = load_routing_dataset(&keys);
+    number_of_items = MIN(number_of_items, MAX_ENTRIES);
     for (int i = 0; i < number_of_items; i++) {
         my_key_t *k = &keys[i];
         /* printf("%x/%d\n", k->data, k->prefixlen); */
@@ -238,6 +241,7 @@ int launch_baseline(void)
             fflush(stdout);
         }
     }
+    printf("\n");
 
     {
         /* Attach XDP */
