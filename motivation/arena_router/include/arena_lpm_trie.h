@@ -74,6 +74,8 @@ typedef struct lpm_trie __arena arena_lpm_trie_t;
 
 static __always_inline __u32 fls(__u32 x)
 {
+// NOTE: x must not be zero
+#if defined(__BPF__)
     int i = 0;
     for (i = 0; i < 32; i++) {
         if ((x & 0x1) != 0) {
@@ -83,6 +85,12 @@ static __always_inline __u32 fls(__u32 x)
         x >>= 1;
     }
     return i;
+#else
+    // This is 100x (or more ) faster than what is above! (eBPF is fucked)
+    int r = __builtin_ffs(x);
+    printf("%d\n", r);
+    return r - 1;
+#endif
 }
 
 static __always_inline int extract_bit(const __u8 *data, __u64 index)
@@ -346,7 +354,7 @@ static long userspace_arena_trie_update_elem(arena_lpm_trie_t *trie,
     void __arena* node_val = get_node_value(trie, new_node);
     memcpy(node_key, key->data, trie->key_size - KEY_DATA_OFFSET);
     memcpy(node_val, value, trie->value_size);
-    printf("node key should be: %x\n", *(uint32_t*)node_key);
+    /* printf("node key should be: %x\n", *(uint32_t*)node_key); */
 
     /* Now find a slot to attach the new node. To do that, walk the tree
      * from the root and match as many bits as possible for each node until
@@ -356,7 +364,7 @@ static long userspace_arena_trie_update_elem(arena_lpm_trie_t *trie,
     slot = &trie->root;
     height++;
     while ((node = *slot) != NULL) {
-        printf("walking...");
+        /* printf("walking..."); */
         /* how much do these two node match ? */
         matchlen = __longest_prefix_match(trie, node, key);
         if (node->prefixlen != matchlen || // node does not include our key
