@@ -81,7 +81,6 @@ static __always_inline __u32 fls(__u32 x)
         if ((x & 0x1) != 0) {
             break;
         }
-        i++;
         x >>= 1;
     }
     i++;
