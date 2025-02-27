@@ -1,0 +1,14 @@
+figsize: [4, 2.5]
+x: ['baseline', 'Arena impl.', "Arena impl.\n+ FFS (kfunc)"]
+y: [41.6, 27.9, 32.2]
+ylabel: 'K req / sec'
+yticks: [0, 20, 40, 60]
+grid: true
+annotate:
+  - xy: [-0.1, 46]
+    text: '41.6'
+  - xy: [0.9, 32]
+    text: '27.9'
+  - xy: [1.9, 37]
+    text: '32.2'
+output: 'line.png'

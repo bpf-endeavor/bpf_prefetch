@@ -1,0 +1,20 @@
+figsize: [4,2.5]
+x: ['baseline', 'Arena', "Arena +\nPrefetch Insn"]
+y: [
+  [120, 0, 0],
+  [0,131, 0],
+  [0,0,174]
+]
+color: ['black', 'tab:red', 'tab:blue']
+hatch: [null, '//', '**']
+ylabel: 'Throughput (K req / sec)'
+yticks: [0, 50, 100, 150, 200]
+grid: True
+annotate:
+  - xy: [-0.1, 125]
+    text: '120'
+  - xy: [0.9, 136]
+    text: '131'
+  - xy: [1.9, 179]
+    text: '174'
+output: 'arena_htab_tput.png'
