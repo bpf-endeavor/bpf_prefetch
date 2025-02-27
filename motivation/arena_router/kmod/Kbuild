@@ -1,0 +1,4 @@
+MODNAME = ffs_arena_m
+obj-m += $(MODNAME).o
+$(MODNAME)-y += ffs_arena.o
+KBUILD_CFLAGS += -g -O2

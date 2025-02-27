@@ -64,6 +64,8 @@ typedef struct lpm_trie __arena arena_lpm_trie_t;
 #define be32_to_cpu(x) bpf_htonl(x)
 #define assert(x)
 #define printf(...)
+long my_kfunc_ffs_arena(int x) __ksym;
+#define USE_FFS_KFUNC
 #else
 #include <arpa/inet.h>
 #include <assert.h>
@@ -76,6 +78,10 @@ static __always_inline __u32 fls(__u32 x)
 {
 // NOTE: x must not be zero
 #if defined(__BPF__)
+#if defined(USE_FFS_KFUNC)
+#pragma message "using ffs implemented with kfunc"
+    return my_kfunc_ffs_arena(x);
+#else
     int i = 0;
     for (i = 0; i < 32; i++) {
         if ((x & 0x1) != 0) {
@@ -85,6 +91,7 @@ static __always_inline __u32 fls(__u32 x)
     }
     i++;
     return i;
+#endif
 #else
     // This is 100x (or more ) faster than what is above! (eBPF is fucked)
     int r = __builtin_ffs(x);
