@@ -130,7 +130,21 @@ static int load_routing_dataset(my_key_t **out)
     }
 
     *out = keys;
+    fclose(f);
     return num_entries;
+}
+
+static int load_routing_dataset2(my_key_t **out)
+{
+    my_key_t *keys = calloc(MAX_ENTRIES, sizeof(my_key_t));
+    assert (keys != NULL);
+    for (int i = 0; i < MAX_ENTRIES; i++) {
+        my_key_t *k = &keys[i];
+        k->prefixlen = 24;
+        k->data = i << 8;
+    }
+    *out = keys;
+    return MAX_ENTRIES;
 }
 
 int launch_arena(void)

@@ -87,6 +87,7 @@ int dri_router_main(struct xdp_md *xdp)
         /* TODO: can I avoid copying the data into the scratch ? */
         /* keep the data on the scratch */
         __builtin_memcpy(&scratch->vals[i], (void *)v, sizeof(my_value_t));
+        /* bpf_printk("* %d: %s", k.data >> 8, &scratch->vals[i]); */
     }
 
     __u16 target_size = sizeof(my_value_t) * count_req;
