@@ -39,17 +39,22 @@ struct lpm_dri_entry {
 } __packed;
 typedef struct lpm_dri_entry __arena arena_lpm_dri_entry_t;
 
-/* At the moment I've decided to have entries and their allocated data next to
- * each other. But it is possible to have a pool of memories for data.
+/* -(At the moment)- Previously, I've decided to have entries and their
+ * allocated data next to each other. But it is possible to have a pool of
+ * memories for data.
  *
- * I am not sure which design is better.
+ * -(I am not sure which design is better.)- This design is bad because we do
+ * not have memory space for 2**24 values :)
+ *
+ * Let's implement the other one
  * */
 struct lpm_dri {
-    __u8 __arena *tbl_24;
+    arena_lpm_dri_entry_t *tbl_24;
     __u32 tbl_24_sz; /* number of bytes */
     __u8 __arena *tbl_long;
     __u32 tbl_long_sz; /* number of bytes */
     __u32 value_size;
+    mem_handle_t mem;
 };
 typedef struct lpm_dri __arena arena_lpm_dri_t;
 
@@ -60,7 +65,6 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
 {
     cast_kern(dri);
 
-    __u64 entry_sz = sizeof(arena_lpm_dri_entry_t) + dri->value_size;
     if (key->prefixlen != 32) {
         // TODO: I have not thought about what it means to query with range as
         // a key
@@ -68,24 +72,27 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
     }
 
     __u64 offset = key->data >> 8;
-    __u8 __arena *e    = dri->tbl_24 + (offset * entry_sz);
-    arena_lpm_dri_entry_t * ent = (arena_lpm_dri_entry_t *)(e);
-    if (ent->state != IN_TBL_24)
+    arena_lpm_dri_entry_t *e = &dri->tbl_24[offset];
+    if (e->state != IN_TBL_24) {
+        // TODO: Either not present or not implemented :)
         return NULL;
+    }
 
-    void __arena *data = ent->data
+    void __arena *data = e->data
     cast_kern(data);
     return data;
 }
 
 #else
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 
 typedef struct {
     void *area; /* pointer to the Arena memory region */
-    /* __u32 area_size; */
+    __u32 area_size;
     __u32 key_size; /* the size of the key used for query */
+    __u32 max_entries;
     __u32 value_size; /* the size of value associated with each key */
     arena_lpm_dri_t **dri_ptr; /* out */
     __u32 *allocated_pages; /* out */
@@ -98,35 +105,43 @@ static long userspace_arena_lpm_dri_alloc(arena_lpm_dri_alloc_t *arg)
     /* Only supporting IPv4 for now */
     if (arg->key_size != sizeof(lpm_dri_key_t))
         return -EINVAL;
+
+    // TODO: maybe we do not need this, ...
     /* We are actually limited to 4GB of memory, limit the size of values */
     if (arg->value_size > MAX_VAL_SZ)
         return -EINVAL;
 
-    __u64 entry_sz = sizeof(arena_lpm_dri_entry_t) + arg->value_size;
-    __u64 tbl_24_sz = (TBL24_COUNT * entry_sz);
+    __u64 data_pool_sz = (arg->value_size + sizeof(mem_region_t)) * arg->max_entries;
+    __u64 tbl_24_sz = (TBL24_COUNT * sizeof(arena_lpm_dri_entry_t));
     __u64 tbl_long_sz = (TBL_LONG_COUNT * 0);
-    __u64 mem_sz = sizeof(arena_lpm_dri_alloc_t) + tbl_24_sz + tbl_long_sz;
-    __u64 num_pages = COUNT_OBJ(mem_sz, PAGE_SIZE);
+    __u64 mem_sz = sizeof(arena_lpm_dri_t) + tbl_24_sz + tbl_long_sz + data_pool_sz;
+    __u32 num_pages = COUNT_OBJ(mem_sz, PAGE_SIZE);
+    printf("DEBUG: require %u pages\n", num_pages);
+    __u64 total_req_mem = (num_pages * PAGE_SIZE);
 
     // Make sure memory area has enough space
-    /* if (arg->area_size < (num_pages * PAGE_SIZE)) { */
-    /*     return -ENOMEM; */
-    /* } */
+    if (arg->area_size < total_req_mem) {
+        return -ENOMEM;
+    }
 
     userspace_alloc_pages(arg->area, num_pages);
     if (arg->allocated_pages != NULL) {
         *arg->allocated_pages = num_pages;
     }
-    /* we have rounded up so have more memory available */
-    // TODO: we are wasting a bit of memory here...
-    // __u64 available_memory = (num_pages * PAGE_SIZE) - sizeof(arena_lpm_dri_t);
+
+    __u64 available_memory = total_req_mem - sizeof(arena_lpm_dri_t) - tbl_24_sz - tbl_long_sz;
 
     arena_lpm_dri_t *dri = arg->area;
-    dri->tbl_24 = (__u8 *)(dri + 1);
+    dri->tbl_24 = (arena_lpm_dri_entry_t *)(dri + 1);
     dri->tbl_24_sz = tbl_24_sz;
-    dri->tbl_long = dri->tbl_24 + tbl_24_sz;
+    dri->tbl_long = (__u8 __arena *)dri->tbl_24 + tbl_24_sz;
     dri->tbl_long_sz = tbl_long_sz;
     dri->value_size = arg->value_size;
+
+    void *mempool = dri->tbl_long + dri->tbl_long_sz;
+    if (create_mem_region_obj(mempool, available_memory, &dri->mem) != 0) {
+        return -EINVAL;
+    }
 
     // NOTE: I am relying on the eBPF MAP allocation to set all the Arena area
     // to zero.
@@ -143,7 +158,14 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
         return -1;
     }
 
-    __u64 entry_sz = sizeof(arena_lpm_dri_entry_t) + dri->value_size;
+    // allocate a new data object and copy value into it
+    // TODO: how do we support delete or overwrittin? should we doing pointer
+    // counting?
+    __u8 __arena *data_obj = just_alloc(&dri->mem, dri->value_size);
+    if (data_obj == NULL) {
+        return -ENOMEM;
+    }
+    memcpy(data_obj, value, dri->value_size);
 
     // key->prefixlen == 0 --> what does this mean? it matches anything?
     __u64 affected_entries = 1 << (24 - key->prefixlen);
@@ -160,18 +182,16 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
     // If the length of the prefixes (?) match, then the newer value (the
     // current update) should be kept.
 
-    __u8 __arena *e       = dri->tbl_24 + (begin_offset * entry_sz);
-    __u8 __arena *tbl_end = dri->tbl_24 + dri->tbl_24_sz;
-    assert ((__u8 *)(e + entry_sz) < tbl_end);
-    assert ((__u8 *)(e + ((affected_entries + 1) * entry_sz)) < tbl_end);
+    arena_lpm_dri_entry_t *e       = &dri->tbl_24[begin_offset];
+    __u8 __arena *tbl_end = (__u8 __arena *)dri->tbl_24 + dri->tbl_24_sz;
+    assert ((__u8 *)(e + 1) < tbl_end);
+    assert ((__u8 *)(e + affected_entries + 1) < tbl_end);
 
-    for (__u64 i = 0; i < affected_entries; i++) {
-        arena_lpm_dri_entry_t *ent = \
-                             (arena_lpm_dri_entry_t *)(e + (i * entry_sz));
-        if (ent->state == NO_SET) {
+    for (__u64 i = 0; i < affected_entries; i++, e++) {
+        if (e->state == NO_SET) {
             goto _update;
-        } else if (ent->state == IN_TBL_24) {
-           if (ent->prefixlen <= key->prefixlen) {
+        } else if (e->state == IN_TBL_24) {
+           if (e->prefixlen <= key->prefixlen) {
                goto _update;
            }
         } else {
@@ -181,10 +201,9 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
         continue;
 
 _update:
-        ent->state = IN_TBL_24;
-        ent->prefixlen = key->prefixlen;
-        ent->data = (void __arena*)(ent + 1);
-        memcpy(ent->data, value, dri->value_size);
+        e->state = IN_TBL_24;
+        e->prefixlen = key->prefixlen;
+        e->data = data_obj;
     }
     return 0;
 }

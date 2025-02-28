@@ -230,6 +230,7 @@ int launch_arena_dri(void)
 
     /* Get the begining of the mmapped address */
     area = bpf_map__initial_value(skel->maps.arena, &area_sz);
+    assert (area != NULL);
 
     printf("key size is: %ld  value size is: %ld  area_sz: %ld\n",
             sizeof(lpm_dri_key_t), sizeof(my_value_t), area_sz);
@@ -237,6 +238,8 @@ int launch_arena_dri(void)
     uint32_t alloc_pages = 0;
     arena_lpm_dri_alloc_t arg = {
         .area = area,
+        .area_size = ARENA_NUM_PAGES * PAGE_SIZE,
+        .max_entries = MAX_ENTRIES,
         .key_size = sizeof(lpm_dri_key_t),
         .value_size = sizeof(my_value_t),
         .dri_ptr = &dri,
@@ -244,10 +247,10 @@ int launch_arena_dri(void)
     };
 
     if ((ret = userspace_arena_lpm_dri_alloc(&arg)) != 0) {
-        fprintf(stderr, "Failed to create the Arena DRI (err code: %d)", ret);
+        fprintf(stderr, "Failed to create the Arena DRI (err code: %d)\n", ret);
         return -1;
     }
-    printf("Number of pages allocated %u", alloc_pages);
+    printf("Number of pages allocated %u\n", alloc_pages);
 
     printf("Updating the routing table. Please wait...\n");
     lpm_dri_key_t *keys = NULL;
@@ -255,6 +258,10 @@ int launch_arena_dri(void)
     number_of_items = MIN(number_of_items, MAX_ENTRIES);
     for (int i = 0; i < number_of_items; i++) {
         lpm_dri_key_t *k = &keys[i];
+        if (k->prefixlen > 24) {
+            printf("ignoring large prefix because not implemented\n");
+            continue;
+        }
         /* printf("%x/%d\n", k->data, k->prefixlen); */
         my_value_t v;
         memset(&v, 0, sizeof(v));
@@ -391,12 +398,15 @@ int main(int argc, char *argv[])
 
     switch (selected_prog) {
         case BASELINE:
+            printf("Scenario: baseline BPF_MAP_TYPE_LPM_TRIE\n");
             return launch_baseline();
             break;
         case ARENA:
+            printf("Scenario: Arena LPM Trie\n");
             return launch_arena();
             break;
         case ARENA_DRI:
+            printf("Scenario: Arena LPM DRI\n");
             return launch_arena_dri();
             break;
     }

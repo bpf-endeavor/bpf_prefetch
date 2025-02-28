@@ -3,6 +3,10 @@
 #include "compiler.h"
 
 #define MAX_ENTRIES 2000000
+#define ARENA_NUM_PAGES 100000
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096
+#endif
 
 typedef struct ipv4_lpm_key {
     __u32 prefixlen;
