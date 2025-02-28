@@ -8,11 +8,10 @@
 #include <linux/in.h>
 #include <linux/if_ether.h>
 
-#include "stddef.h"
-#include "compiler.h"
+#include "shared_struct.h"
+#include "xdp_helpers.h"
+#include "arena_lpm_dri.h"
 
-/* I need this dummy function to register arena with the XDP while not using
- * any sleepable function (it is from a kernel module that you have to load) */
 long my_kfunc_reg_arena(void *p__map) __ksym;
 
 struct {
@@ -21,11 +20,7 @@ struct {
     __uint(max_entries, 100000); /* number of pages */
 } arena SEC(".maps");
 
-#include "shared_struct.h"
-#include "arena_lpm_trie.h"
-#include "xdp_helpers.h"
-
-arena_lpm_trie_t *lpm = NULL;
+arena_lpm_dri_t *dri = NULL;
 
 #define BATCH_SIZE 32
 struct _value_batch {
@@ -39,16 +34,17 @@ struct {
     __uint(max_entries, 1);
 } scratch_map SEC(".maps");
 
-#define TAG "arena router: "
+#define TAG "DRI router: "
 
 SEC("xdp")
-int arena_router_main(struct xdp_md *xdp)
+int dri_router_main(struct xdp_md *xdp)
 {
-    if (lpm == NULL) {
-        bpf_printk(TAG"can not see the lpm-trie");
+    if (dri == NULL) {
+        bpf_printk(TAG"can not see DRI data structure");
         my_kfunc_reg_arena(&arena);
         return XDP_PASS;
     }
+
     void *data = (void *)(__u64)(xdp->data);
     void *data_end = (void *)(__u64)(xdp->data_end);
     struct ethhdr *eth = data;
@@ -79,11 +75,11 @@ int arena_router_main(struct xdp_md *xdp)
             bpf_printk(TAG"requested id @%d out of packet range", i);
             return XDP_DROP;
         }
-        my_key_t k = {
+        lpm_dri_key_t k = {
             .prefixlen = 32,
             .data = r->reqs[i],
         };
-        my_value_t __arena *v = arena_trie_lookup_elem(lpm, &k);
+        my_value_t __arena *v = arena_lpm_dri_lookup_elem(dri, &k);
         if (v == NULL) {
             bpf_printk(TAG"did not id=%x (@%d)!", k.data, i);
             return XDP_DROP;
@@ -126,3 +122,4 @@ int arena_router_main(struct xdp_md *xdp)
 }
 
 char _license[] SEC("license") = "GPL";
+// vim: et ts=4 sw=4:

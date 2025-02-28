@@ -69,11 +69,11 @@
 #endif
 
 #ifndef barrier
-# define barrier()		asm volatile("": : :"memory")
+# define barrier()		__asm__ volatile("": : :"memory")
 #endif
 
 #ifndef barrier_data
-# define barrier_data(ptr)	asm volatile("": :"r"(ptr) :"memory")
+# define barrier_data(ptr)	__asm__ volatile("": :"r"(ptr) :"memory")
 #endif
 
 static __always_inline void bpf_barrier(void)
