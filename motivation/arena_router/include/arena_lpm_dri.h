@@ -84,7 +84,7 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
 
 typedef struct {
     void *area; /* pointer to the Arena memory region */
-    __u32 area_size; 
+    /* __u32 area_size; */
     __u32 key_size; /* the size of the key used for query */
     __u32 value_size; /* the size of value associated with each key */
     arena_lpm_dri_t **dri_ptr; /* out */
@@ -109,9 +109,9 @@ static long userspace_arena_lpm_dri_alloc(arena_lpm_dri_alloc_t *arg)
     __u64 num_pages = COUNT_OBJ(mem_sz, PAGE_SIZE);
 
     // Make sure memory area has enough space
-    if (arg->area_size < (num_pages * PAGE_SIZE)) {
-        return -ENOMEM;
-    }
+    /* if (arg->area_size < (num_pages * PAGE_SIZE)) { */
+    /*     return -ENOMEM; */
+    /* } */
 
     userspace_alloc_pages(arg->area, num_pages);
     if (arg->allocated_pages != NULL) {
