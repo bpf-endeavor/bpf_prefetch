@@ -267,12 +267,15 @@ int launch_arena_dri(void)
     printf("Number of pages allocated %u\n", alloc_pages);
 
     printf("Updating the routing table. Please wait...\n");
-    lpm_dri_key_t *keys = NULL;
+    my_key_t *keys = NULL;
     int number_of_items = load_routing_dataset(&keys);
     number_of_items = MIN(number_of_items, MAX_ENTRIES);
     for (int i = 0; i < number_of_items; i++) {
-        lpm_dri_key_t *k = &keys[i];
-        if (k->prefixlen > 24) {
+        lpm_dri_key_t k = {
+            .prefixlen = keys[i].prefixlen,
+            .data = keys[i].data,
+        };
+        if (k.prefixlen > 24) {
             printf("ignoring large prefix because not implemented\n");
             continue;
         }
@@ -280,7 +283,7 @@ int launch_arena_dri(void)
         my_value_t v;
         memset(&v, 0, sizeof(v));
         sprintf(v.msg, "hello %d\n", i);
-        ret = userspace_arena_lpm_dri_update_elem(dri, k, &v, 0);
+        ret = userspace_arena_lpm_dri_update_elem(dri, &k, &v, 0);
         if (ret != 0) {
             fprintf(stderr, "Failed to update hash map (%d)\n", ret);
             assert(0);

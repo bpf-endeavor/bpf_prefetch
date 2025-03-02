@@ -59,6 +59,7 @@ struct lpm_dri {
 typedef struct lpm_dri __arena arena_lpm_dri_t;
 
 #if defined(__BPF__)
+#include <bpf/bpf_endian.h>
 
 static __always_inline
 void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key)
@@ -71,7 +72,7 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
         return NULL;
     }
 
-    __u64 offset = key->data >> 8;
+    __u64 offset = bpf_ntohl(key->data)  >> 8;
     arena_lpm_dri_entry_t *e = &dri->tbl_24[offset];
     if (e->state != IN_TBL_24) {
         // TODO: Either not present or not implemented :)
@@ -84,6 +85,7 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
 }
 
 #else
+#include <arpa/inet.h>
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -145,6 +147,10 @@ static long userspace_arena_lpm_dri_alloc(arena_lpm_dri_alloc_t *arg)
 
     // NOTE: I am relying on the eBPF MAP allocation to set all the Arena area
     // to zero.
+    
+    for (__u64 i = 0; i < TBL24_COUNT; i++) {
+        memset(&dri->tbl_24[i], 0, sizeof(arena_lpm_dri_entry_t));
+    }
 
     *arg->dri_ptr = dri;
     return 0;
@@ -167,13 +173,20 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
     }
     memcpy(data_obj, value, dri->value_size);
 
+    /* bool f = false; */
+    /* if (strncmp(data_obj, "hello 520948", 12) == 0) { */
+    /*     f = true; */
+    /* } */
+
+
     // key->prefixlen == 0 --> what does this mean? it matches anything?
     __u64 affected_entries = 1 << (24 - key->prefixlen);
     __u64 mask = 0;
     if (key->prefixlen > 0) {
         mask = ~(affected_entries - 1);
     }
-    __u64 begin_offset = (key->data >> 8) & mask;
+    __u32 K = ntohl(key->data);
+    __u64 begin_offset = (__u64)(K >> 8) & mask;
 
     // The entries that we need to update start at ``begin_offset''. We need to
     // consider ``affected_entries'' number of them. If the entry already has a
@@ -201,6 +214,14 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
         continue;
 
 _update:
+        /* if (f) { */
+        /*     printf("writing the value to %llu\n", begin_offset + i); */
+        /* } */
+        /* if (begin_offset +i == 9961196) { */
+        /*     printf("* write to 9961196 (range: %llu): %s\n", affected_entries, data_obj); */
+        /*     printf("Orig: %x K: %x  mask: %llx\n", key->data, K, mask); */
+        /* } */
+
         e->state = IN_TBL_24;
         e->prefixlen = key->prefixlen;
         e->data = data_obj;
