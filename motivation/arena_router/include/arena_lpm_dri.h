@@ -20,24 +20,39 @@ typedef struct {
 #define KEY_DATA_OFFSET (offsetof(_key_t, data))
 #define KEY_SZ 4
 #define MAX_VAL_SZ 128
+/* how many entries each table has */
 #define TBL24_COUNT (1 << 24)
+#define TBL_LONG_CHUNK (1 << 8)
 #define TBL_LONG_COUNT (1 << 14)
 
+/* TODO: I don't like the naming system I've used for structs in this file.
+ *       I should come up with something better :)
+ * */
+
 enum {
-    NO_SET = 0,
+    NOT_SET = 0,
     IN_TBL_24 = 1,
     IN_TBL_LONG = 2,
 };
 
+/* This struct represents an entry in tbl-24 */
 struct lpm_dri_entry {
     __u8 state;
     __u32 prefixlen; // what the prefixlen of the currently written data
     union {
         __u8 __arena *data;
-        __u8 __arena *long_entry;
+        __u32 long_entry;
     };
 } __packed;
 typedef struct lpm_dri_entry __arena arena_lpm_dri_entry_t;
+
+/* This struct represents an entry in tbl-8 */
+struct lpm_dri_long_entry {
+    __u8 valid;
+    __u32 prefixlen;
+    __u8 __arena *data;
+};
+typedef struct lpm_dri_long_entry __arena arena_lpm_dri_long_entry_t;
 
 /* -(At the moment)- Previously, I've decided to have entries and their
  * allocated data next to each other. But it is possible to have a pool of
@@ -51,8 +66,12 @@ typedef struct lpm_dri_entry __arena arena_lpm_dri_entry_t;
 struct lpm_dri {
     arena_lpm_dri_entry_t *tbl_24;
     __u32 tbl_24_sz; /* number of bytes */
-    __u8 __arena *tbl_long;
+    arena_lpm_dri_long_entry_t *tbl_long;
     __u32 tbl_long_sz; /* number of bytes */
+    /* Number of 256 entry chunks of regions that we can alloc */
+    __u32 tbl_long_free_chunks;
+    __u32 tbl_long_alloc_chunks;
+    /* ------------------------------------------------------- */
     __u32 value_size;
     mem_handle_t mem;
 };
@@ -72,14 +91,26 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
         return NULL;
     }
 
-    __u64 offset = bpf_ntohl(key->data)  >> 8;
+    void __arena *data = NULL;
+    __u32 K = bpf_ntohl(key->data);
+    __u64 offset = K >> 8;
     arena_lpm_dri_entry_t *e = &dri->tbl_24[offset];
-    if (e->state != IN_TBL_24) {
+    if (e->state == NOT_SET) {
         // TODO: Either not present or not implemented :)
         return NULL;
     }
 
-    void __arena *data = e->data
+    if (e->state == IN_TBL_LONG) {
+        __u32 base = e->long_entry;
+        __u32 rel_off8 = K & 0xff;
+        __u32 off = base + rel_off8;
+        arena_lpm_dri_long_entry_t *e2 = &dri->tbl_long[off];
+        data = e2->data;
+        cast_kern(data)
+        return data;
+    }
+
+    data = e->data
     cast_kern(data);
     return data;
 }
@@ -115,7 +146,7 @@ static long userspace_arena_lpm_dri_alloc(arena_lpm_dri_alloc_t *arg)
 
     __u64 data_pool_sz = (arg->value_size + sizeof(mem_region_t)) * arg->max_entries;
     __u64 tbl_24_sz = (TBL24_COUNT * sizeof(arena_lpm_dri_entry_t));
-    __u64 tbl_long_sz = (TBL_LONG_COUNT * 0);
+    __u64 tbl_long_sz = (TBL_LONG_COUNT * sizeof(arena_lpm_dri_long_entry_t));
     __u64 mem_sz = sizeof(arena_lpm_dri_t) + tbl_24_sz + tbl_long_sz + data_pool_sz;
     __u32 num_pages = COUNT_OBJ(mem_sz, PAGE_SIZE);
     printf("DEBUG: require %u pages\n", num_pages);
@@ -136,11 +167,13 @@ static long userspace_arena_lpm_dri_alloc(arena_lpm_dri_alloc_t *arg)
     arena_lpm_dri_t *dri = arg->area;
     dri->tbl_24 = (arena_lpm_dri_entry_t *)(dri + 1);
     dri->tbl_24_sz = tbl_24_sz;
-    dri->tbl_long = (__u8 __arena *)dri->tbl_24 + tbl_24_sz;
+    dri->tbl_long = (arena_lpm_dri_long_entry_t *)((__u8 __arena *)dri->tbl_24 + tbl_24_sz);
     dri->tbl_long_sz = tbl_long_sz;
     dri->value_size = arg->value_size;
+    dri->tbl_long_free_chunks = TBL_LONG_COUNT / TBL_LONG_CHUNK;
+    dri->tbl_long_alloc_chunks = 0;
 
-    void *mempool = dri->tbl_long + dri->tbl_long_sz;
+    void __arena *mempool = (void __arena *)dri->tbl_long + dri->tbl_long_sz;
     if (create_mem_region_obj(mempool, available_memory, &dri->mem) != 0) {
         return -EINVAL;
     }
@@ -151,19 +184,117 @@ static long userspace_arena_lpm_dri_alloc(arena_lpm_dri_alloc_t *arg)
     for (__u64 i = 0; i < TBL24_COUNT; i++) {
         memset(&dri->tbl_24[i], 0, sizeof(arena_lpm_dri_entry_t));
     }
+    for (__u64 i = 0; i < TBL_LONG_COUNT; i++) {
+        memset(&dri->tbl_long[i], 0, sizeof(arena_lpm_dri_long_entry_t));
+    }
 
     *arg->dri_ptr = dri;
+    return 0;
+}
+
+static inline int __alloc_chunk(arena_lpm_dri_t *dri)
+{
+    if (dri->tbl_long_alloc_chunks >= dri->tbl_long_free_chunks) {
+        return -ENOSPC;
+    }
+    __u32 base = dri->tbl_long_alloc_chunks * TBL_LONG_CHUNK;
+    dri->tbl_long_alloc_chunks++;
+    return base;
+}
+
+/*
+ * @desc: How it works:
+ *      when inserting a new rule with perfix larger than 24 there are scenarios.
+ *      1) the coresponding entry in the tbl_24 (using first 24 bit of the key)
+ *      is empty:
+ *              Allocate a 256 entry long chunk on tbl_8 and update the
+ *              relevant part with the new key. relevant part could be a subset
+ *              of 256 entries, depending on the prefixlen.
+ *      2) The coresponding entry in the tbl_24 is a rule with prefixlen
+ *      smaller than or equal to 24:
+ *          Allocate a 256 entry chunk, set all the entries to point to data
+ *          from the rule in the tbl_24 entry. update the tbl_24 entry to point
+ *          to the long table. In 256 chunk update the relevant region with the
+ *          new key and data.
+ *      3) The coresponding entry in the tbl_24 is a pointer to long_table:
+ *          Walk the long table and update the relevant entries only if they do
+ *          not belong to a more specific rule (longer prefix len)
+ *
+ * @param dri: pointer to the main data structure
+ * @param key: pointer to the key
+ * @param data_obj: object ot point to
+ * @returns: zero on success
+ * */
+static long __add_long_entry(arena_lpm_dri_t *dri, lpm_dri_key_t *key,
+        void *data_obj)
+{
+    assert(key->prefixlen > 24);
+    __u32 K = ntohl(key->data);
+    __u32 off24 = K >> 8; // offset into the tbl_24
+    __u32 rel_off8 = K & 0xff; // relative offset into the tbl_long (we need to get a base pointer)
+    __u32 affected_entries = 1 << (key->prefixlen - 24);
+    int base = 0;
+
+    arena_lpm_dri_entry_t *ent = &dri->tbl_24[off24];
+    if (ent->state == NOT_SET) {
+        base = __alloc_chunk(dri);
+        if (base < 0) {
+            return -ENOSPC;
+        }
+        ent->state      = IN_TBL_LONG;
+        ent->prefixlen  = 24; // we do not need to set this as the state indicates we need to walk further
+        ent->long_entry = base;
+        for (__u32 i = 0; i < affected_entries; i++) {
+            __u32 off = base + rel_off8 + i;
+            arena_lpm_dri_long_entry_t *e = &dri->tbl_long[off];
+            e->valid = 1;
+            e->prefixlen = key->prefixlen;
+            e->data = data_obj;
+        }
+    } else if (ent->state == IN_TBL_24) {
+        void *old_obj = ent->data;
+        __u32 old_prefixlen = ent->prefixlen;
+        base = __alloc_chunk(dri);
+        if (base < 0) {
+            return -ENOSPC;
+        }
+        ent->state = IN_TBL_LONG;
+        ent->prefixlen = 24;
+        ent->long_entry = base;
+        for (__u32 i = 0; i < TBL_LONG_CHUNK; i++) {
+            __u32 off = base + 0 + i;
+            arena_lpm_dri_long_entry_t *e = &dri->tbl_long[off];
+            e->valid = 1;
+            e->prefixlen = old_prefixlen;
+            e->data = old_obj;
+        }
+        for (__u32 i = 0; i < affected_entries; i++) {
+            __u32 off = base + rel_off8 + i;
+            arena_lpm_dri_long_entry_t *e = &dri->tbl_long[off];
+            e->valid = 1;
+            e->prefixlen = key->prefixlen;
+            e->data = data_obj;
+        }
+    } else if (ent->state == IN_TBL_LONG) {
+        base = ent->long_entry;
+        for (__u32 i = 0; i < affected_entries; i++) {
+            __u32 off = base + rel_off8 + i;
+            arena_lpm_dri_long_entry_t *e = &dri->tbl_long[off];
+            if (e->valid == 1 && e->prefixlen > key->prefixlen) {
+                // this entry belongs to a more specific rule
+                continue;
+            }
+            e->valid = 1;
+            e->prefixlen = key->prefixlen;
+            e->data = data_obj;
+        }
+    }
     return 0;
 }
 
 static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
         lpm_dri_key_t *key, void *value, __u64 flag)
 {
-    if (key->prefixlen > 24) {
-        /* TODO: to be implemented */
-        return -1;
-    }
-
     // allocate a new data object and copy value into it
     // TODO: how do we support delete or overwrittin? should we doing pointer
     // counting?
@@ -172,6 +303,12 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
         return -ENOMEM;
     }
     memcpy(data_obj, value, dri->value_size);
+
+    if (key->prefixlen > 24) {
+        /* TODO: to be implemented */
+        /* return -1; */
+        return __add_long_entry(dri, key, data_obj);
+    }
 
     /* bool f = false; */
     /* if (strncmp(data_obj, "hello 520948", 12) == 0) { */
@@ -201,7 +338,7 @@ static long userspace_arena_lpm_dri_update_elem(arena_lpm_dri_t *dri,
     assert ((__u8 *)(e + affected_entries + 1) < tbl_end);
 
     for (__u64 i = 0; i < affected_entries; i++, e++) {
-        if (e->state == NO_SET) {
+        if (e->state == NOT_SET) {
             goto _update;
         } else if (e->state == IN_TBL_24) {
            if (e->prefixlen <= key->prefixlen) {

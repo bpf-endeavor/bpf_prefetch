@@ -275,10 +275,10 @@ int launch_arena_dri(void)
             .prefixlen = keys[i].prefixlen,
             .data = keys[i].data,
         };
-        if (k.prefixlen > 24) {
-            printf("ignoring large prefix because not implemented\n");
-            continue;
-        }
+        /* if (k.prefixlen > 24) { */
+        /*     printf("ignoring large prefix because not implemented\n"); */
+        /*     continue; */
+        /* } */
         /* printf("%x/%d\n", k->data, k->prefixlen); */
         my_value_t v;
         memset(&v, 0, sizeof(v));
