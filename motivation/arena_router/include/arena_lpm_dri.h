@@ -79,6 +79,9 @@ typedef struct lpm_dri __arena arena_lpm_dri_t;
 
 #if defined(__BPF__)
 #include <bpf/bpf_endian.h>
+// enable using prefetching
+#define PREFETCH 1
+#include "honey/prefetching.h"
 
 static __always_inline
 void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key)
@@ -96,7 +99,6 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
     __u64 offset = K >> 8;
     arena_lpm_dri_entry_t *e = &dri->tbl_24[offset];
     if (e->state == NOT_SET) {
-        // TODO: Either not present or not implemented :)
         return NULL;
     }
 
@@ -112,6 +114,51 @@ void __arena *arena_lpm_dri_lookup_elem(arena_lpm_dri_t *dri, lpm_dri_key_t *key
 
     data = e->data
     cast_kern(data);
+    return data;
+}
+
+static __always_inline
+void __arena *arena_lpm_dri_lookup_elem_p1(arena_lpm_dri_t *dri, lpm_dri_key_t *key)
+{
+    cast_kern(dri);
+
+    if (key->prefixlen != 32) {
+        // TODO: I have not thought about what it means to query with range as
+        // a key
+        return NULL;
+    }
+
+    __u32 K = bpf_ntohl(key->data);
+    __u64 offset = K >> 8;
+    arena_lpm_dri_entry_t *e = &dri->tbl_24[offset];
+    P((void *)e);
+    return e;
+}
+
+static __always_inline
+void __arena *arena_lpm_dri_lookup_elem_p2(arena_lpm_dri_t *dri, lpm_dri_key_t *key, arena_lpm_dri_entry_t *e)
+{
+    if (e->state == NOT_SET) {
+        return NULL;
+    }
+
+    void __arena *data = NULL;
+    if (e->state == IN_TBL_LONG) {
+        // TODO: this path does not benefit from prefetching. I could add a
+        // third stage here
+        __u32 K = bpf_ntohl(key->data);
+        __u32 base = e->long_entry;
+        __u32 rel_off8 = K & 0xff;
+        __u32 off = base + rel_off8;
+        arena_lpm_dri_long_entry_t *e2 = &dri->tbl_long[off];
+        data = e2->data;
+        cast_kern(data)
+        return data;
+    }
+
+    data = e->data
+    cast_kern(data);
+    P((void *)data);
     return data;
 }
 

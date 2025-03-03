@@ -27,6 +27,7 @@ typedef enum {
     BASELINE,
     ARENA,
     ARENA_DRI,
+    ARENA_DRI_SW_PREFETCH,
 } prog_t;
 
 /* Some global vars */
@@ -47,6 +48,7 @@ static void usage(void)
            "OPTIONS:\n"
            "\t--arena: use the Arena LPM Trie version\n"
            "\t--dri: use the Arena LPM DRI version\n"
+           "\t--dri-2: use the Arena LPM DRI version with software prefetching\n"
            "ENV Vars:\n"
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
@@ -229,7 +231,7 @@ int launch_arena(void)
     return 0;
 }
 
-int launch_arena_dri(void)
+int launch_arena_dri(bool prefetching_mode)
 {
     int ret;
     struct arena_dri_router *skel = arena_dri_router__open_and_load();
@@ -300,7 +302,12 @@ int launch_arena_dri(void)
     skel->bss->dri = dri;
     {
         /* Attach XDP */
-        int prog_fd = bpf_program__fd(skel->progs.dri_router_main);
+        int prog_fd = 0;
+        if (prefetching_mode) {
+            prog_fd = bpf_program__fd(skel->progs.dri_router_prefetch_main);
+        } else {
+            prog_fd = bpf_program__fd(skel->progs.dri_router_main);
+        }
         if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
             fprintf(stderr, "Failed to attach XDP program\n");
             bpf_xdp_detach(ifindex, xdp_flags, NULL);
@@ -404,6 +411,9 @@ int main(int argc, char *argv[])
             selected_prog = ARENA;
         } else if (strncmp(argv[1], "--dri", 5) == 0) {
             selected_prog = ARENA_DRI;
+            if (strncmp(argv[1], "--dri-2", 7) == 0) {
+                selected_prog = ARENA_DRI_SW_PREFETCH;
+            }
         }
     }
 
@@ -424,7 +434,11 @@ int main(int argc, char *argv[])
             break;
         case ARENA_DRI:
             printf("Scenario: Arena LPM DRI\n");
-            return launch_arena_dri();
+            return launch_arena_dri(false);
+            break;
+        case ARENA_DRI_SW_PREFETCH:
+            printf("Scenario: Arena LPM DRI with SW Prefetching\n");
+            return launch_arena_dri(true);
             break;
     }
 }
