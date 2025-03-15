@@ -40,7 +40,7 @@ fp_t p;
 static __always_inline
 uint64_t cvm_estimate(void)
 {
-	return (uint64_t)((double)treap->used / fp_to_float(p));
+	return (treap->used * FP_SCALE) / ((uint64_t)p);
 }
 
 SEC("xdp")

@@ -7,7 +7,7 @@ skeleton_dir = ./build/skel/
 CC = clang
 CFLAGS = -O3 -g -Wall $(shell pkg-config --cflags libbpf)
 CFLAGS += -I $(skeleton_dir)
-CFLAGS += ../../libs
+CFLAGS += -I ../../libs
 LDFLAGS = $(shell pkg-config --libs libbpf)
 
 # Skeleton header files that loader relies on

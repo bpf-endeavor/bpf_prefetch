@@ -65,7 +65,7 @@ struct treap {
 	arena_treap_node_t *root;
 	struct treap_node nodes[TREAP_MAX_SIZE];
 	uint32_t used; // number of nodes in the treap --> Top of the stack (TREAP_MAX_SIZE - used - 1)
-	arena_treap_node_t *stack[TREAP_MAX_SIZE]; // stack of free nodes
+	uint32_t stack[TREAP_MAX_SIZE]; // stack of free nodes
 };
 typedef struct treap __arena arena_treap_t;
 
@@ -189,9 +189,14 @@ arena_treap_node_t * __treap_alloc_node(arena_treap_t *t)
 	}
 	uint32_t top_stack = TREAP_MAX_SIZE - t->used -1;
 	t->used++;
-	arena_treap_node_t *new = t->stack[top_stack];
+	uint32_t index = t->stack[top_stack];
+	arena_treap_node_t *new = &t->nodes[index];
+	// TODO: the compiler/verifier failed to realize `new` is a pointer to
+	// Arena (find why, can be a bug)
+	cast_kern(new);
 	// initialize
-	new->left = new->right = NULL;
+	new->left = NULL;
+	new->right = NULL;
 	return new;
 }
 
@@ -207,7 +212,8 @@ void __treap_free_node(arena_treap_t *t, arena_treap_node_t *n)
 
 	t->used--;
 	uint32_t top_stack = TREAP_MAX_SIZE - t->used - 1;
-	t->stack[top_stack] = n;
+	uint64_t index = ((uint64_t)n - (uint64_t)&t->nodes[0])/sizeof(t->nodes[0]);
+	t->stack[top_stack] = index;
 }
 
 static __bpf_always_inline
@@ -301,6 +307,7 @@ arena_treap_node_t *__get_imidiate_succesor(arena_treap_node_t *n,
 }
 
 // Bubble down the node fixing the heap property
+static __bpf_always_inline
 int __fix_sub_tree_heap_property_down(arena_treap_node_t *ptr, arena_treap_link_t *ptr_link)
 {
 	// The state of the treap is as follows:
@@ -452,7 +459,7 @@ typedef struct {
 } arena_treap_alloc_t;
 
 // This is code is for the user-space program
-int userspace_arena_treap_alloc(arena_treap_alloc_t *arg)
+static int userspace_arena_treap_alloc(arena_treap_alloc_t *arg)
 {
 
 	if (arg->area == NULL)
@@ -477,7 +484,7 @@ int userspace_arena_treap_alloc(arena_treap_alloc_t *arg)
 
 	arena_treap_t *t = arg->area;
 	for (uint32_t k = 0; k < TREAP_MAX_SIZE; k++)
-		t->stack[TREAP_MAX_SIZE - k - 1] = &t->nodes[k];
+		t->stack[TREAP_MAX_SIZE - k - 1] = k;
 	return 0;
 }
 #endif

@@ -1,5 +1,5 @@
-LLC ?= llc
-CLANG ?= clang
+LLC ?= llc-19
+CLANG ?= clang-19
 
 build_dir ?= build
 skel_dir = $(build_dir)/skel

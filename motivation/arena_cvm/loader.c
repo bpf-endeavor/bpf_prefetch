@@ -14,6 +14,7 @@
 // data-structures
 #include "include/shared_struct.h"
 #include "include/treap.h"
+#include "arena-ds/fixed-point/fp.h"
 
 // sekeleton objects
 #include "cvm.skel.h"
@@ -92,7 +93,7 @@ int main(int argc, char *argv[])
         .max_entries = TREAP_MAX_SIZE,
         .max_height = TREAP_MAX_HEIGHT,
         .treap_out = &treap,
-        .allocated_pages = &num_pages;
+        .allocated_pages = &num_pages,
     };
     if (userspace_arena_treap_alloc(&arg) != 0) {
         return -1;
@@ -102,11 +103,11 @@ int main(int argc, char *argv[])
     skel->bss->p = (1 << 31); // FP_ONE
     {
         /* Attach XDP */
-        int prog_fd = bpf_program__fd(skel->progs.arena_router_main);
+        int prog_fd = bpf_program__fd(skel->progs.cvm_main);
         if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
             fprintf(stderr, "Failed to attach XDP program\n");
             bpf_xdp_detach(ifindex, xdp_flags, NULL);
-            arena_router__destroy(skel);
+            cvm__destroy(skel);
             return EXIT_FAILURE;
         }
     }
@@ -121,7 +122,7 @@ int main(int argc, char *argv[])
     while (running) { pause(); }
 
     bpf_xdp_detach(ifindex, xdp_flags, NULL);
-    arena_router__destroy(skel);
+    cvm__destroy(skel);
     printf("Done!\n");
 
     return 0;
