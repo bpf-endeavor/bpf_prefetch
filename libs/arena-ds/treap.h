@@ -197,6 +197,9 @@ arena_treap_node_t * __treap_alloc_node(arena_treap_t *t)
 	// initialize
 	new->left = NULL;
 	new->right = NULL;
+	if (new == NULL) {
+		bpf_printk("this is very weird (index: %d)", index);
+	}
 	return new;
 }
 
@@ -432,7 +435,9 @@ int treap_delete(arena_treap_t *t, struct treap_key *key)
 			// except that moving leaf to the nodes position may
 			// have disturbed the heap property
 			ret = __fix_sub_tree_heap_property_down(leaf, link);
-			assert(ret == 0);
+			if (ret != 0) {
+				return -3;
+			}
 		}
 	}
 
@@ -445,6 +450,16 @@ static __always_inline
 uint8_t treap_has_space(arena_treap_t *t)
 {
 	return t->used < TREAP_MAX_SIZE;
+}
+
+// empty the treap
+static __always_inline
+void treap_reset(arena_treap_t *t)
+{
+	t->root = NULL;
+	t->used = 0;
+	for (uint32_t k = 0; k < TREAP_MAX_SIZE; k++)
+		t->stack[TREAP_MAX_SIZE - k - 1] = k;
 }
 
 #ifndef __BPF__
@@ -485,6 +500,7 @@ static int userspace_arena_treap_alloc(arena_treap_alloc_t *arg)
 	arena_treap_t *t = arg->area;
 	for (uint32_t k = 0; k < TREAP_MAX_SIZE; k++)
 		t->stack[TREAP_MAX_SIZE - k - 1] = k;
+	*arg->treap_out = t;
 	return 0;
 }
 #endif

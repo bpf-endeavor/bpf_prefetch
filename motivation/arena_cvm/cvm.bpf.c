@@ -36,11 +36,20 @@ struct {
 // The user-space will set the reference to the data-structure
 arena_treap_t *treap = NULL;
 fp_t p;
+static uint64_t last_cvm_report;
 
 static __always_inline
 uint64_t cvm_estimate(void)
 {
-	return (treap->used * FP_SCALE) / ((uint64_t)p);
+	return ((uint64_t)treap->used * FP_SCALE) / ((uint64_t)p);
+}
+
+static __always_inline
+void reset(void)
+{
+	treap_reset(treap);
+	p = (1 << 31); // FP_ONE
+	last_cvm_report = 0;
 }
 
 SEC("xdp")
@@ -61,11 +70,17 @@ int cvm_main(struct xdp_md *xdp)
 	uint32_t *r = (void *)(udp + 1);
 	if ((void *)(r + 1) > data_end)
 		return XDP_PASS;
+	if (eth->h_proto != bpf_htons(ETH_P_IP))
+		return XDP_PASS;
+	if (ip->protocol != IPPROTO_UDP)
+		return XDP_PASS;
 	__u16 tmp_port = bpf_ntohs(udp->dest);
 	if (!(tmp_port >= 8000 && tmp_port < 8128))
 		return XDP_PASS;
 
-	struct treap_key key = {.data = *r};
+	struct treap_key key = {};
+	*(uint32_t *)key.data = *r;
+
 	// check if the key is in the buffer and delete it
 	treap_delete(treap, &key);
 	uint32_t u = fp_random();
@@ -74,7 +89,8 @@ int cvm_main(struct xdp_md *xdp)
 	if (treap_has_space(treap)) {
 		ret = treap_insert(treap, &key, u);
 		if (ret != 0) {
-			bpf_printk(TAG"failed to insert");
+			bpf_printk(TAG"failed to insert: %d", ret);
+			reset();
 			return XDP_DROP;
 		}
 		goto _done;
@@ -88,20 +104,31 @@ int cvm_main(struct xdp_md *xdp)
 		p = top->priority;
 		ret = treap_delete(treap, (void *)&top->key);
 		if (ret != 0) {
-			bpf_printk(TAG"failed to replace the node (delete)");
+			bpf_printk(TAG"failed to replace the node (delete): %d", ret);
+			reset();
 			return XDP_DROP;
 		}
 		ret = treap_insert(treap, &key, u);
 		if (ret != 0) {
-			bpf_printk(TAG"failed to replace the node (insert)");
+			bpf_printk(TAG"failed to replace the node (insert): %d", ret);
+			reset();
 			return XDP_DROP;
 		}
 		goto _done;
 	}
 
 _done:
-	if (report_tput()) {
-		bpf_printk(TAG"Size estimate: %lld", cvm_estimate());
+	report_tput();
+	uint64_t ts = bpf_ktime_get_coarse_ns();
+	if (last_cvm_report == 0) {
+		last_cvm_report = ts;
+	} else {
+		uint64_t dur = ts - last_cvm_report;
+		if (dur > 5000000000L) {
+			bpf_printk(TAG"Size estimate: %lld (%d / %d)", cvm_estimate(), treap->used, p);
+			reset();
+			last_cvm_report = ts;
+		}
 	}
 	return XDP_DROP;
 }
