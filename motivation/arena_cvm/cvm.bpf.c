@@ -30,6 +30,7 @@ struct {
 #include "xdp_helpers.h"
 
 #define TAG "bpf-cvm: "
+#define SECOND 1000000000L
 
 #include "report_tput.h"
 
@@ -78,14 +79,34 @@ int cvm_main(struct xdp_md *xdp)
 	if (!(tmp_port >= 8000 && tmp_port < 8128))
 		return XDP_PASS;
 
-	struct treap_key key = {};
+	struct treap_key key;
 	*(uint32_t *)key.data = *r;
+	/* bpf_printk("key: %d", *r); */
 
 	// check if the key is in the buffer and delete it
-	treap_delete(treap, &key);
-	uint32_t u = fp_random();
+	ret = treap_delete(treap, &key);
+	switch (ret) {
+		case 0:
+			// deleted something
+			break;
+		case -1:
+			// did not found the key
+			break;
+		case -2:
+		case -3:
+		default:
+			// something went wrong
+			bpf_printk("failed to delete: %d", ret);
+			reset();
+			return XDP_DROP;
+	}
+
+	// get a random value
+	fp_t u = fp_random();
+
 	if (u > p)
 		goto _done;
+
 	if (treap_has_space(treap)) {
 		ret = treap_insert(treap, &key, u);
 		if (ret != 0) {
@@ -95,6 +116,7 @@ int cvm_main(struct xdp_md *xdp)
 		}
 		goto _done;
 	}
+
 	// u < p and |B| = s
 	arena_treap_node_t *top = treap_top(treap);
 	if (u > top->priority) {
@@ -119,13 +141,14 @@ int cvm_main(struct xdp_md *xdp)
 
 _done:
 	report_tput();
+	// report estimate every few seconds
 	uint64_t ts = bpf_ktime_get_coarse_ns();
-	if (last_cvm_report == 0) {
-		last_cvm_report = ts;
-	} else {
-		uint64_t dur = ts - last_cvm_report;
-		if (dur > 5000000000L) {
-			bpf_printk(TAG"Size estimate: %lld (%d / %d)", cvm_estimate(), treap->used, p);
+	uint64_t dur = ts - last_cvm_report;
+	if (dur > 5*SECOND) {
+		if (last_cvm_report == 0) {
+			last_cvm_report = ts;
+		} else {
+			bpf_printk(TAG"Size estimate: %lld", cvm_estimate());
 			reset();
 			last_cvm_report = ts;
 		}
