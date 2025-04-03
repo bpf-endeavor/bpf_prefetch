@@ -95,13 +95,15 @@ void __treap_find(arena_treap_t *t, struct treap_key *key,
 			return;
 		}
 		// TODO: maybe I could optimize it with having only one comparison
-		if (treap_key_less_than(key, (void *)&ptr->key)) {
+		void *k = (void *)&ptr->key;
+		cast_kern(k);
+		if (treap_key_less_than(key, k)) {
 			// less
 			link = &ptr->left;
 			ptr = ptr->left;
 		} else {
 			// greater or equal
-			if (treap_key_eq(key, (void *)&ptr->key)) {
+			if (treap_key_eq(key, k)) {
 				// found it
 				*node_parent_link = link;
 				*node_out = ptr;
@@ -139,6 +141,7 @@ arena_treap_link_t * __get_parent_link(arena_treap_node_t *p, arena_treap_node_t
 	} else if (p->right == n) {
 		return &p->right;
 	}
+	bpf_printk("1. this is unexpected!");
 	return NULL;
 }
 
@@ -190,7 +193,7 @@ arena_treap_node_t * __treap_alloc_node(arena_treap_t *t)
 	uint32_t top_stack = TREAP_MAX_SIZE - t->used -1;
 	t->used++;
 	uint32_t index = t->stack[top_stack];
-	arena_treap_node_t *new = &t->nodes[index];
+	arena_treap_node_t *new = &(t->nodes[index]);
 	// TODO: the compiler/verifier failed to realize `new` is a pointer to
 	// Arena (find why, can be a bug)
 	cast_kern(new);
@@ -215,9 +218,28 @@ void __treap_free_node(arena_treap_t *t, arena_treap_node_t *n)
 
 	t->used--;
 	uint32_t top_stack = TREAP_MAX_SIZE - t->used - 1;
-	uint64_t index = ((uint64_t)n - (uint64_t)&t->nodes[0])/sizeof(t->nodes[0]);
+	uint64_t delta = (void *)n - (void *)&(t->nodes[0]);
+	uint64_t index = delta / sizeof(t->nodes[0]);
+	/* if (index > TREAP_MAX_SIZE) { */
+	/* 	bpf_printk("unexpected index %lld > %lld", index, TREAP_MAX_SIZE); */
+	/* 	bpf_printk("debug info: %p  base: %p", n, &(t->nodes[0])); */
+	/* 	bpf_printk("debug info: size node: %d", sizeof(t->nodes[0])); */
+	/* } */
 	t->stack[top_stack] = index;
 }
+
+#ifdef __BPF__
+typedef struct {
+	void *ptrs[TREAP_MAX_HEIGHT];
+} __packed _path_ptrs_t;
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__type(key, int);
+	__type(value, _path_ptrs_t);
+	/* __uint(map_flags, BPF_F_MMAPABLE); */
+	__uint(max_entries, 1); /* number of pages */
+} path_ptr_arr_map SEC(".maps");
+#endif
 
 static __bpf_always_inline
 int treap_insert(arena_treap_t *t, struct treap_key *k, uint32_t priority)
@@ -227,7 +249,7 @@ int treap_insert(arena_treap_t *t, struct treap_key *k, uint32_t priority)
 	if (n == NULL) {
 		return -ENOSPC;
 	}
-	__builtin_memcmp(n->key.data, k->data, TREAP_KEY_SIZE);
+	__builtin_memcpy(n->key.data, k->data, TREAP_KEY_SIZE);
 	n->priority = priority;
 
 	// find the right place on the binary tree
@@ -235,14 +257,28 @@ int treap_insert(arena_treap_t *t, struct treap_key *k, uint32_t priority)
 	arena_treap_link_t *link = &t->root;
 
 	uint32_t i; // path len
+#ifdef __BPF__
+	arena_treap_node_t **path = NULL;
+	_path_ptrs_t *tmp = NULL;
+	int zero = 0;
+	tmp = bpf_map_lookup_elem(&path_ptr_arr_map, &zero);
+	if (tmp == NULL) {
+		// must never happen!
+		return -1;
+	}
+	path = (arena_treap_node_t **)tmp->ptrs;
+#else
 	arena_treap_node_t *path[TREAP_MAX_HEIGHT] = {};
+#endif
 
 	// I want a bounded loop since I am planing to use it in eBPF
 	for (i = 0; i < TREAP_MAX_HEIGHT; i++) {
 		if (ptr == NULL)
 			break;
 		path[i] = ptr;
-		if (treap_key_less_than(k, (void *)&ptr->key)) {
+		void *_k = (void *)&ptr->key;
+		cast_kern(_k);
+		if (treap_key_less_than(k, _k)) {
 			link = &ptr->left;
 			ptr = ptr->left;
 		} else {
@@ -252,7 +288,7 @@ int treap_insert(arena_treap_t *t, struct treap_key *k, uint32_t priority)
 	}
 	// did not found the empty space in the bounded height
 	if (i >= TREAP_MAX_HEIGHT) {
-		t->used--; // free the node we reserved
+		__treap_free_node(t, n); // free the node we reserved
 		return -2;
 	}
 
