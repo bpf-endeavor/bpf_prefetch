@@ -1,0 +1,18 @@
+figsize: [4, 2.5]
+x: ['baseline', 'DRI-24-8', "DRI-24-8\n+ Sw Prefetch"]
+y: [[1.53, 0, 0],
+    [0, 5.79, 0],
+    [0, 0, 7.26]]
+color: ['black', 'tab:green', 'tab:red']
+hatch: ['', '//', 'xx']
+ylabel: 'M req / sec'
+yticks: [0, 1.5, 3, 4.5, 6, 7.5, 9]
+grid: true
+annotate:
+  - xy: [-0.1, 1.7]
+    text: '1.5'
+  - xy: [0.87, 5.9]
+    text: '5.7'
+  - xy: [1.87, 7.4]
+    text: '7.2'
+output: 'dri_ubench_x32.png'

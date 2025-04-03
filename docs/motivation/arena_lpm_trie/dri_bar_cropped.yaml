@@ -1,0 +1,15 @@
+figsize: [3, 2.5]
+x: ['LPM Trie', 'DRI-24-8']
+y: [[1.53, 0],
+    [0, 5.79]]
+color: ['black', 'tab:green']
+hatch: ['', '//']
+ylabel: 'M req / sec'
+yticks: [0, 1.5, 3, 4.5, 6]
+grid: true
+annotate:
+  - xy: [-0.1, 1.6]
+    text: '1.5'
+  - xy: [0.87, 5.8]
+    text: '5.7'
+output: 'dri_ubench_cropped.png'

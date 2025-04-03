@@ -1,0 +1,26 @@
+figsize: [4, 2.5]
+x: ['baseline (x86)', 'eBPF impl.', "eBPF impl.\n+ FFS (kfunc)"]
+# y: [
+#   [41.6, 0, 0],
+#   [0, 27.9, 0],
+#   [0, 0, 32.2]
+# ]
+y: [
+  [1.3312, 0, 0],
+  [0, 0.8928, 0],
+  [0, 0, 1.0304]
+]
+color: ['black', 'tab:green', 'tab:red']
+hatch: ['', '//', 'xx']
+ylabel: 'M req / sec'
+# yticks: [0, 20, 40, 60]
+yticks: [0, 0.3, 0.6, 0.9, 1.2, 1.5]
+grid: true
+annotate:
+  - xy: [-0.1, 1.4]
+    text: '1.33'
+  - xy: [0.9, 1.0]
+    text: '0.89'
+  - xy: [1.9, 1.1]
+    text: '1.03'
+output: 'trie_ebpf_impl.png'

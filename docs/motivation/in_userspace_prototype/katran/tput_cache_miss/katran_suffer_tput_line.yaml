@@ -37,6 +37,6 @@ subplots:
         color: 'blue'
         head_width: 0.3
         head_length: 0.2
-output: 'katran_suffer_tput_bar.pdf'
+output: 'katran_suffer_tput_bar.png'
 comment: "Katran throughput"
 
