@@ -449,8 +449,7 @@ int treap_delete(arena_treap_t *t, struct treap_key *key)
 			*link = n->left;
 		} else {
 			// We need to move the node down, find the imidiate
-			// successor (the left most left node of the right
-			// sub-tree)
+			// successor (the most left  child of the right sub-tree)
 			arena_treap_link_t *leaf_link = NULL;
 			arena_treap_node_t *leaf = __get_imidiate_succesor(n, &leaf_link);
 			if (leaf == NULL) {
