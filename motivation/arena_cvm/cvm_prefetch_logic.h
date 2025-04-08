@@ -1,6 +1,9 @@
 // Some helpers for the CVM Prefetching scenario
 #pragma once
 
+#define PREFETCH 1
+#include "honey/prefetching.h"
+
 #define BATCH_SIZE 16
 
 /* This is for creating a batch of incoming keys and processing them all
@@ -51,17 +54,17 @@ batch_t *__make_batch(__u32 key_data)
 	if (batch == NULL)
 		return NULL;
 
-	if (batch.write_off >= BATCH_SIZE) {
+	if (batch->write_off >= BATCH_SIZE) {
 		// this must never happen
-		batch.off = 0;
+		batch->write_off = 0;
 		return NULL;
 	}
 
-	batch.keys[batch.write_off].data = *r;
+	*(__u32 *)&(batch->keys[batch->write_off].data) = key_data;
 	/* bpf_printk("key: %d", *r); */
-	batch.write_off++;
+	batch->write_off++;
 
-	if (batch.write_off != BATCH_SIZE) {
+	if (batch->write_off != BATCH_SIZE) {
 		// continue batching
 		return NULL;
 	}
@@ -69,7 +72,7 @@ batch_t *__make_batch(__u32 key_data)
 }
 
 static __always_inline
-int __treap_find_batch(arena_treap_t *t,
+void __treap_find_batch(arena_treap_t *t,
 		batch_t *batch, batch_proc_state_t *state)
 {
 	// check the treap is not empty
@@ -77,7 +80,7 @@ int __treap_find_batch(arena_treap_t *t,
 		return;
 
 	// prefetch the root because we are going to start our walk from there
-	P(t->root);
+	P((void *)t->root);
 
 	// initialize all the pointer to the root
 	for (__u32 i = 0; i < BATCH_SIZE; i++) {
@@ -102,13 +105,13 @@ int __treap_find_batch(arena_treap_t *t,
 				continue;
 			}
 
-			void *k = (void *)ptr->key;
+			void *k = (void *)&ptr->key;
 			cast_kern(k);
 			if (treap_key_less_than(key, k)) {
 				state->links[i] = &ptr->left;
 				state->nodes[i] = ptr->left;
 				// prefetch the next node we are going to compare with
-				P(ptr->left);
+				P((void *)ptr->left);
 			} else {
 				if (treap_key_eq(key, k)) {
 					// found it
@@ -117,7 +120,7 @@ int __treap_find_batch(arena_treap_t *t,
 					state->links[i] = &ptr->right;
 					state->nodes[i] = ptr->right;
 					// prefetch the next node we are going to compare with
-					P(ptr->right);
+					P((void *)ptr->right);
 				}
 			}
 		}
@@ -134,9 +137,10 @@ int __treap_find_batch(arena_treap_t *t,
 }
 
 static __always_inline
-__treap_delete_batch(arena_treap_t *t, batch_t *batch,
+int __treap_delete_batch(arena_treap_t *t, batch_t *batch,
 		batch_proc_state_t *state)
 {
+	int ret;
 	__treap_find_batch(t, batch, state);
 	for (__u32 i = 0; i < BATCH_SIZE; i++) {
 		/* TODO: The part in the loop seems to be the same as the code
@@ -196,15 +200,15 @@ __treap_delete_batch(arena_treap_t *t, batch_t *batch,
 				if (ret != 0) {
 					// TODO: error missed
 					state->valid[i] = false;
-					continue
+					continue;
 				}
 			}
 		}
 
 		// return the node to the stack of free nodes :)
 		__treap_free_node(t, n);
-		return 0;
 	}
+	return 0;
 }
 
 /* Implement logic for batch updating the Treap data-structure (buffer used for
@@ -213,6 +217,7 @@ __treap_delete_batch(arena_treap_t *t, batch_t *batch,
 static __always_inline
 int __treap_batch_update(arena_treap_t *t, batch_t *batch)
 {
+	int ret;
 	__u32 zero = 0;
 	batch_proc_state_t *state = NULL;
 	state = bpf_map_lookup_elem(&batch_proc_state_map, &zero);

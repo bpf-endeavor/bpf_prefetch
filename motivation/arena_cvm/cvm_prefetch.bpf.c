@@ -82,7 +82,7 @@ int cvm_prefetch_main(struct xdp_md *xdp)
 	if (!(tmp_port >= 8000 && tmp_port < 8128))
 		return XDP_PASS;
 
-	batch = __make_batch(*r);
+	batch_t * batch = __make_batch(*r);
 	if (batch == NULL) {
 		return XDP_DROP;
 	}

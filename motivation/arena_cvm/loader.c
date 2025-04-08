@@ -46,7 +46,7 @@ static void usage(void)
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
 
-static void launch_baseline(void)
+static int launch_baseline(void)
 {
     int ret;
     struct cvm *skel = cvm__open_and_load();
@@ -104,7 +104,7 @@ static void launch_baseline(void)
     printf("Done!\n");
 }
 
-static void launch_with_prefetching(void)
+static int launch_with_prefetching(void)
 {
     int ret;
     struct cvm_prefetch *skel = cvm_prefetch__open_and_load();
@@ -188,9 +188,9 @@ int main(int argc, char *argv[])
     }
 
     if (selected_prog == BASELINE) {
-        launch_baseline();
+        return launch_baseline();
     } else {
-        launch_with_prefetching();
+        return launch_with_prefetching();
     }
 
     return 0;
