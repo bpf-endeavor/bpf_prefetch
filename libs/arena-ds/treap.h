@@ -352,7 +352,7 @@ int treap_insert(arena_treap_t *t, struct treap_key *k, uint32_t priority)
 }
 
 static __bpf_always_inline
-arena_treap_node_t *__get_imidiate_succesor(arena_treap_node_t *n,
+arena_treap_node_t *__get_immediate_succesor(arena_treap_node_t *n,
 		arena_treap_link_t **out_link)
 {
 	arena_treap_node_t *leaf = n->right;
@@ -425,46 +425,46 @@ int __fix_sub_tree_heap_property_down(arena_treap_node_t *ptr, arena_treap_link_
 			left_p = ptr->left->priority;
 			right_p = ptr->right->priority;
 
-			enum ROTATE_DIR min_dir;
-			uint32_t max_p;
-			arena_treap_link_t *next_link;
-			if (left_p < right_p) {
-				min_dir = LEFT;
-				next_link = &((*ptr_link)->left);
-				max_p = right_p;
-			} else {
-				min_dir = RIGHT;
-				next_link = &((*ptr_link)->right);
-				max_p = left_p;
-			}
-
-			if (p > max_p) {
-				// we are good
-				break;
-			}
-			// rotate to the side with lower priority
-			__rotate(ptr_link, min_dir);
-			ptr_link = next_link;
-
-			/* if (p >= left_p) { */
-			/* 	if (p >= right_p) { */
-			/* 		// we are good */
-			/* 		break; */
-			/* 	} else { */
-			/* 		// right_p > left_p --> rotate to the side with lower priority (LEFT) */
-			/* 		__rotate(ptr_link, LEFT); */
-			/* 		ptr_link = &((*ptr_link)->left); */
-			/* 	} */
+			/* enum ROTATE_DIR min_dir; */
+			/* uint32_t max_p; */
+			/* arena_treap_link_t *next_link; */
+			/* if (left_p < right_p) { */
+			/* 	min_dir = LEFT; */
+			/* 	next_link = &((*ptr_link)->left); */
+			/* 	max_p = right_p; */
 			/* } else { */
-			/* 	// left_p > p */
-			/* 	if (left_p <= right_p) { */
-			/* 		__rotate(ptr_link, LEFT); */
-			/* 		ptr_link = &((*ptr_link)->left); */
-			/* 	} else { */
-			/* 		__rotate(ptr_link, RIGHT); */
-			/* 		ptr_link = &((*ptr_link)->right); */
-			/* 	} */
+			/* 	min_dir = RIGHT; */
+			/* 	next_link = &((*ptr_link)->right); */
+			/* 	max_p = left_p; */
 			/* } */
+
+			/* if (p > max_p) { */
+			/* 	// we are good */
+			/* 	break; */
+			/* } */
+			/* // rotate to the side with lower priority */
+			/* __rotate(ptr_link, min_dir); */
+			/* ptr_link = next_link; */
+
+			if (p >= left_p) {
+				if (p >= right_p) {
+					// we are good
+					break;
+				} else {
+					// right_p > left_p --> rotate to the side with lower priority (LEFT)
+					__rotate(ptr_link, LEFT);
+					ptr_link = &((*ptr_link)->left);
+				}
+			} else {
+				// left_p > p
+				if (left_p <= right_p) {
+					__rotate(ptr_link, LEFT);
+					ptr_link = &((*ptr_link)->left);
+				} else {
+					__rotate(ptr_link, RIGHT);
+					ptr_link = &((*ptr_link)->right);
+				}
+			}
 		}
 	}
 	if (k >= TREAP_MAX_HEIGHT) {
@@ -501,10 +501,10 @@ int treap_delete(arena_treap_t *t, struct treap_key *key)
 			// has one child (the left child)
 			*link = n->left;
 		} else {
-			// We need to move the node down, find the imidiate
+			// We need to move the node down, find the immediate
 			// successor (the most left  child of the right sub-tree)
 			arena_treap_link_t *leaf_link = NULL;
-			arena_treap_node_t *leaf = __get_imidiate_succesor(n, &leaf_link);
+			arena_treap_node_t *leaf = __get_immediate_succesor(n, &leaf_link);
 			if (leaf == NULL) {
 				// failed to do it in a bounded size
 				return -2;
