@@ -140,7 +140,7 @@ int cvm_main(struct xdp_md *xdp)
 	}
 
 _done:
-	report_tput();
+	report_tput(1);
 	// report estimate every few seconds
 	uint64_t ts = bpf_ktime_get_coarse_ns();
 	uint64_t dur = ts - last_cvm_report;

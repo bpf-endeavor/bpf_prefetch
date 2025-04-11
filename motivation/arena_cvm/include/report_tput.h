@@ -14,11 +14,11 @@
 static __u64 counter = 0;
 static __u64 last_report = 0;
 static inline __attribute__((always_inline))
-int report_tput(void)
+int report_tput(__u64 count)
 {
 	__u64 ts, delta;
 	/* We must run on a single core */
-	__sync_fetch_and_add(&counter, 1);
+	__sync_fetch_and_add(&counter, count);
 	ts = bpf_ktime_get_coarse_ns();
 	if (last_report == 0) {
 		last_report = ts;

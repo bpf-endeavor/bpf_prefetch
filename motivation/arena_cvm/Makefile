@@ -12,4 +12,4 @@ $(build_dir):
 	mkdir -p $@
 
 clean:
-	rm -r $(build_dir)
+	if [ -d $(build_dir) ]; then rm -r $(build_dir); fi

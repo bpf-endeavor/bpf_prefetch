@@ -102,6 +102,7 @@ static int launch_baseline(void)
     bpf_xdp_detach(ifindex, xdp_flags, NULL);
     cvm__destroy(skel);
     printf("Done!\n");
+    return 0;
 }
 
 static int launch_with_prefetching(void)
@@ -160,6 +161,7 @@ static int launch_with_prefetching(void)
     bpf_xdp_detach(ifindex, xdp_flags, NULL);
     cvm_prefetch__destroy(skel);
     printf("Done!\n");
+    return 0;
 }
 
 int main(int argc, char *argv[])

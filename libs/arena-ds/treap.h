@@ -50,6 +50,14 @@ int treap_key_eq(struct treap_key *a, struct treap_key *b)
 {
 	return *((uint32_t *)&a->data) == *((uint32_t *)&b->data);
 }
+
+static __always_inline
+int64_t treap_key_cmp(struct treap_key *a, struct treap_key *b)
+{
+	int64_t val_a = *((uint32_t *)&a->data);
+	int64_t val_b = *((uint32_t *)&b->data);
+	return (val_a - val_b);
+}
 #endif
 
 struct treap_node {
@@ -96,19 +104,34 @@ void __treap_find(arena_treap_t *t, struct treap_key *key,
 		}
 		// TODO: maybe I could optimize it with having only one comparison
 		void *k = (void *)&ptr->key;
-		cast_kern(k);
-		if (treap_key_less_than(key, k)) {
+		/* cast_kern(k); */
+		/* if (treap_key_less_than(key, k)) { */
+		/* 	// less */
+		/* 	link = &ptr->left; */
+		/* 	ptr = ptr->left; */
+		/* } else { */
+		/* 	// greater or equal */
+		/* 	if (treap_key_eq(key, k)) { */
+		/* 		// found it */
+		/* 		*node_parent_link = link; */
+		/* 		*node_out = ptr; */
+		/* 		return; */
+		/* 	} */
+		/* 	link = &ptr->right; */
+		/* 	ptr = ptr->right; */
+		/* } */
+
+		int64_t cmp = treap_key_cmp(key, k);
+		if (cmp == 0) {
+			// found it
+			*node_parent_link = link;
+			*node_out = ptr;
+			return;
+		} else if (cmp < 0) {
 			// less
 			link = &ptr->left;
 			ptr = ptr->left;
 		} else {
-			// greater or equal
-			if (treap_key_eq(key, k)) {
-				// found it
-				*node_parent_link = link;
-				*node_out = ptr;
-				return;
-			}
 			link = &ptr->right;
 			ptr = ptr->right;
 		}
@@ -310,6 +333,12 @@ int treap_insert(arena_treap_t *t, struct treap_key *k, uint32_t priority)
 				grand_p_link = __get_parent_link(path[parent_index - 1], p);
 			else
 				grand_p_link = &t->root;
+
+			/* This SHOULD never happen but will help verifier */
+			if (grand_p_link == NULL) {
+				return -3;
+			}
+
 			if (p->left == n) {
 				// do a right rotation rooted at parent
 				__rotate(grand_p_link, RIGHT);
@@ -379,8 +408,8 @@ int __fix_sub_tree_heap_property_down(arena_treap_node_t *ptr, arena_treap_link_
 				// we are good
 				break;
 			} else {
-					__rotate(ptr_link, LEFT);
-					ptr_link = &((*ptr_link)->left);
+				__rotate(ptr_link, LEFT);
+				ptr_link = &((*ptr_link)->left);
 			}
 		} else if (ptr->right == NULL) {
 			// NOTE: we know the left is not null
@@ -389,31 +418,53 @@ int __fix_sub_tree_heap_property_down(arena_treap_node_t *ptr, arena_treap_link_
 				// we are good
 				break;
 			} else {
-					__rotate(ptr_link, RIGHT);
-					ptr_link = &((*ptr_link)->right);
+				__rotate(ptr_link, RIGHT);
+				ptr_link = &((*ptr_link)->right);
 			}
 		} else {
 			left_p = ptr->left->priority;
 			right_p = ptr->right->priority;
-			if (p >= left_p) {
-				if (p >= right_p) {
-					// we are good
-					break;
-				} else {
-					// right_p > left_p --> rotate to the side with lower priority (LEFT)
-					__rotate(ptr_link, LEFT);
-					ptr_link = &((*ptr_link)->left);
-				}
+
+			enum ROTATE_DIR min_dir;
+			uint32_t max_p;
+			arena_treap_link_t *next_link;
+			if (left_p < right_p) {
+				min_dir = LEFT;
+				next_link = &((*ptr_link)->left);
+				max_p = right_p;
 			} else {
-				// left_p > p
-				if (left_p <= right_p) {
-					__rotate(ptr_link, LEFT);
-					ptr_link = &((*ptr_link)->left);
-				} else {
-					__rotate(ptr_link, RIGHT);
-					ptr_link = &((*ptr_link)->right);
-				}
+				min_dir = RIGHT;
+				next_link = &((*ptr_link)->right);
+				max_p = left_p;
 			}
+
+			if (p > max_p) {
+				// we are good
+				break;
+			}
+			// rotate to the side with lower priority
+			__rotate(ptr_link, min_dir);
+			ptr_link = next_link;
+
+			/* if (p >= left_p) { */
+			/* 	if (p >= right_p) { */
+			/* 		// we are good */
+			/* 		break; */
+			/* 	} else { */
+			/* 		// right_p > left_p --> rotate to the side with lower priority (LEFT) */
+			/* 		__rotate(ptr_link, LEFT); */
+			/* 		ptr_link = &((*ptr_link)->left); */
+			/* 	} */
+			/* } else { */
+			/* 	// left_p > p */
+			/* 	if (left_p <= right_p) { */
+			/* 		__rotate(ptr_link, LEFT); */
+			/* 		ptr_link = &((*ptr_link)->left); */
+			/* 	} else { */
+			/* 		__rotate(ptr_link, RIGHT); */
+			/* 		ptr_link = &((*ptr_link)->right); */
+			/* 	} */
+			/* } */
 		}
 	}
 	if (k >= TREAP_MAX_HEIGHT) {
@@ -434,14 +485,16 @@ int treap_delete(arena_treap_t *t, struct treap_key *key)
 		// key does not exist
 		return -1;
 	}
+
 	if (n->left == NULL) {
-		if (n->right == NULL) {
-			// it is a leaf, just remove the node
-			*link = NULL;
-		} else {
-			// has one child (the right child)
-			*link = n->right;
-		}
+		/* if (n->right == NULL) { */
+		/* 	// it is a leaf, just remove the node */
+		/* 	*link = NULL; */
+		/* } else { */
+		/* 	// has one child (the right child) */
+		/* 	*link = n->right; */
+		/* } */
+		*link = n->right; // same as the above if-else :D
 	} else {
 		// has left child
 		if (n->right == NULL) {
