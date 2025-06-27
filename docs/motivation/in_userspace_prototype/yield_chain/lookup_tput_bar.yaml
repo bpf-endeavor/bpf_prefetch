@@ -1,20 +1,21 @@
-figsize: [5, 2.5]
+figsize: [3.0, 2.0]
 x: ['1 flow', '7M flows']
 experiments:
   - label: 'Baseline'
     y: [3.4, 1.9]
-    color: "tab:orange"
+    color: "tab:green"
     hatch: "+"
   - label: 'With Prefetch'
     y: [2.8, 2.5]
-    color: "tab:green"
-    hatch: "//"
+    color: "tab:red"
+    hatch: "o"
 yticks: [0, 1.5, 3, 4.5]
+barwidth: 0.15
 grid: true
 ylabel: 'Throughput (Mpps)'
 legend:
-  ncol: 2
-output: 'lookup_tput_bar.pdf'
+  ncol: 1
+  fontsize: small
 annotate:
   - xy: [-0.05, 3.6]
     text: '3.4'
@@ -22,8 +23,9 @@ annotate:
     text: '2.8'
   - xy: [0.95, 2.1]
     text: '1.9'
-  - xy: [1.3, 2.7]
+  - xy: [1.3, 2.6]
     text: '2.5'
+output: 'lookup_tput_bar.svg'
 comment: "The experiment compares a 3 stage batch processing of packets which
   benefit from prefetching when accessing hash maps to the original model of
   running/accessing maps in eBPF (baseline)"

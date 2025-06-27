@@ -1,24 +1,24 @@
-figsize: [3, 2]
-x: ['Baseline', 'with prefetching']
+figsize: [3, 2.5]
+x: ['baseline', 'with prefetch']
 y: [5.241, 8.143]
 color: ['tab:green', 'tab:red']
-hatch: ['++', '--']
+hatch: ['//', 'xx']
 ylabel: 'Throughput (Mpps)'
 yticks: [0, 2.5, 5, 7.5, 10]
 grid: true
 annotate:
   - xy: [-0.1, 5.4]
-    text: '5.241'
+    text: '5.2'
   - xy: [0.9, 8.3]
-    text: '8.143'
-  - xy: [0.490, 6.2]
-    text: '55%'
-arrow:
-  - x: 0.47
-    y: 5.241
-    dx: 0
-    dy: 2.902
-    head_width: 0.03
-    head_length: 0.2
-    length_includes_head: true
-output: 'user_def_prefetch.png'
+    text: '8.1'
+  # - xy: [0.490, 6.2]
+  #   text: '55%'
+# arrow:
+#   - x: 0.47
+#     y: 5.241
+#     dx: 0
+#     dy: 2.902
+#     head_width: 0.03
+#     head_length: 0.2
+#     length_includes_head: true
+output: 'user_def_prefetch.pdf'
