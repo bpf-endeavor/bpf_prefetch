@@ -1,0 +1,15 @@
+figsize: [3,2] 
+subplots:
+  - lines:
+    - x: [ 1, 100, 10000, 100000, 1000000, 2500000, 5000000, 7000000, 8000000,]
+      y: [ 100, 100, 100, 100, 100, 100, 100, 99, 99,]
+      color: 'black'
+      marker: '^'
+      linestyle: '--'
+    xlogscale: 10
+    ylabel: 'LRU Hit (%)'
+    xlabel: 'Number of flows'
+    yticks: [90, 95, 100]
+    ylim: [90, 101]
+output: 'katran_lru_hit.pdf'
+

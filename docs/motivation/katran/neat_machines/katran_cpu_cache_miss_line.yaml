@@ -1,0 +1,23 @@
+figsize: [3,2] 
+subplots:
+  - lines:
+    - x: [ 1, 100, 10000, 100000, 1000000, 2500000, 5000000, 7000000, 8000000,]
+      y: [ 3.62,4.29,5.56,5.61,5.62,5.61,5.57,5.73,5.73 ]
+      label: 'L1'
+      color: 'tab:green'
+      linestyle: '--'
+      marker: 's'
+    - x: [ 1, 100, 10000, 100000, 1000000, 2500000, 5000000, 7000000, 8000000,]
+      y: [ 0.04,0.06,0.07,26.50,43.07,44.25,43.28,43.61,43.61,]
+      label: 'LLC'
+      color: 'tab:red'
+      linestyle: ':'
+      marker: 'p'
+    xlogscale: 10
+    ylabel: 'Cache miss (%)'
+    xlabel: 'Number of flows'
+    yticks: [0, 10, 20, 30, 40, 50]
+    legend: true
+output: 'katran_lru_hit.pdf'
+
+
