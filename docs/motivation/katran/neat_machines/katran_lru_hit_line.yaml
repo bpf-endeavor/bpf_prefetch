@@ -1,4 +1,4 @@
-figsize: [3,2] 
+figsize: [2.6,2.1] 
 subplots:
   - lines:
     - x: [ 1, 100, 10000, 100000, 1000000, 2500000, 5000000, 7000000, 8000000,]
@@ -7,7 +7,7 @@ subplots:
       marker: '^'
       linestyle: '--'
     xlogscale: 10
-    ylabel: 'LRU Hit (%)'
+    ylabel: 'Fast-path hit (%)'
     xlabel: 'Number of flows'
     yticks: [90, 95, 100]
     ylim: [90, 101]

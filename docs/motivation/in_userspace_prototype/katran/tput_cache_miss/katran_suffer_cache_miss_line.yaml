@@ -1,4 +1,4 @@
-figsize: [3.0, 3.0]
+figsize: [3.0, 1.5]
 subplots:
   - lines:
     - label: 'Katran'
