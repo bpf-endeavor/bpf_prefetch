@@ -96,8 +96,10 @@ int parse_headers(void *data, void *data_end, struct ethhdr **eth,
 {
 	int size;
 	*eth = data;
+	bpf_printk("|| %p & %p", data, data_end);
 	if ((void *)(*eth + 1) > data_end) {
-		bpf_printk("packet smaller than ETH header");
+		size = (__u64)data_end - (__u64)data;
+		bpf_printk("packet smaller than ETH header (%d B)", size);
 		return NOT_MATCH;
 	}
 
@@ -122,7 +124,7 @@ int parse_headers(void *data, void *data_end, struct ethhdr **eth,
 	// ip header size
 	size = (*ip)->ihl * 4;
 	*udp = (struct udphdr *)(data + sizeof(struct ethhdr) + size);
-	bpf_printk(": ihl=%d  udp @%d", size, (__u64)*udp - (__u64)data);
+	/* bpf_printk(": ihl=%d  udp @%d", size, (__u64)*udp - (__u64)data); */
 	if ((void *)((*udp) + 1) > data_end) {
 		bpf_printk("packet smaller than the UDP header");
 		return NOT_MATCH;
