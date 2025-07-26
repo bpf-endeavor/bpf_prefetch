@@ -7,6 +7,8 @@
 #include <linux/udp.h>
 #include <linux/in.h>
 
+static int my_counter = 0;
+
 enum test_verdict {
 	TEST_PASSES = 200,
 	TEST_FAILED = 500,
@@ -96,7 +98,7 @@ int parse_headers(void *data, void *data_end, struct ethhdr **eth,
 {
 	int size;
 	*eth = data;
-	bpf_printk("|| %p & %p", data, data_end);
+	/* bpf_printk("|| %p & %p", data, data_end); */
 	if ((void *)(*eth + 1) > data_end) {
 		size = (__u64)data_end - (__u64)data;
 		bpf_printk("packet smaller than ETH header (%d B)", size);
@@ -191,8 +193,8 @@ int bbb_echo(struct xdp_batch_md *batch)
 		return TEST_FAILED;
 	}
 
-	bpf_printk("----------------------------------------------------");
-	bpf_printk("batch size: %d", batch_size);
+	/* bpf_printk("----------------------------------------------------"); */
+	/* bpf_printk("batch size: %d", batch_size); */
 
 	// Farbod: we can not use normal loops becaues the compiler generates
 	// negative offsets into the batch which causes issue in
@@ -207,13 +209,25 @@ int bbb_echo(struct xdp_batch_md *batch)
 
 		if (parse_headers(data, data_end, &eth, &ip, &udp) != MATCH) {
 			// ignore
+			bpf_printk("failed to parse header @ %d", i);
 			batch->actions[i] = XDP_PASS;
 			continue;
 		}
 
+		int *seq = (int *)(udp + 1);
+		if ((void *)(seq + 1) > data_end) {
+			batch->actions[i] = XDP_ABORTED;
+			continue;
+		}
+		if (*seq != my_counter) {
+			bpf_printk("expected %d received %d", my_counter, *seq);
+			my_counter = *seq;
+		}
+		my_counter++;
+
 		swap_address(data, data_end, eth, ip, udp);
 
-		bpf_printk("tx...");
+		// bpf_printk("tx...");
 		batch->actions[i] = XDP_TX;
 
 		/* size = (__u64)data_end - (__u64)data; */
