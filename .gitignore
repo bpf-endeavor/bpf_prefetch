@@ -1,5 +1,6 @@
 deps/
 build/
+others/
 tags
 .o
 .a
