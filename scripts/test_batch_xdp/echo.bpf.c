@@ -7,7 +7,12 @@
 #include <linux/udp.h>
 #include <linux/in.h>
 
+// #define DEBUG_ASSERT_IN_ORDER_PKTS 1
+#define REPORT_THROUGHPUT 1
+
+#ifdef DEBUG_ASSERT_IN_ORDER_PKTS
 static int my_counter = 0;
+#endif
 
 enum test_verdict {
 	TEST_PASSES = 200,
@@ -18,6 +23,31 @@ enum match_status {
 	MATCH = 32,
 	NOT_MATCH = 33,
 };
+
+#ifdef REPORT_THROUGHPUT
+static __u64 counter = 0;
+static __u64 last_report = 0;
+
+static inline __attribute__((always_inline))
+void report_tput(__u32 cnt)
+{
+	__u64 ts, delta;
+	/* We must run on a single core */
+	counter += cnt;
+	ts = bpf_ktime_get_coarse_ns();
+	if (last_report == 0) {
+		last_report = ts;
+		return;
+	}
+
+	delta = ts - last_report;
+	if (delta >= 1000000000L) {
+		bpf_printk("throughput: %ld (pps)", counter);
+		counter = 0;
+		last_report = ts;
+	}
+}
+#endif
 
 #define SERVER_PORT 8080
 
@@ -176,11 +206,12 @@ int swap_address(void *data, void *data_end, struct ethhdr *eth,
 SEC("xdp")
 int bbb_echo(struct xdp_batch_md *batch)
 {
-	void *data, *data_end;
 	/* __u32 size; */
 	struct ethhdr *eth;
 	struct iphdr *ip;
 	struct udphdr *udp;
+
+	__u32 tx_cntr = 0;
 
 	if (batch == NULL) {
 		bpf_printk("wow, we received a NULL context!");
@@ -204,8 +235,8 @@ int bbb_echo(struct xdp_batch_md *batch)
 		if (i >= batch_size)
 			break;
 
-		data = (void *)(__u64)batch->buffs[i].data;
-		data_end = (void *)(__u64)batch->buffs[i].data_end;
+		void *data = (void *)(__u64)batch->buffs[i].data;
+		void *data_end = (void *)(__u64)batch->buffs[i].data_end;
 
 		if (parse_headers(data, data_end, &eth, &ip, &udp) != MATCH) {
 			// ignore
@@ -214,6 +245,7 @@ int bbb_echo(struct xdp_batch_md *batch)
 			continue;
 		}
 
+#ifdef DEBUG_ASSERT_IN_ORDER_PKTS
 		int *seq = (int *)(udp + 1);
 		if ((void *)(seq + 1) > data_end) {
 			batch->actions[i] = XDP_ABORTED;
@@ -224,17 +256,23 @@ int bbb_echo(struct xdp_batch_md *batch)
 			my_counter = *seq;
 		}
 		my_counter++;
+#endif
 
 		swap_address(data, data_end, eth, ip, udp);
 
 		// bpf_printk("tx...");
 		batch->actions[i] = XDP_TX;
+		tx_cntr += 1;
 
 		/* size = (__u64)data_end - (__u64)data; */
 		/* bpf_printk("data = %p    data_end = %p    size = %d", */
 		/* 		data, data_end, size); */
 		// batch->actions[i] = XDP_DROP;
 	}
+
+#ifdef REPORT_THROUGHPUT
+	report_tput(tx_cntr);
+#endif
 
 	return 0;
 }

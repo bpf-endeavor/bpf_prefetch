@@ -13,7 +13,7 @@ set -e
 
 
 curdir=$(realpath $(dirname $0))
-DIR=/users/farbod/bpf-app-offload-measurement/src
+DIR=$HOME/auto_kern_offload_bench/src
 cd $DIR
 
 xdp_binary="$curdir/echo.bpf.o"
