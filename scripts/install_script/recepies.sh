@@ -65,3 +65,16 @@ bring_bmc() {
 
 	set +x
 }
+
+install_clang() {
+	## INSTALL CLANG
+	cd "$THIRD" || exit 1
+	# Arena requires version 19
+	CLANG_VERSION=19
+	wget https://apt.llvm.org/llvm.sh
+	chmod +x llvm.sh
+	sudo ./llvm.sh $CLANG_VERSION
+	# Configure the clang-14 as clang
+	# sudo bash "$CURDIR/update-alternatives-clang.sh" $CLANG_VERSION 100
+}
+

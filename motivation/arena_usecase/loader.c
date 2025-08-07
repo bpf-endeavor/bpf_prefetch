@@ -14,14 +14,17 @@
 
 #include "include/shared_struct.h"
 #include "include/bpf_arena_htab.h"
+
 #include "macchiato.skel.h"
 #include "cappuccino.skel.h"
 #include "lungo.skel.h"
+#include "talkh.skel.h"
 
 typedef enum {
     CAPPUCCINO,
     MACCHIATO,
-    LUNGO
+    LUNGO,
+    TALKH
 } prog_t;
 
 /* Some global vars */
@@ -43,6 +46,7 @@ static void usage(void)
            "OPTIONS:\n"
            "\t--arena: use the hash map made with Arena\n"
            "\t--lungo: use the hash map made with Arena + software prefetching\n"
+           "\t--talkh: [batch aware XDP API] use the hash map made with Arena + software prefetching\n"
            "ENV Vars:\n"
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
@@ -81,6 +85,49 @@ static void prepare_arena_htab_for_xdp(void *arena, void **mem_ptr)
 
     /* Done initilizing the hash map */
     return;
+}
+
+int launch_talkh(void)
+{
+    struct talkh *skel = NULL;
+    skel = talkh__open();
+    if (!skel) {
+        fprintf(stderr, "Failed to open skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    if (talkh__load(skel)) {
+        fprintf(stderr, "Failed to load program\n");
+        talkh__destroy(skel);
+        return EXIT_FAILURE;
+    }
+
+    /* The XDP program is loaded but is not receiving packets right now */
+    prepare_arena_htab_for_xdp(skel->maps.arena, (void **)&skel->bss->rules);
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(skel->progs.bbb_talkh_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            talkh__destroy(skel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    talkh__destroy(skel);
+    printf("Done!\n");
+    return 0;
 }
 
 int launch_lungo(void)
@@ -243,6 +290,8 @@ int main(int argc, char *argv[])
             selected_prog = MACCHIATO;
         } else if (strncmp(argv[1], "--lungo", 7) == 0) {
             selected_prog = LUNGO;
+        } else if (strncmp(argv[1], "--talkh", 7) == 0) {
+            selected_prog = TALKH;
         }
     }
 
@@ -261,6 +310,9 @@ int main(int argc, char *argv[])
             break;
         case LUNGO:
             return launch_lungo();
+            break;
+        case TALKH:
+            return launch_talkh();
             break;
     }
 }

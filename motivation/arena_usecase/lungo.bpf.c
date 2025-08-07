@@ -48,7 +48,7 @@ struct {
     __uint(max_entries, 1);
 } scratch_map SEC(".maps");
 
-#define TAG "macchiato: "
+#define TAG "lungo: "
 
 SEC("xdp")
 int lungo_main(struct xdp_md *xdp)
