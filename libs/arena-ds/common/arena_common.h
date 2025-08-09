@@ -57,3 +57,12 @@
 #define cast_kern(x) 
 #define cast_user(x) 
 #endif
+
+#ifndef arena_container_of
+#define arena_container_of(ptr, type, member)                   \
+        ({                                                      \
+                void __arena *__mptr = (void __arena *)(ptr);   \
+                ((type *)(__mptr - offsetof(type, member)));    \
+        })
+#endif
+

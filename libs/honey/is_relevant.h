@@ -5,11 +5,14 @@
 #pragma GCC error "SERVER_PORT is not defined"
 #endif
 
+#include <linux/bpf.h>
+#include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <linux/if_ether.h>
 #include <linux/in.h>
 #include <linux/ip.h>
 #include <linux/udp.h>
+
 static inline __attribute__((always_inline))
 int is_relevant(void *data, void *data_end)
 {
@@ -26,4 +29,5 @@ int is_relevant(void *data, void *data_end)
 		return 0;
 	return 1;
 }
+
 #endif

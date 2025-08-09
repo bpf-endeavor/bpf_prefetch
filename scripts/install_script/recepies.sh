@@ -78,3 +78,9 @@ install_clang() {
 	# sudo bash "$CURDIR/update-alternatives-clang.sh" $CLANG_VERSION 100
 }
 
+bring_arena_kmod() {
+	cd "$THIRD" || exit 1
+	git clone git@github.com:bpf-endeavor/ebpf-arena-tutorial.git arena_kmod
+	cd arena_kmod/kmod
+	make || exit 1
+}
