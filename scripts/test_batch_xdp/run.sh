@@ -16,8 +16,11 @@ curdir=$(realpath $(dirname $0))
 DIR=$HOME/auto_kern_offload_bench/src
 cd $DIR
 
-xdp_binary="$curdir/echo.bpf.o"
-program=bbb_echo
+TEST=echo
+# TEST=random
+
+xdp_binary="$curdir/$TEST.bpf.o"
+program="bbb_$TEST"
 
 sudo ./build/loader -b $xdp_binary --xdp $program -i $NET_IFACE
 

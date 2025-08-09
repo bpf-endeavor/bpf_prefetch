@@ -5,11 +5,11 @@ static __u64 counter = 0;
 static __u64 last_report = 0;
 
 static inline __attribute__((always_inline))
-void report_tput(void)
+void report_tput_batch(__u32 cnt)
 {
 	__u64 ts, delta;
 	/* We must run on a single core */
-	__sync_fetch_and_add(&counter, 1);
+	__sync_fetch_and_add(&counter, cnt);
 	ts = bpf_ktime_get_coarse_ns();
 	if (last_report == 0) {
 		last_report = ts;
@@ -23,5 +23,11 @@ void report_tput(void)
 		counter = 0;
 		last_report = ts;
 	}
+}
+
+static inline __attribute__((always_inline))
+void report_tput(void)
+{
+	report_tput_batch(1);
 }
 #endif

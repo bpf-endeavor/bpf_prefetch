@@ -15,6 +15,7 @@ asm: xdp.bpf.S
 
 %.bpf.o: %.bpf.c
 	clang -S \
+	-I ../../libs/ \
 	-target bpf \
 	-Wall \
 	-g -O3 -emit-llvm \

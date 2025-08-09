@@ -9,6 +9,11 @@
 
 // #define DEBUG_ASSERT_IN_ORDER_PKTS 1
 #define REPORT_THROUGHPUT 1
+#define MODIFY_PAYLOAD 1
+
+#ifdef REPORT_THROUGHPUT
+#include "honey/report_throughput.h"
+#endif
 
 #ifdef DEBUG_ASSERT_IN_ORDER_PKTS
 static int my_counter = 0;
@@ -24,41 +29,7 @@ enum match_status {
 	NOT_MATCH = 33,
 };
 
-#ifdef REPORT_THROUGHPUT
-static __u64 counter = 0;
-static __u64 last_report = 0;
-
-static inline __attribute__((always_inline))
-void report_tput(__u32 cnt)
-{
-	__u64 ts, delta;
-	/* We must run on a single core */
-	counter += cnt;
-	ts = bpf_ktime_get_coarse_ns();
-	if (last_report == 0) {
-		last_report = ts;
-		return;
-	}
-
-	delta = ts - last_report;
-	if (delta >= 1000000000L) {
-		bpf_printk("throughput: %ld (pps)", counter);
-		counter = 0;
-		last_report = ts;
-	}
-}
-#endif
-
 #define SERVER_PORT 8080
-
-static const char *hex_tbl = "0123456789abcdef";
-#define GET_LOWER_BITS(x) (hex_tbl[(x & 0x0f)])
-#define GET_UPPER_BITS(x) (hex_tbl[((x & 0xf0) >> 4)])
-#define FILL_WITH_HEX(dst_char, src_bytes, i) { \
-	dst_char[i * 3]     = GET_UPPER_BITS(src_bytes[i]); \
-	dst_char[i * 3 + 1] = GET_LOWER_BITS(src_bytes[i]); \
-	dst_char[i * 3 + 2] = ':'; \
-}
 
 static inline __u16 csum_fold_helper(__u64 csum)
 {
@@ -84,45 +55,6 @@ void ipv4_csum_inline(void *iph, __u64 *csum)
 }
 
 static inline __attribute__((always_inline))
-unsigned int process_pkt(struct xdp_md *pkt)
-{
-	/* void *data; */
-	/* void *data_end; */
-	/* struct ethhdr *eth; */
-	/* /1* struct iphdr *ip; *1/ */
-	/* /1* struct udphdr *l4; *1/ */
-	/* char dst_mac[20]; */
-	/* char src_mac[20]; */
-
-	/* data = NULL; */
-	/* data = (void *)(__u64)pkt->data; */
-	/* data_end = (void *)(__u64)pkt->data_end; */
-	/* // check if the driver is sending a malformed batch to the */
-	/* // program */
-	/* if (data == NULL) { */
-	/* 	bpf_printk("!! this is not expected!!"); */
-	/* 	return XDP_PASS; */
-	/* } */
-
-	/* bpf_printk("ptr: %p", data); */
-
-	/* eth = data; */
-	/* if ((void *)(eth + 1) > data_end) { */
-	/* 	bpf_printk("!! small pakcet"); */
-	/* 	return XDP_PASS; */
-	/* } */
-
-	/* for (__u16 i = 0; i < 6; i++) { */
-	/* 	FILL_WITH_HEX(dst_mac, eth->h_dest, i) */
-	/* 		FILL_WITH_HEX(src_mac, eth->h_source, i) */
-	/* } */
-	/* src_mac[17] = '\0'; */
-	/* dst_mac[17] = '\0'; */
-	/* bpf_printk("Eth: src-mac: %s  dst-mac: %s", src_mac, dst_mac); */
-	return XDP_DROP;
-}
-
-static inline __attribute__((always_inline))
 int parse_headers(void *data, void *data_end, struct ethhdr **eth,
 		struct iphdr **ip, struct udphdr **udp)
 {
@@ -131,23 +63,23 @@ int parse_headers(void *data, void *data_end, struct ethhdr **eth,
 	/* bpf_printk("|| %p & %p", data, data_end); */
 	if ((void *)(*eth + 1) > data_end) {
 		size = (__u64)data_end - (__u64)data;
-		bpf_printk("packet smaller than ETH header (%d B)", size);
+		// bpf_printk("packet smaller than ETH header (%d B)", size);
 		return NOT_MATCH;
 	}
 
 	if ((*eth)->h_proto != bpf_htons(ETH_P_IP)) {
-		bpf_printk("packet not a IP");
+		// bpf_printk("packet not a IP");
 		return NOT_MATCH;
 	}
 
 	*ip = (struct iphdr *)(*eth + 1);
 	if ((void *)((*ip) + 1) > data_end) {
-		bpf_printk("packet smaller than IP header");
+		// bpf_printk("packet smaller than IP header");
 		return NOT_MATCH;
 	}
 
 	if ((*ip)->protocol != IPPROTO_UDP) {
-		bpf_printk("packet not a UDP");
+		// bpf_printk("packet not a UDP");
 		return NOT_MATCH;
 	}
 
@@ -235,12 +167,14 @@ int bbb_echo(struct xdp_batch_md *batch)
 		if (i >= batch_size)
 			break;
 
-		void *data = (void *)(__u64)batch->buffs[i].data;
-		void *data_end = (void *)(__u64)batch->buffs[i].data_end;
+		struct xdp_md *xdp = &batch->buffs[i];
+
+		void *data = (void *)(__u64)xdp->data;
+		void *data_end = (void *)(__u64)xdp->data_end;
 
 		if (parse_headers(data, data_end, &eth, &ip, &udp) != MATCH) {
 			// ignore
-			bpf_printk("failed to parse header @ %d", i);
+			// bpf_printk("failed to parse header @ %d", i);
 			batch->actions[i] = XDP_PASS;
 			continue;
 		}
@@ -258,9 +192,59 @@ int bbb_echo(struct xdp_batch_md *batch)
 		my_counter++;
 #endif
 
+#ifdef MODIFY_PAYLOAD
+		// remember what was the length of ip header
+		__u32 ip_hdr_sz = ip->ihl * 4;
+		const __u32 header_size = sizeof(struct ethhdr) + ip_hdr_sz +
+			sizeof(struct udphdr);
+		const __u64 target_size = header_size + 30 /* new payload size */;
+
+		__u64 size = data_end - data;
+		int delta = target_size - size;
+		if (bpf_xdp_adjust_tail(xdp, delta) != 0) {
+			bpf_printk("failed to adjust packet length (%d)", delta);
+			batch->actions[i] = XDP_ABORTED;
+			continue;
+		}
+
+		// renew the pointers, satisfying the verifier
+		xdp = &batch->buffs[i];
+		data = (void *)(__u64)xdp->data;
+		data_end = (void *)(__u64)xdp->data_end;
+		eth = (struct ethhdr *)data;
+		ip = (struct iphdr *)(eth + 1);
+		udp = (struct udphdr *)((__u8 *)ip + ip_hdr_sz);
+
+		char *payload = (char *)(udp + 1);
+
+		if ((void *)(payload + 30) > data_end) {
+			bpf_printk("failed to extend the payload size");
+			batch->actions[i] = XDP_ABORTED;
+			continue;
+		}
+
+		// copy response to the packet
+		__builtin_memcpy(payload, "hello from the other siiiide\n\0", 30); 
+
+		/* bpf_printk("successfully modified the payload"); */
+
+		// For some reason I need to do this check to satisfy the
+		// verifier. Most probably it is because the IP header is
+		// variable length
+		if ((void *)(ip + 1) > data_end) {
+			bpf_printk("failed to extend the payload size");
+			batch->actions[i] = XDP_ABORTED;
+			continue;
+		}
+
+		// update the packet length fields, the checksum is updated in
+		// swap_address
+		ip->tot_len = bpf_htons(target_size - sizeof(struct ethhdr));
+		udp->len = bpf_htons(target_size - sizeof(struct ethhdr) - ip_hdr_sz);
+#endif
+
 		swap_address(data, data_end, eth, ip, udp);
 
-		// bpf_printk("tx...");
 		batch->actions[i] = XDP_TX;
 		tx_cntr += 1;
 
@@ -271,7 +255,7 @@ int bbb_echo(struct xdp_batch_md *batch)
 	}
 
 #ifdef REPORT_THROUGHPUT
-	report_tput(tx_cntr);
+	report_tput_batch(tx_cntr);
 #endif
 
 	return 0;
