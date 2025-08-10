@@ -1,6 +1,8 @@
 CURDIR = $(shell pwd)
 DEPS_DIR = $(CURDIR)/deps
 
+.PHONY: make_project build_libbpf install_deps
+
 make_project: build_libbpf
 
 build_libbpf: ./libs/libbpf/
@@ -12,3 +14,14 @@ build_libbpf: ./libs/libbpf/
 	if [ ! -d  ${DEPS_DIR} ]; then mkdir -p ${DEPS_DIR}; fi
 	# Build libbpf into deps directory
 	BUILD_STATIC_ONLY=y DESTDIR=${DEPS_DIR} OBJDIR=${DEPS_DIR} $(MAKE) -C $</src install
+
+install_deps:
+	bash $(CURDIR)/scripts/install_script/main.sh
+
+load_kmod:
+	if [ ! -d $(CURDIR)/others/arena_kmod/kmod/ ]; then  \
+		bash $(CURDIR)/scripts/install_script/main.sh; \
+	fi
+	cd $(CURDIR)/others/arena_kmod/kmod/
+	make
+	make load
