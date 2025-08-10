@@ -7,7 +7,7 @@ base_port=9991
 count_vm=${#user_names[@]}
 image="ubuntu:22.04"
 net_name="lxdbr0"
-host_ip=128.110.219.138
+host_ip=$(ip a | grep 128.110 | sed 's/^.* \(\([0-9]\+.\)\+\) .*$/\1/')
 echo Count VMs: $count_vm
 for i in $(seq $count_vm); do
 	i_=$((i-1))
@@ -28,6 +28,9 @@ for i in $(seq $count_vm); do
 	lxc exec $vm_name -- bash -c "printf \"$password\n$password\n\" | passwd $user_name"
 	lxc exec $vm_name -- rm /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
 	lxc exec $vm_name -- systemctl restart sshd
+
+	# add an experiment NIC
+	lxc config device add $vm_name eth1 nic network=br1
 
 	private_ip=$(lxc info $vm_name | grep inet: | grep global \
 		| cut -d : -f 2 | cut -d  ' ' -f 3 | cut -d / -f 1)

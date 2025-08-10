@@ -14,3 +14,7 @@ echo "Reload/refresh your shell/ ssh connection..."
 
 lxc init --minimal
 
+# add a network for experimenting
+lxc network create br1     bridge.driver=native     ipv4.address=none     ipv6.address=none
+
+
