@@ -1,0 +1,10 @@
+#cloud-config
+ssh_pwauth: True
+chpasswd:
+  expire: false
+  users:
+  - {name: ubuntu, password: ubuntu, type: text}
+users:
+  - name: ubuntu
+    groups: users, sudo
+    shell: /usr/bin/bash
