@@ -40,6 +40,7 @@ $(build_dir)/%.ll: %.c
 
 $(build_dir)/%.o: $(build_dir)/%.ll  $(bpf_headers)
 	$(LLC) -mcpu=probe -march=bpf -filetype=obj -o $@ $<
+	cp $@ $@.keep
 
 $(skel_dir)/%.skel.h: $(build_dir)/%.bpf.o
 	name=$$(echo $@ | cut -d / -f 3 | cut -d '.' -f 1); \

@@ -38,6 +38,8 @@ struct {
 
 htab_t *map = NULL;
 
+/* A normal XDP program returning responses from a hash-map
+ * */
 SEC("xdp")
 int key_val_main(struct xdp_md *xdp)
 {
@@ -79,6 +81,73 @@ int key_val_main(struct xdp_md *xdp)
     report_tput();
 
     return XDP_TX;
+}
+
+#define ACTION(act, index) batch->actions[index] = act
+#define PASS(k) ACTION(XDP_PASS, k)
+#define DROP(k) ACTION(XDP_DROP, k)
+#define TX(k)   ACTION(XDP_TX, k)
+
+/* A batch-aware XDP program returning responses from a hash-map
+ * */
+SEC("xdp")
+int bbb_key_val_main(struct xdp_batch_md *batch)
+{
+    if (map == NULL) {
+        bpf_printk("htab is not initialized");
+        my_kfunc_reg_arena(&arena);
+        return XDP_ABORTED;
+    }
+
+    __u32 pkt_cntr = 0;
+
+#pragma clang loop unroll(full)
+    for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+        if (k >= batch->size) {
+            break;
+        }
+
+        struct xdp_md *xdp = &batch->buffs[k];
+        struct udp_packet _upkt = {
+            .data = (void *)(__u64)xdp->data,
+            .data_end = (void *)(__u64)xdp->data_end,
+        };
+        struct udp_packet *upkt = &_upkt;
+
+        char *payload;
+        my_value_t __arena * val = NULL;
+        my_key_t key;
+
+        if(parse_headers(upkt->data, upkt->data_end, upkt) != 0) {
+            PASS(k);
+            continue;
+        }
+
+        payload = (char *)(upkt->udp + 1);
+        if ((void *)(payload + sizeof(my_key_t)) > upkt->data_end) {
+            bpf_printk("failed to get the key");
+            DROP(k);
+            continue;
+        }
+
+        *(int *)&key.data = *(int *)payload;
+        val = htab_lookup_elem(map, &key);
+        if (val == NULL) {
+            bpf_printk("did not found the entry");
+            DROP(k);
+            continue;
+        }
+
+        /* bpf_printk("reponse"); */
+        update_udp_pkt_with_payload(xdp, upkt, (void *)val, sizeof(my_value_t));
+        TX(k);
+
+        pkt_cntr++;
+    }
+
+    report_tput_batch(pkt_cntr);
+
+    return 0;
 }
 
 char _license[] SEC("license") = "GPL";

@@ -90,7 +90,10 @@ int parse_args(int argc, char *argv[])
     selected_prog = PROG_NORMAL;
 
     if (argc > 1) {
-        if (strncmp(argv[1], "--normal", 7) == 0) {
+        if (strncmp(argv[1], "-h", 2) == 0 ||
+                strncmp(argv[1], "--help", 6) == 0) {
+            return 1;
+        } else if (strncmp(argv[1], "--normal", 7) == 0) {
             selected_prog = PROG_NORMAL;
         } else if (strncmp(argv[1], "--batch", 7) == 0) {
             selected_prog = PROG_BATCH;
@@ -132,6 +135,9 @@ int main(int argc, char *argv[])
     switch(selected_prog) {
         case PROG_NORMAL:
             main_prog = skel->progs.key_val_main;
+            break;
+        case PROG_BATCH:
+            main_prog = skel->progs.bbb_key_val_main;
             break;
         default:
             fprintf(stderr, "Unexpected program mode\n");
