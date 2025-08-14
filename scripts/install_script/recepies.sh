@@ -97,7 +97,7 @@ install_clang() {
 	chmod +x llvm.sh
 	sudo ./llvm.sh $CLANG_VERSION
 	# Configure the clang-14 as clang
-	# sudo bash "$CURDIR/update-alternatives-clang.sh" $CLANG_VERSION 100
+	sudo bash "$CURDIR/update-alternatives-clang.sh" $CLANG_VERSION 100
 }
 
 bring_arena_kmod() {

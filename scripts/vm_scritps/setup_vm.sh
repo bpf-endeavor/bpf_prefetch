@@ -31,6 +31,8 @@ for i in $(seq $count_vm); do
 
 	# add an experiment NIC
 	lxc config device add $vm_name eth1 nic network=br1
+	# disable safe boot
+	lxc config set $vm_name security.secureboot=false
 
 	private_ip=$(lxc info $vm_name | grep inet: | grep global \
 		| cut -d : -f 2 | cut -d  ' ' -f 3 | cut -d / -f 1)

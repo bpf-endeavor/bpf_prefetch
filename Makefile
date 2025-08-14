@@ -1,7 +1,15 @@
 CURDIR = $(shell pwd)
 DEPS_DIR = $(CURDIR)/deps
 
+
+commands = make_project build_libbpf install_deps load_kmod
+
 .PHONY: make_project build_libbpf install_deps
+
+help:
+	@for c in ${commands}; do \
+		echo "  * $$c"; \
+	done
 
 make_project: build_libbpf
 
@@ -22,6 +30,4 @@ load_kmod:
 	if [ ! -d $(CURDIR)/others/arena_kmod/kmod/ ]; then  \
 		bash $(CURDIR)/scripts/install_script/main.sh; \
 	fi
-	cd $(CURDIR)/others/arena_kmod/kmod/
-	make
-	make load
+	$(MAKE) -C $(CURDIR)/others/arena_kmod/kmod/ load

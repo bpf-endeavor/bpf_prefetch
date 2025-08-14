@@ -21,6 +21,7 @@ read_progress() {
 }
 
 PROCESS=(
+	install_pkgs
 	get_custom_kernel
 	bring_bmc
 	install_clang
