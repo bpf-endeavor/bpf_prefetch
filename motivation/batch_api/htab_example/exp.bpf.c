@@ -38,6 +38,25 @@ struct {
 
 htab_t *map = NULL;
 
+
+typedef struct {
+    int phase;
+    /* struct udp_packet upkt; */
+    my_key_t key;
+    struct partial_lookup_state plookup;
+} batch_state_t;
+
+typedef struct {
+    batch_state_t pkt[XDP_MAX_BATCH_SIZE];
+} batch_state_wrapper_t;
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __type(key, int);
+    __type(value, batch_state_wrapper_t);
+    __uint(max_entries, 1);
+} batch_state_map SEC(".maps");
+
 /* A normal XDP program returning responses from a hash-map
  * */
 SEC("xdp")
@@ -101,22 +120,30 @@ int bbb_key_val_main(struct xdp_batch_md *batch)
 
     __u32 pkt_cntr = 0;
 
+    int zero = 0;
+    batch_state_wrapper_t *bs;
+    bs = bpf_map_lookup_elem(&batch_state_map, &zero);
+    if (bs == NULL) {
+        bpf_printk("batch state not found! unexpected");
+        return XDP_ABORTED;
+    }
+
 #pragma clang loop unroll(full)
     for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
         if (k >= batch->size) {
             break;
         }
 
+        bs->pkt[k].phase = 0;
+
         struct xdp_md *xdp = &batch->buffs[k];
-        struct udp_packet _upkt = {
-            .data = (void *)(__u64)xdp->data,
-            .data_end = (void *)(__u64)xdp->data_end,
-        };
+        /* struct udp_packet *upkt = &bs->pkt[k].upkt; */
+        struct udp_packet _upkt;
         struct udp_packet *upkt = &_upkt;
+        upkt->data = (void *)(__u64)xdp->data;
+        upkt->data_end = (void *)(__u64)xdp->data_end;
 
         char *payload;
-        my_value_t __arena * val = NULL;
-        my_key_t key;
 
         if(parse_headers(upkt->data, upkt->data_end, upkt) != 0) {
             PASS(k);
@@ -130,13 +157,47 @@ int bbb_key_val_main(struct xdp_batch_md *batch)
             continue;
         }
 
-        *(int *)&key.data = *(int *)payload;
-        val = htab_lookup_elem(map, &key);
+        my_key_t *key = &bs->pkt[k].key;
+        *(int *)&key->data = *(int *)payload;
+
+        htab_lookup_elem_p1(map, key, &bs->pkt[k].plookup);
+        bs->pkt[k].phase = 1;
+
+        P((void *)bs->pkt[k].plookup.head);
+    }
+
+#pragma clang loop unroll(full)
+    for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+        if (k >= batch->size)
+            break;
+
+        if (bs->pkt[k].phase != 1)
+            continue;
+
+        struct xdp_md *xdp = &batch->buffs[k];
+        /* struct udp_packet *upkt = &bs->pkt[k].upkt; */
+  
+        my_key_t *key = &bs->pkt[k].key;
+
+        my_value_t __arena * val = NULL;
+        val = htab_lookup_elem_p2(map, key, &bs->pkt[k].plookup);
         if (val == NULL) {
             bpf_printk("did not found the entry");
             DROP(k);
             continue;
         }
+
+        /* TODO: fix the design so that I do not need to re-calculate pointers
+         * */
+        struct udp_packet _upkt;
+        struct udp_packet *upkt = &_upkt;
+        upkt->data = (void *)(__u64)xdp->data;
+        upkt->data_end = (void *)(__u64)xdp->data_end;
+        upkt->eth = upkt->data;
+        upkt->ip = upkt->eth + 1;
+        upkt->udp = upkt->ip + 1;
+        if (upkt->udp + 1 > upkt->data_end)
+            return XDP_ABORTED; // never happens
 
         /* bpf_printk("reponse"); */
         update_udp_pkt_with_payload(xdp, upkt, (void *)val, sizeof(my_value_t));

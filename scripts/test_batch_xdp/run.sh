@@ -13,7 +13,7 @@ set -e
 
 
 curdir=$(realpath $(dirname $0))
-DIR=$HOME/auto_kern_offload_bench/src
+DIR=$HOME/bpf-app-offload-measurement/src
 cd $DIR
 
 TEST=echo

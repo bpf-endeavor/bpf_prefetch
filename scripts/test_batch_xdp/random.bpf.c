@@ -123,6 +123,7 @@ int bbb_random(struct xdp_batch_md *batch)
 		bpf_printk("wow, we recieved an empty batch!");
 		return TEST_FAILED;
 	}
+	// bpf_printk("here: batch size: %d", batch_size);
 
 #pragma clang loop unroll_count(XDP_MAX_BATCH_SIZE)
 	for (int i = 0; i < XDP_MAX_BATCH_SIZE; i++) {

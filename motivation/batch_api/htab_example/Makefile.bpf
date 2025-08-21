@@ -21,6 +21,7 @@ BPF_CFLAGS += -Wno-unused-value
 BPF_CFLAGS += -Wno-pointer-sign
 BPF_CFLAGS += -Wno-compare-distinct-pointer-types
 BPF_CFLAGS += -Wno-address-of-packed-member
+BPF_CFLAGS += -Wno-incompatible-pointer-types
 BPF_CFLAGS += -I ./include/
 BPF_CFLAGS += -I ../../../libs/
 BPF_CFLAGS += -D __KERNEL__ -D __BPF__

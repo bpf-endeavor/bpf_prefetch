@@ -2,6 +2,7 @@ deps/
 build/
 others/
 tags
+tags.*
 .o
 .a
 .so

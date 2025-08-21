@@ -64,6 +64,8 @@ static void prepare_arena_htab_for_xdp(void *arena, void **mem_ptr)
         my_value_t v;
         memset(&v, 0, sizeof(v));
         sprintf(v.data, "hello %d\n", i);
+        // finish message with END\r\n
+        strncpy(v.data + sizeof(my_value_t) - 5, "END\r\n", 5);
         if(htab_update_elem_userspace(htab, &k, &v) != 0) {
             fprintf(stderr, "Failed to insert a value into the hash map\n");
             break;

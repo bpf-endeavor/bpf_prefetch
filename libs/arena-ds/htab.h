@@ -158,6 +158,39 @@ static inline void __arena *htab_lookup_elem(htab_t *htab, void *key)
     return NULL;
 }
 
+
+
+struct partial_lookup_state {
+    void __arena *head;
+    int hash;
+};
+
+static inline void __arena *htab_lookup_elem_p1(htab_t *htab, void *key,
+        struct partial_lookup_state *s)
+{
+    s->head = NULL;
+    s->hash = 0;
+
+    cast_kern(htab);
+    s->hash = htab_hash(key, sizeof(my_key_t));
+    s->head = select_bucket(htab, s->hash);
+    return NULL;
+}
+
+static inline void __arena *htab_lookup_elem_p2(htab_t *hatb, void *key,
+        struct partial_lookup_state *s)
+{
+    /*bpf_printk("hash: %u", hash); */
+    hashtab_elem_t *l_old = NULL;
+    l_old = lookup_elem_raw(s->head, s->hash, key, sizeof(my_key_t));
+    if (l_old != NULL) {
+        void __arena *l_val = EXTRACT_VAL(htab, l_old);
+        cast_kern(l_val);
+        return l_val;
+    }
+    return NULL;
+}
+
 /* static inline int htab_update_elem(htab_t *htab, void *key, void *value) */
 /* { */
 /*     hashtab_elem_t *l_new = NULL, *l_old; */
