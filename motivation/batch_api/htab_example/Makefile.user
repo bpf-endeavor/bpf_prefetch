@@ -5,10 +5,19 @@ skeleton_dir = ./build/skel/
 # $(info $(object))
 
 CC = clang
-CFLAGS = -O3 -g -Wall $(shell pkg-config --cflags libbpf)
+
+# If libbpf is installed system wide
+# LIBBPF_HEADER=$(shell pkg-config --cflags libbpf)
+# LIBBPF_LIBS=$(shell pkg-config --libs libbpf)
+
+LIBBPF_HEADER=-I ../../../deps/usr/include
+LIBBPF_LIBS=-L ../../../deps/usr/lib64 -lbpf -lelf -lz
+
+CFLAGS = -O3 -g -Wall
 CFLAGS += -I $(skeleton_dir)
 CFLAGS += -I ../../../libs
-LDFLAGS = $(shell pkg-config --libs libbpf)
+CFLAGS += $(LIBBPF_HEADER)
+LDFLAGS = $(LIBBPF_LIBS)
 
 # Skeleton header files that loader relies on
 bpf_names = exp
@@ -19,3 +28,4 @@ default: $(object)
 
 $(build_dir)/%.o: %.c $(skeletons)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+

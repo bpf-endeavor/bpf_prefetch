@@ -30,4 +30,7 @@ load_kmod:
 	if [ ! -d $(CURDIR)/others/arena_kmod/kmod/ ]; then  \
 		bash $(CURDIR)/scripts/install_script/main.sh; \
 	fi
-	$(MAKE) -C $(CURDIR)/others/arena_kmod/kmod/ load
+	cd $(CURDIR)/others/arena_kmod/kmod/ && \
+		($(MAKE) clean || true) && \
+		$(MAKE) && \
+		$(MAKE) load

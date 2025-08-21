@@ -1,6 +1,8 @@
 LLC ?= llc-19
 CLANG ?= clang-19
 
+LIBBPF_HEADER=../../../deps/usr/include
+
 build_dir ?= build
 skel_dir = $(build_dir)/skel
 # bpf_src = pubtrafstat.bpf.c
@@ -24,6 +26,7 @@ BPF_CFLAGS += -Wno-address-of-packed-member
 BPF_CFLAGS += -Wno-incompatible-pointer-types
 BPF_CFLAGS += -I ./include/
 BPF_CFLAGS += -I ../../../libs/
+BPF_CFLAGS += -I $(LIBBPF_HEADER)
 BPF_CFLAGS += -D __KERNEL__ -D __BPF__
 BPF_CFLAGS += -D __BPF_FEATURE_ADDR_SPACE_CAST
 
