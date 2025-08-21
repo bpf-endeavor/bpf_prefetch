@@ -106,3 +106,48 @@ bring_arena_kmod() {
 	cd arena_kmod/kmod
 	make || exit 1
 }
+
+install_kernel_tools() {
+	## Install BPFTOOL
+	cd "$KERNEL_SOURCE_DIR/tools/bpf/" || exit 1
+	make clean
+	make -j
+	sudo make install
+
+	## Install perf
+	cd "$KERNEL_SOURCE_DIR/tools/perf" || exit 1
+	make clean
+	BUILD_NONDISTRO=1 make
+	target=/usr/bin/perf
+	if [ -f $target ]; then
+		sudo rm $target
+	fi
+	sudo ln -s "$KERNEL_SOURCE_DIR/tools/perf/perf" $target
+
+	## INSTALL CPU POWER
+	cd "$KERNEL_SOURCE_DIR/tools/power/cpupower" || exit 1
+	make -j
+	sudo make install
+	echo /usr/lib64 | sudo tee -a /etc/ld.so.conf.d/tmp.conf
+	sudo ldconfig
+
+	## INSTALL x86 Energy
+	cd "$KERNEL_SOURCE_DIR/tools/power/x86/x86_energy_perf_policy" || exit 1
+	make
+	sudo make install
+}
+
+install_dwarf() {
+	# INSTALL DWARF (required for BTF)
+	cd $THIRD || exit 1
+	git clone https://github.com/acmel/dwarves.git
+	cd dwarves
+	git checkout v1.29
+	mkdir build/
+	cd build/
+	cmake ../
+	make -j
+	sudo make install
+	sudo ldconfig
+}
+
