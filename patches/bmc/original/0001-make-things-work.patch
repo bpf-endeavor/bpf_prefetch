@@ -1,20 +1,20 @@
-From eb899c0accbc455bb3249b29362bcf2d18af01ca Mon Sep 17 00:00:00 2001
+From 0c8ebd75e8723de929b0100982ecaa03d84267b7 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
-Date: Mon, 4 Aug 2025 21:02:03 +0000
+Date: Thu, 21 Aug 2025 12:08:28 -0600
 Subject: [PATCH] make things work
 
 ---
- bmc/Makefile     | 146 ++++++-----------------------------------------
+ bmc/Makefile     | 147 +++++++----------------------------------------
  bmc/bmc_common.h |   4 +-
- bmc/bmc_kern.c   | 137 +++++++++++++++++++++++++++-----------------
+ bmc/bmc_kern.c   | 137 ++++++++++++++++++++++++++-----------------
  bmc/bmc_user.c   |  19 +++---
- 4 files changed, 114 insertions(+), 192 deletions(-)
+ 4 files changed, 115 insertions(+), 192 deletions(-)
 
 diff --git a/bmc/Makefile b/bmc/Makefile
-index 61a8f5d..4dfdda5 100644
+index 61a8f5d..efa08f1 100644
 --- a/bmc/Makefile
 +++ b/bmc/Makefile
-@@ -1,131 +1,23 @@
+@@ -1,131 +1,24 @@
 -# Software Name : bmc-cache
 -# SPDX-FileCopyrightText: Copyright (c) 2021 Orange
 -# SPDX-License-Identifier: LGPL-2.1-only
@@ -32,6 +32,8 @@ index 61a8f5d..4dfdda5 100644
 -#	bmc_user.c depends on libbpf
 +CC=clang
 +LLC=llc
++LIBBPF_HEADER=$(CURDIR)/../../../deps/usr/include/
++LIBBPF_LIB=$(CURDIR)/../../../deps/usr/lib64/
  
 -LINUX_PATH ?= ./linux
 -LINUX_TOOLS_PATH = $(LINUX_PATH)/tools
@@ -156,13 +158,12 @@ index 61a8f5d..4dfdda5 100644
 +	LL_FILE=$@.ll; \
 +	$(CC) -target bpf \
 +		-S -Wall \
++		-I $(LIBBPF_HEADER) \
 +		-Wno-unused-value -Wno-pointer-sign \
 +		-Wno-compare-distinct-pointer-types \
 +		-O2 -g -emit-llvm -c bmc_kern.c -o $$LL_FILE; \
 +		$(LLC) -mcpu=v3 -march=bpf -filetype=obj -o "$@" $$LL_FILE;
 +
-+LIBBPF_HEADER=$(CURDIR)/../../../deps/usr/include/
-+LIBBPF_LIB=$(CURDIR)/../../../deps/usr/lib64/
 +bmc: bmc_user.c bmc_common.h
 +	$(CC) -O2 -g -Wall -I $(LIBBPF_HEADER) -o $@ bmc_user.c -L$(LIBBPF_LIB)  -lbpf  -lelf -lz -lpthread
 diff --git a/bmc/bmc_common.h b/bmc/bmc_common.h

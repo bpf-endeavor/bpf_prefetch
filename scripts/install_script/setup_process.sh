@@ -22,9 +22,9 @@ read_progress() {
 
 PROCESS=(
 	install_pkgs
+	install_clang
 	get_custom_kernel
 	bring_bmc
-	install_clang
 	bring_arena_kmod
 )
 

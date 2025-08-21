@@ -23,7 +23,7 @@ build_libbpf: ./libs/libbpf/
 	# Build libbpf into deps directory
 	BUILD_STATIC_ONLY=y DESTDIR=${DEPS_DIR} OBJDIR=${DEPS_DIR} $(MAKE) -C $</src install
 
-install_deps:
+install_deps: build_libbpf
 	bash $(CURDIR)/scripts/install_script/main.sh
 
 load_kmod:
