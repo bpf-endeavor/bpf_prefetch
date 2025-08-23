@@ -20,9 +20,9 @@ curdir=$(realpath $(dirname $0))
 DIR=$HOME/bpf-app-offload-measurement/src
 cd $DIR
 
-# TEST=simple
+TEST=simple
 # TEST=echo
-TEST=random
+# TEST=random
 
 xdp_binary="$curdir/$TEST.bpf.o"
 program="bbb_$TEST"

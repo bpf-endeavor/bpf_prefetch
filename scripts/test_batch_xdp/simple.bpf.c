@@ -49,6 +49,26 @@ int bbb_simple(struct xdp_batch_md *batch)
 	}
 
 	batch->actions[0] = XDP_DROP;
+
+
+	for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+		if (k >= batch->size)
+			break;
+		struct xdp_md *xdp = &batch->buffs[k];
+		void *data = (void *)(__u64)xdp->data;
+		void *data_end = (void *)(__u64)xdp->data_end;
+		__u64 size = (__u64)data_end - (__u64)data;
+		bpf_printk("@%d, data: %p    data_end: %p    size: %ld",
+				k, data, data_end, size);
+
+		struct ethhdr *eth = data;
+		if ((void *)(eth + 1) > data_end)
+			return TEST_FAILED;
+		for (int i = 0; i < 6; i++) {
+			bpf_printk("eth: %x", eth->h_source[i]);
+		}
+		batch->actions[0] = XDP_DROP;
+	}
 	return TEST_PASSES;
 }
 
