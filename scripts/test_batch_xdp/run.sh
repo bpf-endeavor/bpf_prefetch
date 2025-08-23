@@ -12,12 +12,17 @@ set -e
 # done
 
 
+# Recompile the test programs
+make clean || true
+make
+
 curdir=$(realpath $(dirname $0))
 DIR=$HOME/bpf-app-offload-measurement/src
 cd $DIR
 
-TEST=echo
-# TEST=random
+# TEST=simple
+# TEST=echo
+TEST=random
 
 xdp_binary="$curdir/$TEST.bpf.o"
 program="bbb_$TEST"

@@ -156,9 +156,6 @@ int bbb_echo(struct xdp_batch_md *batch)
 		return TEST_FAILED;
 	}
 
-	/* bpf_printk("----------------------------------------------------"); */
-	/* bpf_printk("batch size: %d", batch_size); */
-
 	// Farbod: we can not use normal loops becaues the compiler generates
 	// negative offsets into the batch which causes issue in
 	// `xdp_batch_convert_ctx_access`
