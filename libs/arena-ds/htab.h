@@ -4,6 +4,10 @@
 #include "common/my_junk.h"
 #include "hash/jhash.h"
 
+#ifdef REFETCH
+#include "honey/prefetching.h"
+#endif
+
 #ifndef HTAB_KEY_DEFINED
 #define HTAB_KEY_DEFINED
 typedef struct {
@@ -159,7 +163,7 @@ static inline void __arena *htab_lookup_elem(htab_t *htab, void *key)
 }
 
 
-
+#ifdef PREFETCH
 struct partial_lookup_state {
     void __arena *head;
     int hash;
@@ -174,6 +178,7 @@ static inline void __arena *htab_lookup_elem_p1(htab_t *htab, void *key,
     cast_kern(htab);
     s->hash = htab_hash(key, sizeof(my_key_t));
     s->head = select_bucket(htab, s->hash);
+    P((void *)s->head);
     return NULL;
 }
 
@@ -190,6 +195,7 @@ static inline void __arena *htab_lookup_elem_p2(htab_t *hatb, void *key,
     }
     return NULL;
 }
+#endif
 
 /* static inline int htab_update_elem(htab_t *htab, void *key, void *value) */
 /* { */

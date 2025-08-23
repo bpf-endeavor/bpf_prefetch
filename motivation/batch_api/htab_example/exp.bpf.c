@@ -17,14 +17,14 @@
 
 #define SERVER_PORT 8080
 
+// enable prefetch instruction (the kernel must support it)
+#define PREFETCH 1
+#include "honey/prefetching.h"
+
 // common functions used in my experimetns for receiving and sending packets, ...
 #include "honey/exp_proto.h"
 #include "honey/report_throughput.h"
 #include "arena-ds/htab.h"
-
-// enable prefetch instruction (the kernel must support it)
-#define PREFETCH
-#include "honey/prefetching.h"
 
 /* I need this dummy function to register arena with the XDP while not using
  * any sleepable function (it is from a kernel module that you have to load) */
@@ -128,7 +128,7 @@ int bbb_key_val_main(struct xdp_batch_md *batch)
         return XDP_ABORTED;
     }
 
-#pragma clang loop unroll(full)
+// #pragma clang loop unroll(full)
     for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
         if (k >= batch->size) {
             break;
@@ -160,13 +160,20 @@ int bbb_key_val_main(struct xdp_batch_md *batch)
         my_key_t *key = &bs->pkt[k].key;
         *(int *)&key->data = *(int *)payload;
 
+        // This will prefetch the pointer to the bucket
         htab_lookup_elem_p1(map, key, &bs->pkt[k].plookup);
         bs->pkt[k].phase = 1;
-
-        P((void *)bs->pkt[k].plookup.head);
     }
 
-#pragma clang loop unroll(full)
+    // this will prefetch the first item in the bucket
+    for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+        if (k >= batch->size) {
+            break;
+        }
+        P(*(void **)bs->pkt[k].plookup.head);
+    }
+
+// #pragma clang loop unroll(full)
     for (int k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
         if (k >= batch->size)
             break;

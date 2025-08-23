@@ -67,7 +67,7 @@ int bbb_simple(struct xdp_batch_md *batch)
 		for (int i = 0; i < 6; i++) {
 			bpf_printk("eth: %x", eth->h_source[i]);
 		}
-		batch->actions[0] = XDP_DROP;
+		batch->actions[k] = XDP_DROP;
 	}
 	return TEST_PASSES;
 }
