@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+# set -e
 # set -x
 
 RUN=1
@@ -51,15 +51,9 @@ function remove_all_flow_rules {
 
 function add_flow_rules {
 	DEV=$1
-	# sudo ethtool -U $DEV flow-type udp4 dst-port 11211 action 3
-	# sudo ethtool -U $DEV flow-type udp4 dst-port 22122 action 3
-
-	# sudo ethtool -U $DEV flow-type udp4 dst-port 8080 action 3
-	# sudo ethtool -U $DEV flow-type tcp4 dst-port 8080 action 3
-
-	# sudo ethtool -U $DEV flow-type udp4 dst-port 3030 action 3
-
-	sudo ethtool -U $DEV flow-type udp4 action 3
+	sudo ethtool -U $DEV flow-type udp4 dst-port 8080 action 3
+	sudo ethtool -U $DEV flow-type udp4 dst-port 11211 action 3
+	sudo ethtool -U $DEV flow-type tcp4 dst-port 8080 action 3
 }
 
 function report_nic_numa_node {
@@ -71,7 +65,8 @@ function report_nic_numa_node {
 function main {
 	TMP=$(is_iface_down $NET_IFACE)
 	if [ $TMP = "true" ]; then
-		prepare_iface $NET_IFACE "192.168.200.101/24"
+		echo "$NET_IFACE is down"
+		exit 1
 	fi
 	report_nic_numa_node $NET_IFACE
 	remove_all_flow_rules $NET_IFACE
