@@ -1,0 +1,14 @@
+figsize: [3.5, 2.1]
+x: ['Baseline', 'Batching', "Batching +\nPrefetch"]
+y: [1.57, 1.72, 2.45]
+color: ['tab:blue', 'tab:green', 'tab:red']
+hatch: ['--', '//', '++']
+grid: true
+ylabel: 'Throughput (Mpps)'
+yticks: [0, 1, 2, 3, 4]
+annotate_line:
+  - xy1: [0, 3.45]
+    slope: 0
+    color: 'k'
+    label: '1 Entry Tput'
+output: htab_batch.pdf

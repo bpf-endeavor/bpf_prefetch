@@ -1,24 +1,33 @@
-figsize: [3,2]
+figsize: [3.5, 2.1]
 subplots:
   - lines:
-    - label: 'Throughput'
+    - label: '1 Entry Tput.'
+      x: [1, 32]
+      y: [3456, 3456]
+      scale: 0.001
+      color: tab:orange
+      linestyle: '-.'
+    - label: 'Max. Batch Tput.'
+      x: [1, 32]
+      y: [2448, 2448]
+      scale: 0.001
+      color: tab:red
+      linestyle: ':'
+    - label: 'Tput'
       x: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32]
       y: [1717.70,2035.82,2180.50,2230.09,2288.70,2331.36,2357.40,2388.36,2401.50,2410.36,2424.20,2421.45,2438.80,2437.91,2430.40,2448.64,2448.20,2428.09,2436.40,2437.36,2427.70,2447.82,2444.40,2447.09,2443.36,2437.50,2439.36,2431.00,2431.91,2430.30,2433.73,2443.00]
       scale: 0.001
       color: k
       marker: o
       markersize: 3
-    - label: 'Max. Throughput'
-      x: [1, 32]
-      y: [2448, 2448]
-      scale: 0.001
-      color: tab:red
-      linestyle: ':'
     grid: true
-    yticks: [0, 1, 2, 3]
-    xlim: [0, 16]
+    yticks: [0, 1, 2, 3, 4]
+    # xlim: [0, 32]
+    xticks: [0, 8, 16, 24, 32]
     ylabel: Throughput (Mpps)
     xlabel: Batch size
     legend:
       loc: 'lower right'
+      ncol: 2
+      fontsize: 9
 output: 'batch_size_line.pdf'
