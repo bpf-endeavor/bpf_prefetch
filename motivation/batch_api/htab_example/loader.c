@@ -17,6 +17,7 @@
 typedef enum {
     PROG_NORMAL,
     PROG_BATCH,
+    PROG_PF_BATCH,
 } prog_t;
 
 /* Some global vars */
@@ -25,7 +26,7 @@ static int ifindex;
 static int xdp_flags;
 static prog_t selected_prog;
 static volatile int running = 0;
-const static int number_of_items = 2000000;
+static int number_of_items = 2000000;
 
 static void handle_signal(int s)
 {
@@ -36,8 +37,10 @@ static void usage(void)
 {
     printf("Usage: prog OPTIONS\n"
            "OPTIONS:\n"
-           "\t--normal: \n"
-           "\t--batch: \n"
+           "\t--normal: baseline\n"
+           "\t--batch: batch aware XDP program\n"
+           "\t--pf-batch: batch aware that uses prefetching\n"
+           "\t--entries: number of entries in the hash-map\n"
            "ENV Vars:\n"
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
@@ -59,6 +62,7 @@ static void prepare_arena_htab_for_xdp(void *arena, void **mem_ptr)
     /* printf("Number of buckets: %d\n", htab->n_buckets); */
 
     my_key_t k;
+    printf("loading %d entries\n", number_of_items);
     for (int i = 0; i < number_of_items; i++) {
         *(int *)&k.data = i;
         my_value_t v;
@@ -67,7 +71,7 @@ static void prepare_arena_htab_for_xdp(void *arena, void **mem_ptr)
         // finish message with END\r\n
         strncpy(v.data + sizeof(my_value_t) - 5, "END\r\n", 5);
         if(htab_update_elem_userspace(htab, &k, &v) != 0) {
-            fprintf(stderr, "Failed to insert a value into the hash map\n");
+            fprintf(stderr, "Failed to insert a value into the hash map (@%d)\n", i);
             break;
         }
     }
@@ -91,14 +95,28 @@ int parse_args(int argc, char *argv[])
     xdp_flags = 0;
     selected_prog = PROG_NORMAL;
 
-    if (argc > 1) {
-        if (strncmp(argv[1], "-h", 2) == 0 ||
-                strncmp(argv[1], "--help", 6) == 0) {
+    int cursor = 1;
+    while (cursor < argc) {
+        char *flag = argv[cursor];
+        char *next = argv[cursor + 1];
+        cursor++;
+
+        if (strncmp(flag, "-h", 2) == 0 ||
+                strncmp(flag, "--help", 6) == 0) {
             return 1;
-        } else if (strncmp(argv[1], "--normal", 7) == 0) {
+        } else if (strncmp(flag, "--normal", 7) == 0) {
             selected_prog = PROG_NORMAL;
-        } else if (strncmp(argv[1], "--batch", 7) == 0) {
+        } else if (strncmp(flag, "--batch", 7) == 0) {
             selected_prog = PROG_BATCH;
+        } else if (strncmp(flag, "--pf-batch", 10) == 0) {
+            selected_prog = PROG_PF_BATCH;
+        } else if (strncmp(flag, "--entries", 9) == 0) {
+            cursor++; // consume next
+            number_of_items = atoi(next);
+            if (number_of_items < 0 || number_of_items > HTAB_MAX_ENTRIES) {
+                fprintf(stderr, "invalid number of entries\n");
+                exit(EXIT_FAILURE);
+            }
         }
     }
 
@@ -140,6 +158,9 @@ int main(int argc, char *argv[])
             break;
         case PROG_BATCH:
             main_prog = skel->progs.bbb_key_val_main;
+            break;
+        case PROG_PF_BATCH:
+            main_prog = skel->progs.bbb_pf_key_val_main;
             break;
         default:
             fprintf(stderr, "Unexpected program mode\n");
