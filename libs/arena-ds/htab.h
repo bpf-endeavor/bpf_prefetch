@@ -273,12 +273,12 @@ static inline int htab_init_userspace(void *area, __u32 max_entries,
     const int mem_sz_buckets =
         n_buckets * sizeof(htab_bucket_t) + htab_size_rounded;
     /* amount of memory that I want for the entries */
-    const int mem_sz_entries = max_entries *  sizeof(my_value_t);
+    const int mem_sz_entries = max_entries *  (sizeof(hashtab_elem_t) + sizeof(my_key_t ) + sizeof(my_value_t));
     const int count_bucket_page = COUNT_OBJ(mem_sz_buckets, PAGE_SIZE);
     const int count_value_page = COUNT_OBJ(mem_sz_entries, PAGE_SIZE);
     /* total number of pages that I need */
     const int count_pages = count_bucket_page + count_value_page;
-    printf("requred number of pages: %d (%d + %d)\n",
+    printf("required number of pages: %d (%d + %d)\n",
             count_pages, count_bucket_page, count_value_page);
 
     {
