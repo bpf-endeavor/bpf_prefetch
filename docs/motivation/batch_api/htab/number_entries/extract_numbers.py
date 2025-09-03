@@ -1,14 +1,22 @@
 #!/usr/bin/python
 import os
+import re
 
 
 def read_file(file_path):
+    reg = re.compile('[0-9]+')
     with open(file_path, 'r') as f:
         sum = 0
         count = 0
-        next(f) # skip first line
+        next(f) # skip first line which is not a measurement
         for line in f.readlines():
-            tput = float(line.split(' ')[-1].strip()) #kpps
+            line = line.strip()
+            if not line:
+                # ignore empty lines
+                continue
+            chunk = line.split(' ')[-1].strip()
+            val = reg.match(chunk)[0]
+            tput = float(val) #kpps
             sum += tput
             count += 1
     tput = sum / count
@@ -30,7 +38,8 @@ def main():
             file_path = os.path.join(exp_dir, fname)
             try:
                 tput = read_file(file_path)
-            except:
+            except Exception as e:
+                print(e)
                 tput = -1
             measurements.append((entries, tput))
 
