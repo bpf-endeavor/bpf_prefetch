@@ -1,20 +1,38 @@
-figsize: [4,2]
+figsize: [5,3]
 subplots:
   - lines:
-    - label: 'batch + prefetch'
+    - label: "Batch + Prefetch"
       x: [1, 100, 1000, 10000, 100000, 500000, 1000000, 2000000, 5000000, 7000000]
       y: [3305.11, 3372.89, 3357.0, 3174.56, 3040.67, 2664.22, 2603.11, 2520.56, 2364.78, 2314.12]
       color: 'tab:red'
       linestyle: '-'
-    - label: 'batch'
+      scale: 0.001
+      xscale: 0.000001
+      marker: 'o'
+    - label: 'Batch'
       x: [1, 100, 1000, 10000, 100000, 500000, 1000000, 2000000, 5000000, 7000000]
       y: [3460.22, 3410.5, 3316.44, 3283.22, 2939.67, 2307.11, 2295.0, 2154.44, 1945.0, 1900.0]
       color: 'tab:blue'
       linestyle: '-.'
-    - label: 'baseline'
+      scale: 0.001
+      xscale: 0.000001
+      marker: 's'
+    - label: 'Baseline'
       x: [1, 100, 1000, 10000, 100000, 500000, 1000000, 2000000, 5000000, 7000000]
       y: [2652.89, 2570.2, 2879.89, 2699.0, 2522.11, 1972.22, 1971.89, 1694.56, 1524.67, 1716.25]
       color: 'k'
       linestyle: ':'
+      scale: 0.001
+      xscale: 0.000001
+      marker: 'x'
+    legend:
+      loc: "lower center"
+      ncol: 3
+    ylabel: "Throughput (Mpps)"
+    xlabel: "Number of entries (milion)\n(uniform access)"
+    yticks: [0, 1.5, 3, 4.5]
+    xticks: [0, 2, 4]
+    xlim: [-0.1, 4]
+    # xlogscale: 10
 output: num_entries_trend.pdf
 
