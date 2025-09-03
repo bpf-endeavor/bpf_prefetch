@@ -91,8 +91,6 @@ stop_load() {
 }
 
 do_exp() {
-	read_trace 1
-
 	setup_server $1 $2
 	generate_load $1
 	echo "waiting $TIME sec ..."
@@ -101,7 +99,7 @@ do_exp() {
 	stop_server
 
 	read_trace 1
-	sleep 2
+	sleep 5
 }
 
 # TODO: update this function to SSH to DUT machine and read logs
@@ -131,7 +129,11 @@ main() {
 
 	trap on_signal SIGINT SIGHUP
 
-	entries=( 1 100 1000 10000 100000 500000 1000000 2000000 5000000 7000000 )
+	# clear the log pipe
+	read_trace 1
+
+	# entries=( 1 100 1000 10000 100000 500000 1000000 2000000 5000000 7000000 )
+	entries=( 1 1000 100000 500000 1000000 1500000 2000000 2500000 3000000 3500000 4000000 5000000 )
 	for e in ${entries[@]}; do
 		echo "Noraml - Etnries = $e ----"
 		do_exp $e normal | tee $output_dir/baseline/$e.txt

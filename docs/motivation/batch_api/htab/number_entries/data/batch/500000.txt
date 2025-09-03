@@ -1,10 +1,10 @@
 waiting 20 sec ...
-     ksoftirqd/7-60      [007] ..s1. 63594.903472: bpf_trace_printk: throughput: 2341
-     ksoftirqd/7-60      [007] ..s1. 63596.903470: bpf_trace_printk: throughput: 2347
-     ksoftirqd/7-60      [007] ..s1. 63598.903469: bpf_trace_printk: throughput: 2347
-     ksoftirqd/7-60      [007] ..s1. 63600.903469: bpf_trace_printk: throughput: 2163
-     ksoftirqd/7-60      [007] ..s1. 63602.903468: bpf_trace_printk: throughput: 2350
-     ksoftirqd/7-60      [007] ..s1. 63604.903477: bpf_trace_printk: throughput: 2350
-     ksoftirqd/7-60      [007] ..s1. 63606.903479: bpf_trace_printk: throughput: 2350
-     ksoftirqd/7-60      [007] ..s1. 63608.903468: bpf_trace_printk: throughput: 2351
-     ksoftirqd/7-60      [007] ..s1. 63610.903465: bpf_trace_printk: throughput: 2165
+     ksoftirqd/7-60      [007] ..s1. 76003.752277: bpf_trace_printk: throughput: 2377
+     ksoftirqd/7-60      [007] ..s1. 76005.756280: bpf_trace_printk: throughput: 2385
+     ksoftirqd/7-60      [007] ..s1. 76007.760289: bpf_trace_printk: throughput: 2385
+     ksoftirqd/7-60      [007] ..s1. 76009.764284: bpf_trace_printk: throughput: 2385
+     ksoftirqd/7-60      [007] ..s1. 76011.768286: bpf_trace_printk: throughput: 2385
+     ksoftirqd/7-60      [007] ..s1. 76013.772299: bpf_trace_printk: throughput: 2385
+     ksoftirqd/7-60      [007] ..s1. 76015.776292: bpf_trace_printk: throughput: 2386
+     ksoftirqd/7-60      [007] ..s1. 76017.780292: bpf_trace_printk: throughput: 2386
+     ksoftirqd/7-60      [007] ..s1. 76019.784297: bpf_trace_printk: throughput: 2386
