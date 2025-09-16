@@ -1,14 +1,14 @@
-From 0c8ebd75e8723de929b0100982ecaa03d84267b7 Mon Sep 17 00:00:00 2001
+From 0c82267743eaec4b63cc19a564140e10f3d8f243 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Thu, 21 Aug 2025 12:08:28 -0600
 Subject: [PATCH] make things work
 
 ---
- bmc/Makefile     | 147 +++++++----------------------------------------
+ bmc/Makefile     | 147 ++++++---------------------------------
  bmc/bmc_common.h |   4 +-
- bmc/bmc_kern.c   | 137 ++++++++++++++++++++++++++-----------------
- bmc/bmc_user.c   |  19 +++---
- 4 files changed, 115 insertions(+), 192 deletions(-)
+ bmc/bmc_kern.c   | 176 +++++++++++++++++++++++++++++------------------
+ bmc/bmc_user.c   |  19 +++--
+ 4 files changed, 139 insertions(+), 207 deletions(-)
 
 diff --git a/bmc/Makefile b/bmc/Makefile
 index 61a8f5d..efa08f1 100644
@@ -185,7 +185,7 @@ index 3f8e8b5..73af2b6 100644
  #define BMC_MAX_PACKET_LENGTH 1500
  #define BMC_MAX_KEY_IN_PACKET BMC_MAX_KEY_IN_MULTIGET
 diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
-index 5a2f064..d15634f 100644
+index 5a2f064..a6ebd7a 100644
 --- a/bmc/bmc_kern.c
 +++ b/bmc/bmc_kern.c
 @@ -14,7 +14,12 @@
@@ -231,7 +231,7 @@ index 5a2f064..d15634f 100644
  	char data[BMC_MAX_KEY_LENGTH];
  	unsigned int len;
  };
-@@ -67,48 +76,48 @@ struct parsing_context {
+@@ -67,54 +76,55 @@ struct parsing_context {
  	unsigned short read_pkt_offset;
  	unsigned short write_pkt_offset;
  };
@@ -277,6 +277,7 @@ index 5a2f064..d15634f 100644
 -	.value_size = sizeof(u32),
 -	.max_entries = BMC_PROG_TC_MAX,
 -};
+-
 +struct {
 +	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
 +	__type(key, __u32);
@@ -284,15 +285,16 @@ index 5a2f064..d15634f 100644
 +	__uint(max_entries, BMC_PROG_XDP_MAX);
 +} map_progs_xdp SEC(".maps");
  
+-static inline u16 compute_ip_checksum(struct iphdr *ip)
 +struct {
 +	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
 +	__type(key, __u32);
 +	__type(value, __u32);
 +	__uint(max_entries, BMC_PROG_TC_MAX);
 +} map_progs_tc SEC(".maps");
- 
--static inline u16 compute_ip_checksum(struct iphdr *ip)
-+static inline __u16 compute_ip_checksum(struct iphdr *ip)
++
++static inline __attribute__((always_inline))
++__u16 compute_ip_checksum(struct iphdr *ip)
  {
 -    u32 csum = 0;
 -    u16 *next_ip_u16 = (u16 *)ip;
@@ -312,7 +314,15 @@ index 5a2f064..d15634f 100644
  
  	return ~((csum & 0xffff) + (csum >> 16));
  }
-@@ -148,7 +157,7 @@ int bmc_rx_filter_main(struct xdp_md *ctx)
+ 
+-SEC("bmc_rx_filter")
+-int bmc_rx_filter_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_rx_filter(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -148,7 +158,7 @@ int bmc_rx_filter_main(struct xdp_md *ctx)
  			return XDP_PASS;
  	}
  
@@ -321,7 +331,18 @@ index 5a2f064..d15634f 100644
  
  		if (ip->protocol == IPPROTO_UDP && payload[0] == 'g' && payload[1] == 'e' && payload[2] == 't' && payload[3] == ' ') { // is this a GET request
  			unsigned int zero = 0;
-@@ -232,7 +241,7 @@ int bmc_hash_keys_main(struct xdp_md *ctx)
+@@ -186,8 +196,8 @@ int bmc_rx_filter_main(struct xdp_md *ctx)
+ }
+ 
+ 
+-SEC("bmc_hash_keys")
+-int bmc_hash_keys_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_hash_keys(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -232,7 +242,7 @@ int bmc_hash_keys_main(struct xdp_md *ctx)
  		return XDP_PASS;
  	}
  
@@ -330,9 +351,14 @@ index 5a2f064..d15634f 100644
  	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
  	if (!entry) { // should never happen since cache map is of type BPF_MAP_TYPE_ARRAY
  		return XDP_PASS;
-@@ -276,8 +285,11 @@ int bmc_hash_keys_main(struct xdp_md *ctx)
- SEC("bmc_prepare_packet")
- int bmc_prepare_packet_main(struct xdp_md *ctx)
+@@ -273,11 +283,14 @@ int bmc_hash_keys_main(struct xdp_md *ctx)
+ 	return XDP_PASS;
+ }
+ 
+-SEC("bmc_prepare_packet")
+-int bmc_prepare_packet_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_prepare_packet(struct xdp_md *ctx)
  {
 -	if (bpf_xdp_adjust_head(ctx, -ADJUST_HEAD_LEN)) // // pop empty packet buffer memory to increase the available packet size
 -		return XDP_PASS;
@@ -344,7 +370,18 @@ index 5a2f064..d15634f 100644
  
  	void *data_end = (void *)(long)ctx->data_end;
  	void *data = (void *)(long)ctx->data;
-@@ -341,9 +353,10 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+@@ -319,8 +332,8 @@ int bmc_prepare_packet_main(struct xdp_md *ctx)
+ 	return XDP_PASS;
+ }
+ 
+-SEC("bmc_write_reply")
+-int bmc_write_reply_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_write_reply(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -341,9 +354,10 @@ int bmc_write_reply_main(struct xdp_md *ctx)
  	}
  
  	unsigned int cache_hit = 1, written = 0;
@@ -356,7 +393,7 @@ index 5a2f064..d15634f 100644
  		return XDP_DROP;
  	}
  
-@@ -358,13 +371,16 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+@@ -358,15 +372,23 @@ int bmc_write_reply_main(struct xdp_md *ctx)
  		if (cache_hit) { // if cache HIT then copy cached data
  			unsigned int off;
  #pragma clang loop unroll(disable)
@@ -370,23 +407,33 @@ index 5a2f064..d15634f 100644
  			}
  #pragma clang loop unroll(disable)
 -			for (; off < BMC_MAX_CACHE_DATA_SIZE && off < entry->len && payload+off+1 <= data_end; off++) {
-+			for (; off < BMC_MAX_CACHE_DATA_SIZE && off < entry->len
-+					&& payload+off+1 <= data_end; off++) {
++			for (__u8 t=0; t < 8; t++) {
++				if (off >= BMC_MAX_CACHE_DATA_SIZE ||
++					off >= entry->len ||
++					payload+off+1 > data_end)
++					break;
++
  				payload[off] = entry->data[off];
  				written += 1;
++				off++;
  			}
-@@ -384,7 +400,9 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 		}
+ 	}
+@@ -384,7 +406,12 @@ int bmc_write_reply_main(struct xdp_md *ctx)
  
  	pctx->current_key++;
  
 -	if (pctx->current_key == pctx->key_count && (pctx->write_pkt_offset > 0 || written > 0)) { // if all saved keys have been processed and a least one cache HIT
++	/* NOTE: Farbod: just to pass the verifier */
++	written &= 0xfff;
++
 +	if (pctx->current_key == pctx->key_count &&
 +		(pctx->write_pkt_offset > 0 || written > 0)) {
 +		// if all saved keys have been processed and a least one cache HIT
  		if (payload+written+5 <= data_end) {
  			payload[written++] = 'E';
  			payload[written++] = 'N';
-@@ -393,7 +411,9 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+@@ -393,7 +420,9 @@ int bmc_write_reply_main(struct xdp_md *ctx)
  			payload[written++] = '\n';
  
  			if (bpf_xdp_adjust_head(ctx, 0 - (int) (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr)
@@ -397,7 +444,7 @@ index 5a2f064..d15634f 100644
  				return XDP_DROP;
  			}
  
-@@ -406,10 +426,10 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+@@ -406,10 +435,10 @@ int bmc_write_reply_main(struct xdp_md *ctx)
  			if (udp + 1 > data_end)
  				return XDP_PASS;
  
@@ -410,7 +457,7 @@ index 5a2f064..d15634f 100644
  
  			bpf_xdp_adjust_tail(ctx, 0 - (int) ((long) data_end - (long) (payload+pctx->write_pkt_offset+written))); // try to strip additional bytes
  
-@@ -421,11 +441,23 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+@@ -421,16 +450,28 @@ int bmc_write_reply_main(struct xdp_md *ctx)
  		return XDP_PASS;
  	} else if (pctx->current_key < BMC_MAX_KEY_IN_PACKET) { // else if there are still keys to process
  		pctx->write_pkt_offset += written; // save packet write offset
@@ -423,19 +470,26 @@ index 5a2f064..d15634f 100644
  		bpf_tail_call(ctx, &map_progs_xdp, BMC_PROG_XDP_WRITE_REPLY);
  	}
  
-+	bpf_printk("bmc_write_reply_main: failed");
++	/* bpf_printk("bmc_write_reply_main: failed"); */
 +	/* bpf_printk("current_key: %d/%d (max: %d)", pctx->current_key, pctx->key_count, BMC_MAX_KEY_IN_PACKET); */
-+	bpf_printk("written data: %d", written);
++	/* bpf_printk("written data: %d", written); */
 +
 +	/* void *x = payload+written+5; */
 +	/* void *y = data_end; */
 +	/* bpf_printk("%p >? %p = %d",  x, y, x > y); */
-+	__u16 tmp_size = (__u16)(__u64)(data_end - data);
-+	bpf_printk("packet size: %d", tmp_size);
++	/* __u16 tmp_size = (__u16)(__u64)(data_end - data); */
++	/* bpf_printk("packet size: %d", tmp_size); */
  	return XDP_DROP;
  }
  
-@@ -448,7 +480,7 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
+-SEC("bmc_invalidate_cache")
+-int bmc_invalidate_cache_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_invalidate_cache(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -448,7 +489,7 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
  		return XDP_PASS;
  	}
  
@@ -444,7 +498,7 @@ index 5a2f064..d15634f 100644
  	int set_found = 0, key_found = 0;
  
  #pragma clang loop unroll(disable)
-@@ -472,7 +504,7 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
+@@ -472,7 +513,7 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
  		}
  		else if (key_found == 1) {
  			if (payload[off] == ' ') { // found the end of the key
@@ -453,7 +507,18 @@ index 5a2f064..d15634f 100644
  				struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
  				if (!entry) {
  					return XDP_PASS;
-@@ -522,7 +554,7 @@ int bmc_tx_filter_main(struct __sk_buff *skb)
+@@ -496,8 +537,8 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
+ 	return XDP_PASS;
+ }
+ 
+-SEC("bmc_tx_filter")
+-int bmc_tx_filter_main(struct __sk_buff *skb)
++SEC("tc")
++int bmc_tx_filter(struct __sk_buff *skb)
+ {
+ 	void *data_end = (void *)(long)skb->data_end;
+ 	void *data     = (void *)(long)skb->data;
+@@ -522,7 +563,7 @@ int bmc_tx_filter_main(struct __sk_buff *skb)
  
  	__be16 sport = udp->source;
  
@@ -462,7 +527,17 @@ index 5a2f064..d15634f 100644
  		&& payload[3] == 'U' && payload[4] == 'E' && payload[5] == ' ') { // if this is a GET reply
  
  		struct bmc_stats *stats = bpf_map_lookup_elem(&map_stats, &zero);
-@@ -545,7 +577,7 @@ int bmc_update_cache_main(struct __sk_buff *skb)
+@@ -537,15 +578,15 @@ int bmc_tx_filter_main(struct __sk_buff *skb)
+ 	return TC_ACT_OK;
+ }
+ 
+-SEC("bmc_update_cache")
+-int bmc_update_cache_main(struct __sk_buff *skb)
++SEC("tc")
++int bmc_update_cache(struct __sk_buff *skb)
+ {
+ 	void *data_end = (void *)(long)skb->data_end;
+ 	void *data = (void *)(long)skb->data;
  	char *payload = (data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct memcached_udp_header));
  	unsigned int zero = 0;
  
@@ -471,7 +546,7 @@ index 5a2f064..d15634f 100644
  
  	// compute the key hash
  #pragma clang loop unroll(disable)
-@@ -554,7 +586,7 @@ int bmc_update_cache_main(struct __sk_buff *skb)
+@@ -554,7 +595,7 @@ int bmc_update_cache_main(struct __sk_buff *skb)
  		hash *= FNV_PRIME_32;
  	}
  
@@ -480,7 +555,7 @@ index 5a2f064..d15634f 100644
  	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
  	if (!entry) {
  		return TC_ACT_OK;
-@@ -604,4 +636,5 @@ int bmc_update_cache_main(struct __sk_buff *skb)
+@@ -604,4 +645,5 @@ int bmc_update_cache_main(struct __sk_buff *skb)
  	return TC_ACT_OK;
  }
  

@@ -103,6 +103,12 @@ install_clang() {
 bring_arena_kmod() {
 	cd "$THIRD" || exit 1
 	git clone git@github.com:bpf-endeavor/ebpf-arena-tutorial.git arena_kmod
+	ver_major=$(uname -r | cut -d '.' -f 1)
+	ver_minor=$(uname -r | cut -d '.' -f 2)
+	if [ $ver_major -lt 6 ] -o [ $ver_minor -lt 9 ]; then
+		echo "this kernel verison probably does not support arena. skipping..."
+		return
+	fi
 	cd arena_kmod/kmod
 	make || exit 1
 }
