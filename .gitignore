@@ -3,8 +3,14 @@ build/
 others/
 tags
 tags.*
-.o
-.a
-.so
+*.o
+*.a
+*.so
 *.pyc
 *.pcap
+*.ko
+*.mod
+*.cmd
+*.order
+*.symvers
+

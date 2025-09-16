@@ -1,0 +1,5 @@
+MODNAME = kfunc_memcpy_m
+obj-m += $(MODNAME).o
+$(MODNAME)-y += memcpy_kfunc.o
+KBUILD_CFLAGS += -g -O2
+

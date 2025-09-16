@@ -1,7 +1,7 @@
-From 208ac5ee3377a08018d07d11f2d25b93348fb190 Mon Sep 17 00:00:00 2001
+From 4566aa81362c065bc4c118463b7f2eb061a16d2a Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sat, 6 Sep 2025 01:52:19 -0600
-Subject: [PATCH 3/3] wip...
+Subject: [PATCH 3/4] wip...
 
 ---
  bmc/bmc_common.h |   4 +

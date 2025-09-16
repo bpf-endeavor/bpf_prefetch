@@ -1,7 +1,7 @@
-From b879cb9b241913ac60437204fef7ad6d7bab3d3d Mon Sep 17 00:00:00 2001
+From 42f12dc6ad94ea465b489384602ef3d4ff2c7b6d Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Thu, 4 Sep 2025 03:16:50 -0600
-Subject: [PATCH 2/3] wip: create a batch aware bmc prog
+Subject: [PATCH 2/4] wip: create a batch aware bmc prog
 
 ---
  bmc/bmc_kern.c | 852 ++++++++++++++++++++++++++++++-------------------
