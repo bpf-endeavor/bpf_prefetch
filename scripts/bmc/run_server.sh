@@ -5,6 +5,7 @@ usage() {
 	echo "Usage run_server: default behaviour: only run the memcached"
 	echo "  --bmc-baseline: run with baseline bmc"
 	echo "  --bmc-batch: run with batch aware bmc"
+	echo "  --bmc-batch-pf: run with batch aware bmc + prefetching"
 	echo
 }
 usage
@@ -41,6 +42,11 @@ while [ $# -gt 0 ]; do
 		--bmc-batch)
 			HAS_BMC=1
 			BMC_MODE=batch
+			shift
+			;;
+		--bmc-batch-pf)
+			HAS_BMC=1
+			BMC_MODE=batch_prefetch
 			shift
 			;;
 		*)
@@ -80,6 +86,16 @@ clean_up() {
 	echo ------
 }
 
+report_experiment() {
+	if [ $HAS_BMC -eq 0 ]; then
+		mode="Just Memcached"
+	else
+		mode=$BMC_MODE
+	fi
+	echo "Experiment: $mode"
+	echo "-----------"
+}
+
 on_sig() {
 	echo on signal...
 	quit=1
@@ -87,6 +103,7 @@ on_sig() {
 }
 
 main() {
+	report_experiment
 	trap 'on_sig' SIGINT SIGHUP
 	quit=0
 
@@ -94,9 +111,9 @@ main() {
 	clean_up &> /dev/null
 
 	# Memcached
-	taskset -c 4 \
+	taskset -c 8-12 \
 		$MEMCD -U $UDP_PORT -l $SERVER_IP \
-			-m 1024 -M -k -P $PID_FILE -d -t 1 -C 2>&1 > /dev/null
+			-m 1024 -M -k -P $PID_FILE -d -t 4 -C 2>&1 > /dev/null
 
 	if [ $HAS_BMC -eq 1 ]; then
 		$( sudo $BMC_BIN $IFINDEX 2>&1 > /dev/null ) &

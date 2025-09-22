@@ -1,0 +1,75 @@
+From d3ecdadb90f10600b283d3f220f7a6197dc30d76 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Tue, 16 Sep 2025 16:32:14 -0600
+Subject: [PATCH 5/5] batch API works and passes verifier
+
+---
+ bmc/bmc_common.h |  4 ++--
+ bmc/bmc_kern.c   | 24 ++++++++++++++++++++++--
+ 2 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/bmc/bmc_common.h b/bmc/bmc_common.h
+index 1e1ad4b..2706d69 100644
+--- a/bmc/bmc_common.h
++++ b/bmc/bmc_common.h
+@@ -12,8 +12,8 @@
+ #ifndef _BMC_COMMON_H
+ #define _BMC_COMMON_H
+ 
+-#define BMC_MAX_KEY_LENGTH 64
+-#define BMC_MAX_VAL_LENGTH 64
++#define BMC_MAX_KEY_LENGTH 200
++#define BMC_MAX_VAL_LENGTH 1000
+ #define BMC_MAX_ADDITIONAL_PAYLOAD_BYTES 53
+ #define BMC_MAX_CACHE_DATA_SIZE BMC_MAX_KEY_LENGTH+BMC_MAX_VAL_LENGTH+BMC_MAX_ADDITIONAL_PAYLOAD_BYTES
+ #define BMC_MAX_KEY_IN_MULTIGET 4
+diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
+index 569ea18..3c83423 100644
+--- a/bmc/bmc_kern.c
++++ b/bmc/bmc_kern.c
+@@ -226,9 +226,24 @@ batch_state_t *get_batch_state(void)
+ 		} \
+ 	}
+ 
++static __u64 _counter = 0;
++static __u64 _avg_batch_sz = 0;
++static inline __attribute__((always_inline))
++void report_batch_size(__u32 batch_sz)
++{
++	_avg_batch_sz += batch_sz;
++	_counter++;
++	if (_counter >= 1024) {
++		_avg_batch_sz /= _counter;
++		_counter = 0;
++		bpf_printk("avg batch size: %d", _avg_batch_sz);
++	}
++}
++
+ SEC("xdp")
+ int bbb_rx_main(struct xdp_batch_md *batch)
+ {
++	/* report_batch_size(batch->size); */
+ 	LOAD_BATCH_STATE();
+ 	bs->tmp_index = 0;
+ 	CONTINUE(BMC_PROG_XDP_DO_RX_MAIN);
+@@ -566,10 +581,15 @@ int bbb_do_write_reply(struct xdp_batch_md *batch)
+ 			}
+ 
+ #pragma clang loop unroll(disable)
+-			for (; off < BMC_MAX_CACHE_DATA_SIZE && off < entry->len
+-					&& payload+off+1 <= data_end; off++) {
++			for (__u8 t = 0; t < 8; t++) {
++				if (off >= BMC_MAX_CACHE_DATA_SIZE ||
++					off >= entry->len ||
++					payload+off+1 > data_end)
++					break;
++
+ 				payload[off] = entry->data[off];
+ 				written += 1;
++				off++;
+ 			}
+ 		}
+ 	}
+-- 
+2.34.1
+
