@@ -1,0 +1,324 @@
+From 6175b2d118be1382fd0e392933ded035bdaa6b89 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Wed, 24 Sep 2025 07:40:36 -0600
+Subject: [PATCH 6/6] prefetch something and use memcpy kfunc
+
+---
+ bmc/Makefile     |   5 +-
+ bmc/bmc_common.h |   1 +
+ bmc/bmc_kern.c   | 176 ++++++++++++++++++++++++++++++++++++++---------
+ 3 files changed, 148 insertions(+), 34 deletions(-)
+
+diff --git a/bmc/Makefile b/bmc/Makefile
+index efa08f1..63b2bd2 100644
+--- a/bmc/Makefile
++++ b/bmc/Makefile
+@@ -3,6 +3,9 @@ LLC=llc
+ LIBBPF_HEADER=$(CURDIR)/../../../deps/usr/include/
+ LIBBPF_LIB=$(CURDIR)/../../../deps/usr/lib64/
+ 
++INCLUDES = -I $(CURDIR)/../../../libs
++INCLUDES += -I $(LIBBPF_HEADER)
++
+ .PHONY: default clean
+ 
+ default: bmc_kern.o bmc
+@@ -14,7 +17,7 @@ bmc_kern.o: bmc_kern.c bmc_common.h
+ 	LL_FILE=$@.ll; \
+ 	$(CC) -target bpf \
+ 		-S -Wall \
+-		-I $(LIBBPF_HEADER) \
++		$(INCLUDES) \
+ 		-Wno-unused-value -Wno-pointer-sign \
+ 		-Wno-compare-distinct-pointer-types \
+ 		-O2 -g -emit-llvm -c bmc_kern.c -o $$LL_FILE; \
+diff --git a/bmc/bmc_common.h b/bmc/bmc_common.h
+index 2706d69..93d5fd0 100644
+--- a/bmc/bmc_common.h
++++ b/bmc/bmc_common.h
+@@ -48,6 +48,7 @@ enum {
+ 
+ struct bmc_cache_entry {
+ 	struct bpf_spin_lock lock;
++	unsigned int under_use;
+ 	unsigned int len;
+ 	char valid;
+ 	int hash;
+diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
+index 3c83423..0ad20e4 100644
+--- a/bmc/bmc_kern.c
++++ b/bmc/bmc_kern.c
+@@ -54,6 +54,14 @@ long my_memcpy(void *dst, __u32 dst__sz, void *src, __u32 src__sz) __ksym;
+ #define DROP(k) ACTION(XDP_DROP, k)
+ #define TX(k)   ACTION(XDP_TX, k)
+ 
++#define PREFETCH 1
++#include "honey/prefetching.h"
++
++#ifndef offsetof
++#define offsetof(T, f) (&(T *)(0)->f)
++#endif
++
++
+ enum pkt_proc_phase {
+ 	START,
+ 	SET_REQ,
+@@ -226,6 +234,54 @@ batch_state_t *get_batch_state(void)
+ 		} \
+ 	}
+ 
++void static inline __attribute__((always_inline))
++pf_pkt_hdr(struct xdp_batch_md *batch, __u32 k)
++{
++	struct xdp_md *next = &batch->buffs[k];
++	void *next_data = (void *)(__u64)next->data;
++	P(next_data);
++}
++
++void static inline __attribute__((always_inline))
++pf_pkt_key(batch_state_t *bs, __u32 k)
++{
++	P(&bs->S[k].key);
++}
++
++static __u64 _array_map_base = 0;
++void static inline __attribute__((always_inline))
++pf_arr_from_hash(batch_state_t *bs, __u32 k)
++{
++	if (_array_map_base == 0) {
++		/* this should happen only once at the beginning of the program
++		 * */
++		int zero = 0;
++		void *item = bpf_map_lookup_elem(&map_kcache, &zero);
++		if (item == NULL) {
++			bpf_printk("failed to get the first element of kcache!");
++			return;
++		} else {
++			/* NOTE: verifier is a pain! */
++			_array_map_base = 0;
++			__u64 tmp = (__u64)item;
++			__u64 low = tmp & 0xffffffff;
++			tmp >>= 32;
++			__u64 high = tmp & 0xffffffff;
++			_array_map_base = (high << 32) | low;
++			return;
++		}
++	}
++
++	if (k >= XDP_MAX_BATCH_SIZE)
++		return;
++
++	__u32 hash = bs->S[k].key.hash;
++	__u32 index = hash % BMC_CACHE_ENTRY_COUNT;
++	__u64 offset = index * sizeof(struct bmc_cache_entry);
++	__u64 addr = _array_map_base + offset;
++	P((void *)addr);
++}
++
+ static __u64 _counter = 0;
+ static __u64 _avg_batch_sz = 0;
+ static inline __attribute__((always_inline))
+@@ -244,6 +300,10 @@ SEC("xdp")
+ int bbb_rx_main(struct xdp_batch_md *batch)
+ {
+ 	/* report_batch_size(batch->size); */
++
++	/* prefetch the header of the first packet */
++	pf_pkt_hdr(batch, 0);
++
+ 	LOAD_BATCH_STATE();
+ 	bs->tmp_index = 0;
+ 	CONTINUE(BMC_PROG_XDP_DO_RX_MAIN);
+@@ -261,6 +321,8 @@ int bbb_do_rx_main(struct xdp_batch_md *batch)
+ 	}
+ 	bs->tmp_index++;
+ 
++	pf_pkt_hdr(batch, k+1);
++
+ 	pkt_state_t *pstate = &bs->S[k];
+ 	struct xdp_md *ctx = &batch->buffs[k];
+ 
+@@ -351,6 +413,12 @@ SEC("xdp")
+ int bbb_hash_keys(struct xdp_batch_md *batch)
+ {
+ 	LOAD_BATCH_STATE();
++
++	for (int  i =0; i < batch->size && i < XDP_MAX_BATCH_SIZE; i++) {
++		pf_pkt_key(bs, i);
++		pf_pkt_hdr(batch, i);
++	}
++
+ 	DEFINE_PHASE(GET_REQ_HASH_KEY, batch, bs);
+ 	ERROR_ON_PHASE_EMPTY(bs, GET_REQ_HASH_KEY);
+ 	CONTINUE(BMC_PROG_XDP_DO_HASH_KEYS);
+@@ -390,14 +458,12 @@ int bbb_do_hash_keys(struct xdp_batch_md *batch)
+ 			done_parsing = 1;
+ 			break;
+ 		}
+-		else if (payload[off] == ' ') {
++		if (payload[off] == ' ') {
+ 			break;
+ 		}
+-		else if (payload[off] != ' ') {
+-			key->hash ^= payload[off];
+-			key->hash *= FNV_PRIME_32;
+-			key_len++;
+-		}
++		key->hash ^= payload[off];
++		key->hash *= FNV_PRIME_32;
++		key_len++;
+ 	}
+ 
+ 	if (key_len == 0 || key_len > BMC_MAX_KEY_LENGTH) {
+@@ -414,11 +480,24 @@ int bbb_do_hash_keys(struct xdp_batch_md *batch)
+ 	bpf_spin_lock(&entry->lock);
+ 	if (entry->valid && entry->hash == key->hash) { // potential cache hit
+ 		bpf_spin_unlock(&entry->lock);
+-		unsigned int i = 0;
+-#pragma clang loop unroll(disable)
+-		for (; i < key_len && payload+i+1 <= data_end; i++) { // copy the request key to compare it with the one stored in the cache later
+-			key->data[i] = payload[i];
+-		}
++		my_memcpy(key->data, BMC_MAX_KEY_LENGTH, payload, key_len);
++		/* unsigned int i = 0; */
++/* #pragma clang loop unroll(disable) */
++		/* for (; i < BMC_MAX_KEY_LENGTH && i < key_len && payload+i+8 <= data_end;) { */
++		/* 	// copy the request key to compare it with the one stored in the cache later */
++		/* 	/1* if (i >= key_len || payload+i+8 > data_end) *1/ */
++		/* 	/1* 	break; *1/ */
++		/* 	*(__u64 *)(key->data+i) = *(__u64 *)(payload + i); */
++		/* 	i += 8; */
++		/* } */
++		/* i &= 0xfff; */
++		/* for (__u32 t = 0; t < 8; t++) { */
++		/* 	if (i >= key_len || payload + i + 1 > data_end) */
++		/* 		break; */
++		/* 	key->data[i] = payload[i]; */
++		/* 	i++; */
++		/* } */
++
+ 		key->len = key_len;
+ 		pctx->key_count++;
+ 	} else { // cache miss
+@@ -527,6 +606,9 @@ SEC("xdp")
+ int bbb_write_reply(struct xdp_batch_md *batch)
+ {
+ 	LOAD_BATCH_STATE();
++
++	pf_arr_from_hash(bs, 0);
++
+ 	DEFINE_PHASE(RESPOND, batch, bs);
+ 	ERROR_ON_PHASE_EMPTY(bs, RESPOND);
+ 	CONTINUE(BMC_PROG_XDP_DO_WRITE_REPLY);
+@@ -539,6 +621,8 @@ int bbb_do_write_reply(struct xdp_batch_md *batch)
+ 	LOAD_BATCH_STATE();
+ 	LOAD_PKT_INDEX(batch, bs, k);
+ 
++	pf_arr_from_hash(bs, k+1);
++
+ 	pkt_state_t *pstate = &bs->S[k];
+ 	struct xdp_md *ctx = &batch->buffs[k];
+ 
+@@ -570,30 +654,49 @@ int bbb_do_write_reply(struct xdp_batch_md *batch)
+ 			}
+ 		}
+ 		if (cache_hit) { // if cache HIT then copy cached data
+-			unsigned short off;
+-#pragma clang loop unroll(disable)
+-			for (off = 0; off+sizeof(unsigned long long) < BMC_MAX_CACHE_DATA_SIZE &&
+-					off+sizeof(unsigned long long) <= entry->len &&
+-					payload+off+sizeof(unsigned long long) <= data_end;) {
+-				*((unsigned long long *) &payload[off]) = *((unsigned long long *) &entry->data[off]);
+-				off += sizeof(unsigned long long);
+-				written += sizeof(unsigned long long);
+-			}
+-
+-#pragma clang loop unroll(disable)
+-			for (__u8 t = 0; t < 8; t++) {
+-				if (off >= BMC_MAX_CACHE_DATA_SIZE ||
+-					off >= entry->len ||
+-					payload+off+1 > data_end)
+-					break;
+-
+-				payload[off] = entry->data[off];
+-				written += 1;
+-				off++;
+-			}
++			entry->under_use += 1;
++			bpf_spin_unlock(&entry->lock);
++			/* /1* the following instructions are just to pass the */
++			/*  * verifier *1/ */
++			/* __u16 len = BMC_MAX_CACHE_DATA_SIZE; */
++			/* if (len > entry->len) { */
++			/* 	len = entry->len; */
++			/* } */
++			/* __u16 payload_size = len; */
++			/* if (payload_size > (__u64)data_end - (__u64)payload) { */
++			/* 	goto fail_and_drop; */
++			/* } */
++			/* --------------------------------- */
++			__u64 payload_size = (__u64)data_end - (__u64)payload;
++			written += my_memcpy(payload, payload_size, entry->data, entry->len);
++			entry->under_use -= 1;
++			/* unsigned short off; */
++/* #pragma clang loop unroll(disable) */
++			/* for (off = 0; off+sizeof(unsigned long long) < BMC_MAX_CACHE_DATA_SIZE && */
++			/* 		off+sizeof(unsigned long long) <= entry->len && */
++			/* 		payload+off+sizeof(unsigned long long) <= data_end;) { */
++			/* 	*((unsigned long long *) &payload[off]) = *((unsigned long long *) &entry->data[off]); */
++			/* 	off += sizeof(unsigned long long); */
++			/* 	written += sizeof(unsigned long long); */
++			/* } */
++
++/* #pragma clang loop unroll(disable) */
++			/* for (__u8 t = 0; t < 8; t++) { */
++			/* 	if (off >= BMC_MAX_CACHE_DATA_SIZE || */
++			/* 		off >= entry->len || */
++			/* 		payload+off+1 > data_end) */
++			/* 		break; */
++
++			/* 	payload[off] = entry->data[off]; */
++			/* 	written += 1; */
++			/* 	off++; */
++			/* } */
++		} else {
++			bpf_spin_unlock(&entry->lock);
+ 		}
++	} else  {
++		bpf_spin_unlock(&entry->lock);
+ 	}
+-	bpf_spin_unlock(&entry->lock);
+ 
+ 	struct bmc_stats *stats = bpf_map_lookup_elem(&map_stats, &zero);
+ 	if (!stats) {
+@@ -675,6 +778,7 @@ fail_and_pass:
+ 	pstate->phase = DONE;
+ 	PASS(k);
+ 	CONTINUE(BMC_PROG_XDP_DO_WRITE_REPLY);
++	__asm__("lbl1:\n\t":::);
+ fail_and_drop:
+ 	pstate->phase = DONE;
+ 	DROP(k);
+@@ -847,6 +951,11 @@ int bmc_update_cache(struct __sk_buff *skb)
+ 		}
+ 	}
+ 
++	if (entry->under_use > 0) {
++		bpf_spin_unlock(&entry->lock);
++		goto skip_update;
++	}
++
+ 	unsigned int count = 0;
+ 	entry->len = 0;
+ 	// store the reply from start to the '\n' that follows the data
+@@ -871,6 +980,7 @@ int bmc_update_cache(struct __sk_buff *skb)
+ 		bpf_spin_unlock(&entry->lock);
+ 	}
+ 
++skip_update:
+ 	return TC_ACT_OK;
+ }
+ 
+-- 
+2.34.1
+

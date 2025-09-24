@@ -34,3 +34,4 @@ load_kmod:
 		($(MAKE) clean || true) && \
 		$(MAKE) && \
 		$(MAKE) load
+	cd $(CURDIR)/libs/kfuncs/my_memcpy && $(MAKE) && $(MAKE) load

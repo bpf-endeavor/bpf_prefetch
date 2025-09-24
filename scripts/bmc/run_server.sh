@@ -111,9 +111,9 @@ main() {
 	clean_up &> /dev/null
 
 	# Memcached
-	taskset -c 8-12 \
+	taskset -c 8 \
 		$MEMCD -U $UDP_PORT -l $SERVER_IP \
-			-m 1024 -M -k -P $PID_FILE -d -t 4 -C 2>&1 > /dev/null
+			-m 1024 -M -k -P $PID_FILE -d -t 1 -C 2>&1 > /dev/null
 
 	if [ $HAS_BMC -eq 1 ]; then
 		$( sudo $BMC_BIN $IFINDEX 2>&1 > /dev/null ) &

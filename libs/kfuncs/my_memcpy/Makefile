@@ -22,4 +22,4 @@ load: unload
 	sudo insmod $(KMOD)
 
 unload:
-	sudo rmmod $(MODULE_NAME) 2> /dev/null || true
+	sudo rmmod $(MODULE_NAME)  || true
