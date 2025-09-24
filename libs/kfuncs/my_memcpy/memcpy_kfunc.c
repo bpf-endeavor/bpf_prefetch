@@ -28,6 +28,18 @@ __bpf_kfunc long my_jhash(void *src__ign, __u32 sz__ign)
 	return hash;
 }
 
+__bpf_kfunc long my_memmove(void *dst__ign, void *src__ign, __u32 src_sz__ign)
+{
+	memmove(dst__ign, src__ign, src_sz__ign);
+	return 0;
+}
+
+__bpf_kfunc long my_strncmp(void *dst__ign, void *src__ign, __u32 src_sz__ign)
+{
+	int x = strncmp(dst__ign, src__ign, src_sz__ign);
+	return x;
+}
+
 __bpf_kfunc_end_defs();
 
 /* Encode the function(s) into BTF */
@@ -40,6 +52,8 @@ BTF_KFUNCS_START(bpf_my_memcpy)
 BTF_ID_FLAGS(func, my_memcpy, NO_FLAG)
 BTF_ID_FLAGS(func, my_strchr, NO_FLAG)
 BTF_ID_FLAGS(func, my_jhash, NO_FLAG)
+BTF_ID_FLAGS(func, my_memmove, NO_FLAG)
+BTF_ID_FLAGS(func, my_strncmp, NO_FLAG)
 BTF_KFUNCS_END(bpf_my_memcpy)
 
 /* BTF_SET8_START(bpf_my_memcpy) */
