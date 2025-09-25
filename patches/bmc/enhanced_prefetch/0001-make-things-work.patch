@@ -1,0 +1,635 @@
+From 0c82267743eaec4b63cc19a564140e10f3d8f243 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Thu, 21 Aug 2025 12:08:28 -0600
+Subject: [PATCH 1/3] make things work
+
+---
+ bmc/Makefile     | 147 ++++++---------------------------------
+ bmc/bmc_common.h |   4 +-
+ bmc/bmc_kern.c   | 176 +++++++++++++++++++++++++++++------------------
+ bmc/bmc_user.c   |  19 +++--
+ 4 files changed, 139 insertions(+), 207 deletions(-)
+
+diff --git a/bmc/Makefile b/bmc/Makefile
+index 61a8f5d..efa08f1 100644
+--- a/bmc/Makefile
++++ b/bmc/Makefile
+@@ -1,131 +1,24 @@
+-# Software Name : bmc-cache
+-# SPDX-FileCopyrightText: Copyright (c) 2021 Orange
+-# SPDX-License-Identifier: LGPL-2.1-only
+-#
+-# This software is distributed under the
+-# GNU Lesser General Public License v2.1 only.
+-#
+-# Author: Yoann GHIGOFF <yoann.ghigoff@orange.com> et al.
+-#
+-#	To use this Makefile: clang and llvm must be installed,
+-#	kernel sources available under ./linux and libbpf statically
+-#	compiled in Linux source tree.
+-#
+-#	bmc_kern.c depends on kernel headers and bpf_helpers.h
+-#	bmc_user.c depends on libbpf
++CC=clang
++LLC=llc
++LIBBPF_HEADER=$(CURDIR)/../../../deps/usr/include/
++LIBBPF_LIB=$(CURDIR)/../../../deps/usr/lib64/
+ 
+-LINUX_PATH ?= ./linux
+-LINUX_TOOLS_PATH = $(LINUX_PATH)/tools
+-LINUX_LIB_PATH = $(LINUX_TOOLS_PATH)/lib
+-LIBBPF_PATH = $(LINUX_LIB_PATH)/bpf
++.PHONY: default clean
+ 
+-TARGETS += bmc
+-
+-CLANG ?= clang-9
+-LLC ?= llc-9
+-CC := gcc
+-
+-KERN_SOURCES = ${TARGETS:=_kern.c}
+-USER_SOURCES = ${TARGETS:=_user.c}
+-KERN_OBJECTS = ${KERN_SOURCES:.c=.o}
+-USER_OBJECTS = ${USER_SOURCES:.c=.o}
+-
+-LIBBPF = $(LIBBPF_PATH)/libbpf.a
+-
+-CFLAGS := -g -O2 -Wall
+-CFLAGS += -I.
+-CFLAGS += -I$(LINUX_LIB_PATH)
+-CFLAGS += -I$(LINUX_TOOLS_PATH)/include/uapi
+-
+-LDFLAGS ?= -L$(LIBBPF_PATH) -l:libbpf.a -lelf $(USER_LIBS)
+-
+-NOSTDINC_FLAGS := -nostdinc -isystem $(shell $(CC) -print-file-name=include)
+-ARCH=$(shell uname -m | sed 's/x86_64/x86/' | sed 's/i386/x86/')
+-
+-LINUXINCLUDE := -I$(LINUX_PATH)/arch/$(ARCH)/include
+-LINUXINCLUDE += -I$(LINUX_PATH)/arch/$(ARCH)/include/uapi
+-LINUXINCLUDE += -I$(LINUX_PATH)/arch/$(ARCH)/include/generated
+-LINUXINCLUDE += -I$(LINUX_PATH)/arch/$(ARCH)/include/generated/uapi
+-LINUXINCLUDE += -I$(LINUX_PATH)/include
+-LINUXINCLUDE += -I$(LINUX_PATH)/include/uapi
+-LINUXINCLUDE += -I$(LINUX_PATH)/include/generated/uapi
+-LINUXINCLUDE += -I$(LINUX_PATH)/tools/testing/selftests/bpf
+-LINUXINCLUDE += -include $(LINUX_PATH)/include/linux/kconfig.h
+-LINUXINCLUDE += -include $(LINUX_PATH)/samples/bpf/asm_goto_workaround.h
+-
+-EXTRA_CFLAGS=-Werror
+-
+-###
+-
+-all: dependencies $(TARGETS) $(KERN_OBJECTS)
+-
+-.PHONY: clean dependencies verify_cmds verify_target_bpf $(CLANG) $(LLC)
++default: bmc_kern.o bmc
+ 
+ clean:
+-	@find . -type f \
+-		\( -name '*~' \
+-		-o -name '*.ll' \
+-		-o -name '*.bc' \
+-		-o -name 'core' \) \
+-		-exec rm -vf '{}' \;
+-	rm -f $(TARGETS)
+-	rm -f $(KERN_OBJECTS)
+-	rm -f $(USER_OBJECTS)
+-	rm -f $(OBJECT_LOADBPF)
+-
+-dependencies: verify_target_bpf
+-
+-linux-src:
+-	@if ! test -d $(LINUX_PATH)/; then \
+-		echo "ERROR: Need kernel source code to compile against" ;\
+-		echo "(Cannot open directory: $(LINUX_PATH))" ;\
+-		exit 1; \
+-else true; fi
+-
+-linux-src-libbpf: linux-src
+-	@if ! test -d $(LIBBPF_PATH); then \
+-		echo "WARNING: Compile against local kernel source code copy" ;\
+-		echo "       and specifically tools/lib/bpf/ "; \
+-else true; fi
+-
+-verify_cmds: $(CLANG) $(LLC)
+-	@for TOOL in $^ ; do \
+-		if ! (which -- "$${TOOL}" > /dev/null 2>&1); then \
+-			echo "*** ERROR: Cannot find LLVM tool $${TOOL}" ;\
+-			exit 1; \
+-		else true; fi; \
+-	done
+-
+-verify_target_bpf: verify_cmds
+-	@if ! (${LLC} -march=bpf -mattr=help > /dev/null 2>&1); then \
+-		echo "*** ERROR: LLVM (${LLC}) does not support 'bpf' target" ;\
+-		echo "   NOTICE: LLVM version >= 3.7.1 required" ;\
+-		exit 2; \
+-	else true; fi
+-
+-$(LIBBPF): $(wildcard $(LIBBPF_PATH)/*.[ch] $(LIBBPF_PATH)/Makefile)
+-	make -C $(LIBBPF_PATH)
+-
+-# Compiling of eBPF restricted-C code with LLVM
+-#  clang option -S generated output file with suffix .ll
+-#   which is the non-binary LLVM assembly language format
+-#   (normally LLVM bitcode format .bc is generated)
+-#
+-# Use -Wno-address-of-packed-member as eBPF verifier enforces
+-# unaligned access checks where necessary
+-#
+-$(KERN_OBJECTS): %.o: %.c
+-	$(CLANG) -S $(NOSTDINC_FLAGS) $(LINUXINCLUDE) $(EXTRA_CFLAGS) \
+-	    -D__KERNEL__ -D__ASM_SYSREG_H -D__BPF_TRACING__ \
+-	    -D__TARGET_ARCH_$(ARCH) \
+-	    -Wno-unused-value -Wno-pointer-sign \
+-	    -Wno-compare-distinct-pointer-types \
+-	    -Wno-gnu-variable-sized-type-not-at-end \
+-	    -Wno-tautological-compare \
+-	    -Wno-unknown-warning-option \
+-	    -Wno-address-of-packed-member \
+-	    -O2 -g -emit-llvm -c $< -o ${@:.o=.ll}
+-	$(LLC) -march=bpf -filetype=obj -o $@ ${@:.o=.ll}
+-
+-$(TARGETS): %: %_user.c $(OBJECTS) $(LIBBPF)
+-	$(CC) $(CFLAGS) $(OBJECTS) -o $@ $< $(LIBBPF) $(LDFLAGS)
++	rm bmc bmc_kern.o
++
++bmc_kern.o: bmc_kern.c bmc_common.h
++	LL_FILE=$@.ll; \
++	$(CC) -target bpf \
++		-S -Wall \
++		-I $(LIBBPF_HEADER) \
++		-Wno-unused-value -Wno-pointer-sign \
++		-Wno-compare-distinct-pointer-types \
++		-O2 -g -emit-llvm -c bmc_kern.c -o $$LL_FILE; \
++		$(LLC) -mcpu=v3 -march=bpf -filetype=obj -o "$@" $$LL_FILE;
++
++bmc: bmc_user.c bmc_common.h
++	$(CC) -O2 -g -Wall -I $(LIBBPF_HEADER) -o $@ bmc_user.c -L$(LIBBPF_LIB)  -lbpf  -lelf -lz -lpthread
+diff --git a/bmc/bmc_common.h b/bmc/bmc_common.h
+index 3f8e8b5..73af2b6 100644
+--- a/bmc/bmc_common.h
++++ b/bmc/bmc_common.h
+@@ -12,11 +12,11 @@
+ #ifndef _BMC_COMMON_H
+ #define _BMC_COMMON_H
+ 
+-#define BMC_MAX_KEY_LENGTH 250
++#define BMC_MAX_KEY_LENGTH 200
+ #define BMC_MAX_VAL_LENGTH 1000
+ #define BMC_MAX_ADDITIONAL_PAYLOAD_BYTES 53
+ #define BMC_MAX_CACHE_DATA_SIZE BMC_MAX_KEY_LENGTH+BMC_MAX_VAL_LENGTH+BMC_MAX_ADDITIONAL_PAYLOAD_BYTES
+-#define BMC_MAX_KEY_IN_MULTIGET 30
++#define BMC_MAX_KEY_IN_MULTIGET 4
+ #define BMC_CACHE_ENTRY_COUNT 3250000
+ #define BMC_MAX_PACKET_LENGTH 1500
+ #define BMC_MAX_KEY_IN_PACKET BMC_MAX_KEY_IN_MULTIGET
+diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
+index 5a2f064..a6ebd7a 100644
+--- a/bmc/bmc_kern.c
++++ b/bmc/bmc_kern.c
+@@ -14,7 +14,12 @@
+ #include <linux/ip.h>
+ #include <linux/udp.h>
+ #include <linux/tcp.h>
+-#include "bpf_helpers.h"
++#include <linux/in.h>
++
++#include <linux/pkt_cls.h>
++
++#include <bpf/bpf_helpers.h>
++#include <bpf/bpf_endian.h>
+ 
+ #include "bmc_common.h"
+ 
+@@ -24,6 +29,10 @@
+ # define memmove(dest, src, n)  __builtin_memmove((dest), (src), (n))
+ #endif
+ 
++#ifndef memcpy
++# define memcpy(dest, src, n)  __builtin_memcpy((dest), (src), (n))
++#endif
++
+ struct memcached_udp_header {
+     __be16 request_id;
+     __be16 seq_num;
+@@ -40,7 +49,7 @@ struct memcached_udp_header {
+ /* cache */
+ struct {
+ 	__uint(type, BPF_MAP_TYPE_ARRAY);
+-	__type(key, u32);
++	__type(key, __u32);
+ 	__type(value, struct bmc_cache_entry);
+ 	__uint(max_entries, BMC_CACHE_ENTRY_COUNT);
+ } map_kcache SEC(".maps");
+@@ -48,7 +57,7 @@ struct {
+ 
+ /* keys */
+ struct memcached_key {
+-	u32 hash;
++	__u32 hash;
+ 	char data[BMC_MAX_KEY_LENGTH];
+ 	unsigned int len;
+ };
+@@ -67,54 +76,55 @@ struct parsing_context {
+ 	unsigned short read_pkt_offset;
+ 	unsigned short write_pkt_offset;
+ };
+-struct bpf_map_def SEC("maps") map_parsing_context = {
+-	.type = BPF_MAP_TYPE_PERCPU_ARRAY,
+-	.key_size = sizeof(unsigned int),
+-	.value_size = sizeof(struct parsing_context),
+-	.max_entries = 1,
+-};
++
++struct {
++	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
++	__type(key, unsigned int);
++	__type(value, struct parsing_context);
++	__uint(max_entries, 1);
++} map_parsing_context SEC(".maps");
+ 
+ /* stats */
+-struct bpf_map_def SEC("maps") map_stats = {
+-	.type = BPF_MAP_TYPE_PERCPU_ARRAY,
+-	.key_size = sizeof(unsigned int),
+-	.value_size = sizeof(struct bmc_stats),
+-	.max_entries = 1,
+-};
++struct {
++	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
++	__type(key, unsigned int);
++	__type(value, struct bmc_stats);
++	__uint(max_entries, 1);
++} map_stats SEC(".maps");
+ 
+ /* program maps */
+-struct bpf_map_def SEC("maps") map_progs_xdp = {
+-	.type = BPF_MAP_TYPE_PROG_ARRAY,
+-	.key_size = sizeof(u32),
+-	.value_size = sizeof(u32),
+-	.max_entries = BMC_PROG_XDP_MAX,
+-};
+-
+-struct bpf_map_def SEC("maps") map_progs_tc = {
+-	.type = BPF_MAP_TYPE_PROG_ARRAY,
+-	.key_size = sizeof(u32),
+-	.value_size = sizeof(u32),
+-	.max_entries = BMC_PROG_TC_MAX,
+-};
+-
++struct {
++	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
++	__type(key, __u32);
++	__type(value, __u32);
++	__uint(max_entries, BMC_PROG_XDP_MAX);
++} map_progs_xdp SEC(".maps");
+ 
+-static inline u16 compute_ip_checksum(struct iphdr *ip)
++struct {
++	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
++	__type(key, __u32);
++	__type(value, __u32);
++	__uint(max_entries, BMC_PROG_TC_MAX);
++} map_progs_tc SEC(".maps");
++
++static inline __attribute__((always_inline))
++__u16 compute_ip_checksum(struct iphdr *ip)
+ {
+-    u32 csum = 0;
+-    u16 *next_ip_u16 = (u16 *)ip;
++	__u32 csum = 0;
++	__u16 *next_ip___u16 = (__u16 *)ip;
+ 
+-    ip->check = 0;
++	ip->check = 0;
+ 
+ #pragma clang loop unroll(full)
+-    for (int i = 0; i < (sizeof(*ip) >> 1); i++) {
+-        csum += *next_ip_u16++;
+-    }
++	for (int i = 0; i < (sizeof(*ip) >> 1); i++) {
++		csum += *next_ip___u16++;
++	}
+ 
+ 	return ~((csum & 0xffff) + (csum >> 16));
+ }
+ 
+-SEC("bmc_rx_filter")
+-int bmc_rx_filter_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_rx_filter(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -148,7 +158,7 @@ int bmc_rx_filter_main(struct xdp_md *ctx)
+ 			return XDP_PASS;
+ 	}
+ 
+-	if (dport == htons(11211) && payload+4 <= data_end) {
++	if (dport == bpf_htons(11211) && payload+4 <= data_end) {
+ 
+ 		if (ip->protocol == IPPROTO_UDP && payload[0] == 'g' && payload[1] == 'e' && payload[2] == 't' && payload[3] == ' ') { // is this a GET request
+ 			unsigned int zero = 0;
+@@ -186,8 +196,8 @@ int bmc_rx_filter_main(struct xdp_md *ctx)
+ }
+ 
+ 
+-SEC("bmc_hash_keys")
+-int bmc_hash_keys_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_hash_keys(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -232,7 +242,7 @@ int bmc_hash_keys_main(struct xdp_md *ctx)
+ 		return XDP_PASS;
+ 	}
+ 
+-	u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
++	__u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
+ 	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+ 	if (!entry) { // should never happen since cache map is of type BPF_MAP_TYPE_ARRAY
+ 		return XDP_PASS;
+@@ -273,11 +283,14 @@ int bmc_hash_keys_main(struct xdp_md *ctx)
+ 	return XDP_PASS;
+ }
+ 
+-SEC("bmc_prepare_packet")
+-int bmc_prepare_packet_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_prepare_packet(struct xdp_md *ctx)
+ {
+-	if (bpf_xdp_adjust_head(ctx, -ADJUST_HEAD_LEN)) // // pop empty packet buffer memory to increase the available packet size
+-		return XDP_PASS;
++	if (bpf_xdp_adjust_head(ctx, -ADJUST_HEAD_LEN)) {
++		// // pop empty packet buffer memory to increase the available packet size
++		bpf_printk("bmc_prepare_packet_main: failed to increase packet size");
++		return XDP_DROP;
++	}
+ 
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -319,8 +332,8 @@ int bmc_prepare_packet_main(struct xdp_md *ctx)
+ 	return XDP_PASS;
+ }
+ 
+-SEC("bmc_write_reply")
+-int bmc_write_reply_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_write_reply(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -341,9 +354,10 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 	}
+ 
+ 	unsigned int cache_hit = 1, written = 0;
+-	u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
++	__u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
+ 	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+ 	if (!entry) {
++		bpf_printk("bmc_write_reply_main: cache entry not found!");
+ 		return XDP_DROP;
+ 	}
+ 
+@@ -358,15 +372,23 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 		if (cache_hit) { // if cache HIT then copy cached data
+ 			unsigned int off;
+ #pragma clang loop unroll(disable)
+-			for (off = 0; off+sizeof(unsigned long long) < BMC_MAX_CACHE_DATA_SIZE && off+sizeof(unsigned long long) <= entry->len && payload+off+sizeof(unsigned long long) <= data_end; off++) {
++			for (off = 0; off+sizeof(unsigned long long) < BMC_MAX_CACHE_DATA_SIZE &&
++					off+sizeof(unsigned long long) <= entry->len &&
++					payload+off+sizeof(unsigned long long) <= data_end; off++) {
+ 				*((unsigned long long *) &payload[off]) = *((unsigned long long *) &entry->data[off]);
+ 				off += sizeof(unsigned long long)-1;
+ 				written += sizeof(unsigned long long);
+ 			}
+ #pragma clang loop unroll(disable)
+-			for (; off < BMC_MAX_CACHE_DATA_SIZE && off < entry->len && payload+off+1 <= data_end; off++) {
++			for (__u8 t=0; t < 8; t++) {
++				if (off >= BMC_MAX_CACHE_DATA_SIZE ||
++					off >= entry->len ||
++					payload+off+1 > data_end)
++					break;
++
+ 				payload[off] = entry->data[off];
+ 				written += 1;
++				off++;
+ 			}
+ 		}
+ 	}
+@@ -384,7 +406,12 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 
+ 	pctx->current_key++;
+ 
+-	if (pctx->current_key == pctx->key_count && (pctx->write_pkt_offset > 0 || written > 0)) { // if all saved keys have been processed and a least one cache HIT
++	/* NOTE: Farbod: just to pass the verifier */
++	written &= 0xfff;
++
++	if (pctx->current_key == pctx->key_count &&
++		(pctx->write_pkt_offset > 0 || written > 0)) {
++		// if all saved keys have been processed and a least one cache HIT
+ 		if (payload+written+5 <= data_end) {
+ 			payload[written++] = 'E';
+ 			payload[written++] = 'N';
+@@ -393,7 +420,9 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 			payload[written++] = '\n';
+ 
+ 			if (bpf_xdp_adjust_head(ctx, 0 - (int) (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr)
+-													+ sizeof(struct memcached_udp_header) + pctx->write_pkt_offset))) { // pop headers + previously written data
++													+ sizeof(struct memcached_udp_header) + pctx->write_pkt_offset))) {
++				// pop headers + previously written data
++				bpf_printk("bmc_write_reply_main: failed to resize the packet");
+ 				return XDP_DROP;
+ 			}
+ 
+@@ -406,10 +435,10 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 			if (udp + 1 > data_end)
+ 				return XDP_PASS;
+ 
+-			ip->tot_len = htons((payload+pctx->write_pkt_offset+written) - (char*)ip);
++			ip->tot_len = bpf_htons((payload+pctx->write_pkt_offset+written) - (char*)ip);
+ 			ip->check = compute_ip_checksum(ip);
+ 			udp->check = 0; // computing udp checksum is not required
+-			udp->len = htons((payload+pctx->write_pkt_offset+written) - (char*)udp);
++			udp->len = bpf_htons((payload+pctx->write_pkt_offset+written) - (char*)udp);
+ 
+ 			bpf_xdp_adjust_tail(ctx, 0 - (int) ((long) data_end - (long) (payload+pctx->write_pkt_offset+written))); // try to strip additional bytes
+ 
+@@ -421,16 +450,28 @@ int bmc_write_reply_main(struct xdp_md *ctx)
+ 		return XDP_PASS;
+ 	} else if (pctx->current_key < BMC_MAX_KEY_IN_PACKET) { // else if there are still keys to process
+ 		pctx->write_pkt_offset += written; // save packet write offset
+-		if (bpf_xdp_adjust_head(ctx, written)) // push written data
++		if (bpf_xdp_adjust_head(ctx, written)) {
++			// push written data
++			bpf_printk("bmc_write_reply_main: failed to resize packet for written response");
+ 			return XDP_DROP;
++		}
+ 		bpf_tail_call(ctx, &map_progs_xdp, BMC_PROG_XDP_WRITE_REPLY);
+ 	}
+ 
++	/* bpf_printk("bmc_write_reply_main: failed"); */
++	/* bpf_printk("current_key: %d/%d (max: %d)", pctx->current_key, pctx->key_count, BMC_MAX_KEY_IN_PACKET); */
++	/* bpf_printk("written data: %d", written); */
++
++	/* void *x = payload+written+5; */
++	/* void *y = data_end; */
++	/* bpf_printk("%p >? %p = %d",  x, y, x > y); */
++	/* __u16 tmp_size = (__u16)(__u64)(data_end - data); */
++	/* bpf_printk("packet size: %d", tmp_size); */
+ 	return XDP_DROP;
+ }
+ 
+-SEC("bmc_invalidate_cache")
+-int bmc_invalidate_cache_main(struct xdp_md *ctx)
++SEC("xdp")
++int bmc_invalidate_cache(struct xdp_md *ctx)
+ {
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
+@@ -448,7 +489,7 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
+ 		return XDP_PASS;
+ 	}
+ 
+-	u32 hash;
++	__u32 hash;
+ 	int set_found = 0, key_found = 0;
+ 
+ #pragma clang loop unroll(disable)
+@@ -472,7 +513,7 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
+ 		}
+ 		else if (key_found == 1) {
+ 			if (payload[off] == ' ') { // found the end of the key
+-				u32 cache_idx = hash % BMC_CACHE_ENTRY_COUNT;
++				__u32 cache_idx = hash % BMC_CACHE_ENTRY_COUNT;
+ 				struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+ 				if (!entry) {
+ 					return XDP_PASS;
+@@ -496,8 +537,8 @@ int bmc_invalidate_cache_main(struct xdp_md *ctx)
+ 	return XDP_PASS;
+ }
+ 
+-SEC("bmc_tx_filter")
+-int bmc_tx_filter_main(struct __sk_buff *skb)
++SEC("tc")
++int bmc_tx_filter(struct __sk_buff *skb)
+ {
+ 	void *data_end = (void *)(long)skb->data_end;
+ 	void *data     = (void *)(long)skb->data;
+@@ -522,7 +563,7 @@ int bmc_tx_filter_main(struct __sk_buff *skb)
+ 
+ 	__be16 sport = udp->source;
+ 
+-	if (sport == htons(11211) && payload+5+1 <= data_end && payload[0] == 'V' && payload[1] == 'A' && payload[2] == 'L'
++	if (sport == bpf_htons(11211) && payload+5+1 <= data_end && payload[0] == 'V' && payload[1] == 'A' && payload[2] == 'L'
+ 		&& payload[3] == 'U' && payload[4] == 'E' && payload[5] == ' ') { // if this is a GET reply
+ 
+ 		struct bmc_stats *stats = bpf_map_lookup_elem(&map_stats, &zero);
+@@ -537,15 +578,15 @@ int bmc_tx_filter_main(struct __sk_buff *skb)
+ 	return TC_ACT_OK;
+ }
+ 
+-SEC("bmc_update_cache")
+-int bmc_update_cache_main(struct __sk_buff *skb)
++SEC("tc")
++int bmc_update_cache(struct __sk_buff *skb)
+ {
+ 	void *data_end = (void *)(long)skb->data_end;
+ 	void *data = (void *)(long)skb->data;
+ 	char *payload = (data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct memcached_udp_header));
+ 	unsigned int zero = 0;
+ 
+-	u32 hash = FNV_OFFSET_BASIS_32;
++	__u32 hash = FNV_OFFSET_BASIS_32;
+ 
+ 	// compute the key hash
+ #pragma clang loop unroll(disable)
+@@ -554,7 +595,7 @@ int bmc_update_cache_main(struct __sk_buff *skb)
+ 		hash *= FNV_PRIME_32;
+ 	}
+ 
+-	u32 cache_idx = hash % BMC_CACHE_ENTRY_COUNT;
++	__u32 cache_idx = hash % BMC_CACHE_ENTRY_COUNT;
+ 	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+ 	if (!entry) {
+ 		return TC_ACT_OK;
+@@ -604,4 +645,5 @@ int bmc_update_cache_main(struct __sk_buff *skb)
+ 	return TC_ACT_OK;
+ }
+ 
++char _license[] SEC("license") = "GPL";
+ // to test colisions: keys declinate0123456 and macallums0123456 have hash colision
+diff --git a/bmc/bmc_user.c b/bmc/bmc_user.c
+index 38d36d6..683d404 100644
+--- a/bmc/bmc_user.c
++++ b/bmc/bmc_user.c
+@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
+ {
+ 	struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY};
+ 	int map_progs_xdp_fd, xdp_main_prog_fd, map_progs_tc_fd, map_progs_fd, map_stats_fd;
+-	struct bpf_object_load_attr load_attr;
++	// struct bpf_object_load_attr load_attr;
+ 	struct bpf_object *obj;
+ 	char filename[PATH_MAX];
+ 	int err, prog_count;
+@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
+ 	prog_count = sizeof(progs) / sizeof(progs[0]);
+ 
+ 	for (int i = 0; i < prog_count; i++) {
+-		progs[i].prog = bpf_object__find_program_by_title(obj, progs[i].name);
++		progs[i].prog = bpf_object__find_program_by_name(obj, progs[i].name);
+ 		if (!progs[i].prog) {
+ 			fprintf(stderr, "Error: bpf_object__find_program_by_title failed\n");
+ 			return 1;
+@@ -233,12 +233,9 @@ int main(int argc, char *argv[])
+ 		bpf_program__set_type(progs[i].prog, progs[i].type);
+ 	}
+ 
+-	load_attr.obj = obj;
+-	load_attr.log_level = LIBBPF_WARN;
+-
+-	err = bpf_object__load_xattr(&load_attr);
++	err = bpf_object__load(obj);
+ 	if (err) {
+-		fprintf(stderr, "Error: bpf_object__load_xattr failed\n");
++		fprintf(stderr, "Error: bpf_object__load failed\n");
+ 		return 1;
+ 	}
+ 
+@@ -298,11 +295,11 @@ int main(int argc, char *argv[])
+ 				return -1;
+ 			}
+ retry:
+-			if (bpf_program__pin_instance(progs[i].prog, filename, 0)) {
++			if (bpf_program__pin(progs[i].prog, filename)) {
+ 				fprintf(stderr, "Error: Failed to pin program '%s' to path %s\n", progs[i].name, filename);
+ 				if (errno == EEXIST) {
+ 					fprintf(stdout, "BPF program '%s' already pinned, unpinning it to reload it\n", progs[i].name);
+-					if (bpf_program__unpin_instance(progs[i].prog, filename, 0)) {
++					if (bpf_program__unpin(progs[i].prog, filename)) {
+ 						fprintf(stderr, "Error: Fail to unpin program '%s' at %s\n", progs[i].name, filename);
+ 						return -1;
+ 					}
+@@ -326,7 +323,7 @@ retry:
+ 	}
+ 
+ 	for (int i = 0; i < interface_count; i++) {
+-		if (bpf_set_link_xdp_fd(interfaces_idx[i], xdp_main_prog_fd, xdp_flags) < 0) {
++		if (bpf_xdp_attach(interfaces_idx[i], xdp_main_prog_fd, xdp_flags, NULL) < 0) {
+ 			fprintf(stderr, "Error: bpf_set_link_xdp_fd failed for interface %d\n", interfaces_idx[i]);
+ 			return 1;
+ 		} else {
+@@ -393,7 +390,7 @@ retry:
+ 	}
+ 
+ 	for (int i = 0; i < interface_count; i++) {
+-		bpf_set_link_xdp_fd(interfaces_idx[i], -1, xdp_flags);
++		bpf_xdp_detach(interfaces_idx[i], xdp_flags, NULL);
+ 	}
+ 
+ 	return ret;
+-- 
+2.34.1
+

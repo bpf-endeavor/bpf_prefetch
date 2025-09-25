@@ -4,6 +4,7 @@ usage() {
 	echo "Make sure the flow-steering rules are setuped for M1 & M2"
 	echo "Usage run_server: default behaviour: only run the memcached"
 	echo "  --bmc-baseline: run with baseline bmc"
+	echo "  --bmc-prefetch: run bmc with prefetching"
 	echo "  --bmc-batch: run with batch aware bmc"
 	echo "  --bmc-batch-pf: run with batch aware bmc + prefetching"
 	echo
@@ -36,7 +37,13 @@ while [ $# -gt 0 ]; do
 	case $1 in
 		--bmc-baseline)
 			HAS_BMC=1
-			BMC_MODE=original
+			# BMC_MODE=original
+			BMC_MODE=enhanced
+			shift
+			;;
+		--bmc-prefetch)
+			HAS_BMC=1
+			BMC_MODE=enhanced_prefetch
 			shift
 			;;
 		--bmc-batch)

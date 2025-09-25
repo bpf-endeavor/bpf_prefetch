@@ -1,0 +1,113 @@
+From 938e3738f1c9b142dfcd3fd46fce5275188b8f4d Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Thu, 25 Sep 2025 03:32:34 -0600
+Subject: [PATCH 3/3] add some prefetching
+
+---
+ bmc/bmc_kern.c | 40 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
+index 5e6cd4d..a1bdbc1 100644
+--- a/bmc/bmc_kern.c
++++ b/bmc/bmc_kern.c
+@@ -44,6 +44,15 @@ long my_jhash(void *str, __u32 sz) __ksym;
+ long my_memmove(void *dst, void *src, __u32 sz) __ksym;
+ long my_strncmp(void *dst, void *src, __u32 sz) __ksym;
+ 
++#define PREFETCH 1
++#include "honey/prefetching.h"
++
++#ifndef offsetof
++#define offsetof(T, f) (&(T *)(0)->f)
++#endif
++
++#define sinline static inline __attribute__((always_inline))
++
+ struct memcached_udp_header {
+     __be16 request_id;
+     __be16 seq_num;
+@@ -119,6 +128,9 @@ struct {
+ 	__uint(max_entries, BMC_PROG_TC_MAX);
+ } map_progs_tc SEC(".maps");
+ 
++/* base address of kcache_map */
++static __u64 cache_base_addr = 0;
++
+ static inline __attribute__((always_inline))
+ __u16 compute_ip_checksum(struct iphdr *ip)
+ {
+@@ -135,11 +147,31 @@ __u16 compute_ip_checksum(struct iphdr *ip)
+ 	return ~((csum & 0xffff) + (csum >> 16));
+ }
+ 
++sinline void init_cache_base_addr(void)
++{
++	if (cache_base_addr != 0)
++		return;
++	int zero = 0;
++	struct bmc_cache_entry *e = bpf_map_lookup_elem(&map_kcache, &zero);
++	if (e == NULL)
++		return;
++	cache_base_addr = (__u64)e;
++}
++
++sinline void pf_cache_entry(__u32 index)
++{
++	__u64 addr = cache_base_addr + (index * sizeof(struct bmc_cache_entry));
++	P((void *)addr);
++}
++
+ SEC("xdp")
+ int bmc_rx_filter(struct xdp_md *ctx)
+ {
++	init_cache_base_addr();
++
+ 	void *data_end = (void *)(long)ctx->data_end;
+ 	void *data = (void *)(long)ctx->data;
++	P(data);
+ 	struct ethhdr *eth = data;
+ 	struct iphdr *ip = data + sizeof(*eth);
+ 	void *transp = data + sizeof(*eth) + sizeof(*ip);
+@@ -188,6 +220,7 @@ int bmc_rx_filter(struct xdp_md *ctx)
+ 			pctx->current_key = 0;
+ 			pctx->write_pkt_offset = 0;
+ 			pctx->response_len = 0;
++			P(pctx);
+ 
+ 			unsigned int off;
+ #pragma clang loop unroll(disable)
+@@ -250,6 +283,9 @@ int bmc_hash_keys(struct xdp_md *ctx)
+ 	key->hash = my_jhash(payload, key_len);
+ 
+ 	__u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
++
++	pf_cache_entry(cache_idx);
++
+ 	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+ 	if (!entry) { // should never happen since cache map is of type BPF_MAP_TYPE_ARRAY
+ 		return XDP_PASS;
+@@ -355,6 +391,7 @@ int bmc_write_reply(struct xdp_md *ctx)
+ 	void *data = (void *)(long)ctx->data;
+ 	char *payload = (char *) data;
+ 	unsigned int zero = 0;
++	P(payload);
+ 
+ 	if (payload >= data_end)
+ 		return XDP_PASS;
+@@ -368,9 +405,12 @@ int bmc_write_reply(struct xdp_md *ctx)
+ 	if (!key) {
+ 		return XDP_PASS;
+ 	}
++	P(key->data);
+ 
+ 	unsigned int cache_hit = 1, written = 0;
+ 	__u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
++	pf_cache_entry(cache_idx);
++
+ 	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+ 	if (!entry) {
+ 		bpf_printk("bmc_write_reply_main: cache entry not found!");
+-- 
+2.34.1
+
