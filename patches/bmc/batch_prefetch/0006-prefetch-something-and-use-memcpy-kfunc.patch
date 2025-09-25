@@ -1,7 +1,7 @@
 From 6175b2d118be1382fd0e392933ded035bdaa6b89 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Wed, 24 Sep 2025 07:40:36 -0600
-Subject: [PATCH 6/6] prefetch something and use memcpy kfunc
+Subject: [PATCH 6/7] prefetch something and use memcpy kfunc
 
 ---
  bmc/Makefile     |   5 +-
