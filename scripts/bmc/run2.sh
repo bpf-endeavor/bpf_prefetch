@@ -2,25 +2,34 @@
 set -e
 
 # Make sure we can create many sockets
-sudo sh -c "ulimit -n 65536"
+if [ "$(ulimit -n)" -lt 16384 ]; then
+	echo "Increase limit on the number of open files/sockets (ulimit -n)"
+	ulimit -n 65536
+	if [ $? -ne 0 ]; then
+		echo "Failed to increase the limit"
+		exit 1
+	fi
+fi
 
 SERVER_HOST=192.168.1.1
 SERVER_PORT=11211
 SERVER_UDP_PORT=11211
 # NOTE: Experiment duration in seconds
-TIME=15
+TIME=600
 REPEAT=1
 LOG_FILE=/tmp/bmc_performance.txt
 
 LOCALHOST=`hostname`
 AGENT=$LOCALHOST
-NUM_AGENTS=24
+NUM_AGENTS=20
 CONN_PER_AGENT=16
 
-COUNT_RECORDS=1
+# COUNT_RECORDS=1
+# COUNT_RECORDS=1000
+COUNT_RECORDS=300000
 
-# WORKLOAD_DESC="--records=1000000 --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"
-WORKLOAD_DESC="--records=$COUNT_RECORDS -K 32 -V 32"
+WORKLOAD_DESC="--records=$COUNT_RECORDS --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"
+# WORKLOAD_DESC="--records=$COUNT_RECORDS -K 200 -V 800"
 
 trap "handle_signal" SIGINT SIGHUP
 
