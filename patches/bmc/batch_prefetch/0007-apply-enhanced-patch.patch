@@ -1,7 +1,7 @@
-From 885e5a3cf74545340a880988cd1944129d4a30f8 Mon Sep 17 00:00:00 2001
+From 20ea32e41e11763dcb37fabf09e0b900d61e9bbf Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Thu, 25 Sep 2025 04:15:05 -0600
-Subject: [PATCH 7/7] apply enhanced patch
+Subject: [PATCH 7/8] apply enhanced patch
 
 ---
  bmc/bmc_common.h |   3 +-
