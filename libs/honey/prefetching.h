@@ -11,11 +11,14 @@
  * */
 static long (*bpf_prefetch)(const void * const ptr__ign) = (void *) 212;
 static long (*bpf_prefetch_1)(const void * const ptr__ign) = (void *) 213;
+static long (*bpf_prefetch_w)(const void * const ptr__ign) = (void *) 214;
 #define P(x) bpf_prefetch(x)
 #define P1(x) bpf_prefetch_1(x)
+#define Pw(x) bpf_prefetch_w(x)
 #else
 #define P(x)
 #define P1(x)
+#define Pw(x)
 #endif
 
 
