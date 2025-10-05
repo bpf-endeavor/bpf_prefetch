@@ -1,12 +1,12 @@
-From 18996f8d86d02bbaebdab38fc039af9bfa4907d1 Mon Sep 17 00:00:00 2001
+From 90fb09e15c280502c7335e7a964eeb931c4c183b Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 5 Oct 2025 05:34:39 -0600
 Subject: [PATCH 11/11] wip
 
 ---
  bmc/bmc_common.h |   2 -
- bmc/bmc_kern.c   | 247 +++++++++++++++++++++++++----------------------
- 2 files changed, 133 insertions(+), 116 deletions(-)
+ bmc/bmc_kern.c   | 281 ++++++++++++++++++++++++++---------------------
+ 2 files changed, 157 insertions(+), 126 deletions(-)
 
 diff --git a/bmc/bmc_common.h b/bmc/bmc_common.h
 index 63ff157..3e43f3d 100644
@@ -23,7 +23,7 @@ index 63ff157..3e43f3d 100644
  
  	BMC_PROG_XDP_MAX
 diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
-index 7b08d75..75c4e08 100644
+index 7b08d75..d740845 100644
 --- a/bmc/bmc_kern.c
 +++ b/bmc/bmc_kern.c
 @@ -92,7 +92,6 @@ struct {
@@ -321,7 +321,7 @@ index 7b08d75..75c4e08 100644
  	for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
  		if (k >= batch->size)
  			break;
-@@ -629,27 +647,13 @@ int bbb_prepare_packet(struct xdp_batch_md *batch)
+@@ -629,36 +647,26 @@ int bbb_prepare_packet(struct xdp_batch_md *batch)
  			continue;
  
  		struct xdp_md *ctx = &batch->buffs[k];
@@ -351,7 +351,10 @@ index 7b08d75..75c4e08 100644
  		bs->S[k].phase = RESPOND;
  		continue;
  
-@@ -659,6 +663,9 @@ fail_and_drop:
+ fail_and_drop:
++		bpf_printk("prepare: failed resizing packet");
+ 		bs->S[k].phase = DONE;
+ 		DROP(k);
  		continue;
  	}
  
@@ -361,7 +364,7 @@ index 7b08d75..75c4e08 100644
  	transition(batch, bs);
  	return 0;
  }
-@@ -666,6 +673,7 @@ fail_and_drop:
+@@ -666,6 +674,7 @@ fail_and_drop:
  SEC("xdp")
  int bbb_write_reply(struct xdp_batch_md *batch)
  {
@@ -369,7 +372,7 @@ index 7b08d75..75c4e08 100644
  	LOAD_BATCH_STATE();
  
  	int zero = 0;
-@@ -687,7 +695,6 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+@@ -687,7 +696,6 @@ int bbb_write_reply(struct xdp_batch_md *batch)
  		struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
  		if (!entry) {
  			// this must never happen
@@ -377,7 +380,7 @@ index 7b08d75..75c4e08 100644
  			pstate->phase = DONE;
  			DROP(k);
  			continue;
-@@ -710,9 +717,8 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+@@ -710,9 +718,8 @@ int bbb_write_reply(struct xdp_batch_md *batch)
  		struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
  		if (entry == NULL) {
  			// this must never happen
@@ -388,7 +391,7 @@ index 7b08d75..75c4e08 100644
  			continue;
  		}
  
-@@ -725,34 +731,46 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+@@ -725,34 +732,46 @@ int bbb_write_reply(struct xdp_batch_md *batch)
  		bpf_spin_unlock(&entry->lock);
  
  		if (!possible_hit) {
@@ -409,14 +412,14 @@ index 7b08d75..75c4e08 100644
 -
 -			my_memcpy(payload, entry->data, entry->len);
 -			stats->hit_count++;
--			__sync_fetch_and_add(&entry->in_use, -1);
++		if (!cache_hit) { // if cache HIT then copy cached data
++			/* bpf_printk("write: cache miss"); */
+ 			__sync_fetch_and_add(&entry->in_use, -1);
 -			pctx->current_key++;
 -			pstate->phase = WRITE_END_TO_RESPONSE;
 -			pstate->written = entry->len;
 -		} else {
-+		if (!cache_hit) { // if cache HIT then copy cached data
-+			/* bpf_printk("write: cache miss"); */
- 			__sync_fetch_and_add(&entry->in_use, -1);
+-			__sync_fetch_and_add(&entry->in_use, -1);
 -			pctx->current_key++;
 +			goto write_cache_miss;
 +		}
@@ -453,7 +456,7 @@ index 7b08d75..75c4e08 100644
  	}
  
  	// copy response
-@@ -767,7 +785,6 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+@@ -767,7 +786,6 @@ int bbb_write_reply(struct xdp_batch_md *batch)
  		struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
  		if (entry == NULL) {
  			// this must never happen
@@ -461,7 +464,11 @@ index 7b08d75..75c4e08 100644
  			goto fail_and_drop;
  		}
  
-@@ -798,6 +815,7 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+@@ -795,9 +813,11 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+ 
+ 		P((void *)(long)ctx->data);
+ 		pstate->phase = UPDATE_IP_UDP_HDR;
++		pstate->written = written;
  		continue;
  
  fail_and_drop:
@@ -469,7 +476,7 @@ index 7b08d75..75c4e08 100644
  		pstate->phase = DONE;
  		DROP(k);
  		continue;
-@@ -813,7 +831,6 @@ fail_and_drop:
+@@ -813,7 +833,6 @@ fail_and_drop:
  
  		struct xdp_md *ctx = &batch->buffs[k];
  		__u16 written = pstate->written & 0xfff;
@@ -477,15 +484,32 @@ index 7b08d75..75c4e08 100644
  		void *data_end = (void *)(long)ctx->data_end;
  		void *data = (void *)(long)ctx->data;
  		struct iphdr *ip = data + sizeof(struct ethhdr);
-@@ -845,15 +862,17 @@ fail_and_drop:
- 		/* 	goto fail_and_drop_2; */
- 		/* } */
+@@ -838,22 +857,24 @@ fail_and_drop:
+ 		udp->len = bpf_htons(udp_len);
  
+ 		/* Make sure we are not replying with broken header */
+-		/* __u16 dgram = bpf_ntohs(mhdr->num_dgram); */
+-		/* if (mhdr->seq_num != 0 || dgram != 1) { */
+-		/* 	bpf_printk("seq: %d   num dgram: %d", */
+-		/* 			mhdr->seq_num, dgram); */
+-		/* 	goto fail_and_drop_2; */
+-		/* } */
+-
 -		/* if ((void *)(payload + pctx->write_pkt_offset + written) != data_end) { */
-+		/* if ((void *)(payload + written) != data_end) { */
- 		/* 	bpf_printk("packet size management is wrong"); */
- 		/* 	goto fail_and_drop_2; */
- 		/* } */
+-		/* 	bpf_printk("packet size management is wrong"); */
+-		/* 	goto fail_and_drop_2; */
+-		/* } */
++		__u16 dgram = bpf_ntohs(mhdr->num_dgram);
++		if (mhdr->seq_num != 0 || dgram != 1) {
++			bpf_printk("seq: %d   num dgram: %d",
++					mhdr->seq_num, dgram);
++			goto fail_and_drop_2;
++		}
++
++		if ((void *)(payload + written) != data_end) {
++			bpf_printk("packet size management is wrong");
++			goto fail_and_drop_2;
++		}
  
 +		/* bpf_printk("sending something"); */
  		pstate->phase = DONE;
@@ -496,7 +520,26 @@ index 7b08d75..75c4e08 100644
  		pstate->phase = DONE;
  		DROP(k);
  		continue;
-@@ -1045,7 +1064,7 @@ int bmc_update_cache(struct __sk_buff *skb)
+@@ -998,6 +1019,18 @@ int bmc_update_cache(struct __sk_buff *skb)
+ 	char *key = payload + 6;
+ 	unsigned int zero = 0;
+ 
++	struct memcached_udp_header *mhdr = data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr);
++	if ((void *)(mhdr + 1) > data_end)
++		return TC_ACT_SHOT;
++
++	__u16 dgram = bpf_ntohs(mhdr->num_dgram);
++	if (mhdr->seq_num != 0 || dgram != 1) {
++		bpf_printk("3 seq: %d   num dgram: %d",
++				mhdr->seq_num, dgram);
++		return TC_ACT_SHOT;
++	}
++
++
+ 	// null terminate the payload
+ 	const __u16 sz = ((__u64)data_end - (__u64)payload) & 0xfff;
+ 	if ((void *)(payload + sz) > data_end)
+@@ -1045,7 +1078,7 @@ int bmc_update_cache(struct __sk_buff *skb)
  
  	__u32 len = my_strchr(payload, '\n');
  	if ((void *)(payload + len + 1) > data_end) {
@@ -505,7 +548,7 @@ index 7b08d75..75c4e08 100644
  		goto skip_update;
  	}
  
-@@ -1056,10 +1075,10 @@ int bmc_update_cache(struct __sk_buff *skb)
+@@ -1056,10 +1089,10 @@ int bmc_update_cache(struct __sk_buff *skb)
  		__u32 off = my_strchr(payload + len + 1, '\n'); // find the second new line
  		if (len > BMC_MAX_CACHE_DATA_SIZE ||
  			(void *)(payload + len + 1) > data_end) {
