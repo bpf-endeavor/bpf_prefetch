@@ -15,14 +15,14 @@ SERVER_HOST=192.168.1.1
 SERVER_PORT=11211
 SERVER_UDP_PORT=11211
 # NOTE: Experiment duration in seconds
-TIME=600
+TIME=40
 REPEAT=1
 LOG_FILE=/tmp/bmc_performance.txt
 
 LOCALHOST=`hostname`
 AGENT=$LOCALHOST
 NUM_AGENTS=24
-CONN_PER_AGENT=32
+CONN_PER_AGENT=16
 
 # COUNT_RECORDS=1
 # COUNT_RECORDS=1000
@@ -31,7 +31,7 @@ CONN_PER_AGENT=32
 COUNT_RECORDS=500000
 # COUNT_RECORDS=1000000
 
-WRK="twitter"
+WRK="facebook"
 case $WRK in
   facebook)
     WORKLOAD_DESC="--records=$COUNT_RECORDS --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"

@@ -1,4 +1,4 @@
-From 52182a3fc1c5bb646e4bf9b28aafec121d51c04e Mon Sep 17 00:00:00 2001
+From 968be63be37acffe557221a81aee2cf31021d6b0 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Wed, 24 Sep 2025 13:19:37 -0600
 Subject: [PATCH 2/2] improve bmc implementation using kfuncs
@@ -6,8 +6,8 @@ Subject: [PATCH 2/2] improve bmc implementation using kfuncs
 ---
  bmc/Makefile     |   6 +-
  bmc/bmc_common.h |   2 +
- bmc/bmc_kern.c   | 344 +++++++++++++++++++++++++++++------------------
- 3 files changed, 221 insertions(+), 131 deletions(-)
+ bmc/bmc_kern.c   | 346 +++++++++++++++++++++++++++++------------------
+ 3 files changed, 223 insertions(+), 131 deletions(-)
 
 diff --git a/bmc/Makefile b/bmc/Makefile
 index efa08f1..bc0097e 100644
@@ -47,7 +47,7 @@ index 73af2b6..5c93435 100644
  };
  
 diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
-index a6ebd7a..f21376e 100644
+index a6ebd7a..ef8a322 100644
 --- a/bmc/bmc_kern.c
 +++ b/bmc/bmc_kern.c
 @@ -24,6 +24,11 @@
@@ -383,7 +383,7 @@ index a6ebd7a..f21376e 100644
  				return XDP_DROP;
  			}
  
-@@ -430,32 +435,61 @@ int bmc_write_reply(struct xdp_md *ctx)
+@@ -430,32 +435,63 @@ int bmc_write_reply(struct xdp_md *ctx)
  			void *data = (void *)(long)ctx->data;
  			struct iphdr *ip = data + sizeof(struct ethhdr);
  			struct udphdr *udp = data + sizeof(struct ethhdr) + sizeof(*ip);
@@ -399,25 +399,27 @@ index a6ebd7a..f21376e 100644
 +			}
  
 -			ip->tot_len = bpf_htons((payload+pctx->write_pkt_offset+written) - (char*)ip);
-+			ip->tot_len = bpf_htons((payload+written) - (char*)ip);
++			__u16 ip_tot_len = (__u64)payload - (__u64)ip;
++			ip_tot_len += written;
++			ip->tot_len = bpf_htons(ip_tot_len);
  			ip->check = compute_ip_checksum(ip);
  			udp->check = 0; // computing udp checksum is not required
 -			udp->len = bpf_htons((payload+pctx->write_pkt_offset+written) - (char*)udp);
-+			udp->len = bpf_htons((payload+written) - (char*)udp);
++			udp->len = bpf_htons(ip_tot_len - sizeof(struct iphdr));
  
 -			bpf_xdp_adjust_tail(ctx, 0 - (int) ((long) data_end - (long) (payload+pctx->write_pkt_offset+written))); // try to strip additional bytes
 +			/* Make sure we are not replying with broken header */
-+			__u16 dgram = bpf_ntohs(mhdr->num_dgram);
-+			if (mhdr->seq_num != 0 || dgram != 1) {
-+				bpf_printk("seq: %d   num dgram: %d",
-+						mhdr->seq_num, dgram);
-+				return XDP_DROP;
-+			}
++			/* __u16 dgram = bpf_ntohs(mhdr->num_dgram); */
++			/* if (mhdr->seq_num != 0 || dgram != 1) { */
++			/* 	bpf_printk("seq: %d   num dgram: %d", */
++			/* 			mhdr->seq_num, dgram); */
++			/* 	return XDP_DROP; */
++			/* } */
 +
-+			if ((void *)(payload + written) != data_end) {
-+				bpf_printk("packet size management is wrong %p != %p", payload + written, data_end);
-+				return XDP_DROP;
-+			}
++			/* if ((void *)(payload + written) != data_end) { */
++			/* 	bpf_printk("packet size management is wrong %p != %p", payload + written, data_end); */
++			/* 	return XDP_DROP; */
++			/* } */
  
  			return XDP_TX;
  		}
@@ -425,41 +427,41 @@ index a6ebd7a..f21376e 100644
 +		/* bpf_printk("write: not a hit"); */
  		stats->hit_misprediction += pctx->key_count;
 -		bpf_xdp_adjust_head(ctx, ADJUST_HEAD_LEN - (int) (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct memcached_udp_header))); // pop to the old headers and transmit to netstack
--		return XDP_PASS;
--	} else if (pctx->current_key < BMC_MAX_KEY_IN_PACKET) { // else if there are still keys to process
++		bpf_xdp_adjust_head(ctx, ADJUST_HEAD_LEN - (int) (ALL_HEADER_LEN)); // pop to the old headers and transmit to netstack
++
++		/* void *data_end = (void *)(long)ctx->data_end; */
++		/* void *data = (void *)(long)ctx->data; */
++		/* struct iphdr *ip = data + sizeof(struct ethhdr); */
++		/* struct udphdr *udp = data + sizeof(struct ethhdr) + sizeof(*ip); */
++		/* struct memcached_udp_header *mhdr = (struct memcached_udp_header *)(udp + 1); */
++		/* if (mhdr + 1 > data_end) { */
++		/* 	bpf_printk("there is issue with header management 2"); */
++		/* 	return XDP_DROP; */
++		/* } */
++		/* /1* Make sure we are not replying with broken header *1/ */
++		/* __u16 dgram = bpf_ntohs(mhdr->num_dgram); */
++		/* if (mhdr->seq_num != 0 || dgram != 1) { */
++		/* 	bpf_printk("seq: %d   num dgram: %d", */
++		/* 			mhdr->seq_num, dgram); */
++		/* 	return XDP_DROP; */
++		/* } */
++
+ 		return XDP_PASS;
+ 	} else if (pctx->current_key < BMC_MAX_KEY_IN_PACKET) { // else if there are still keys to process
 -		pctx->write_pkt_offset += written; // save packet write offset
 -		if (bpf_xdp_adjust_head(ctx, written)) {
 -			// push written data
 -			bpf_printk("bmc_write_reply_main: failed to resize packet for written response");
-+		bpf_xdp_adjust_head(ctx, ADJUST_HEAD_LEN - (int) (ALL_HEADER_LEN)); // pop to the old headers and transmit to netstack
-+
-+		void *data_end = (void *)(long)ctx->data_end;
-+		void *data = (void *)(long)ctx->data;
-+		struct iphdr *ip = data + sizeof(struct ethhdr);
-+		struct udphdr *udp = data + sizeof(struct ethhdr) + sizeof(*ip);
-+		struct memcached_udp_header *mhdr = (struct memcached_udp_header *)(udp + 1);
-+		if (mhdr + 1 > data_end) {
-+			bpf_printk("there is issue with header management 2");
- 			return XDP_DROP;
- 		}
+-			return XDP_DROP;
+-		}
 -		bpf_tail_call(ctx, &map_progs_xdp, BMC_PROG_XDP_WRITE_REPLY);
-+		/* Make sure we are not replying with broken header */
-+		__u16 dgram = bpf_ntohs(mhdr->num_dgram);
-+		if (mhdr->seq_num != 0 || dgram != 1) {
-+			bpf_printk("seq: %d   num dgram: %d",
-+					mhdr->seq_num, dgram);
-+			return XDP_DROP;
-+		}
-+
-+		return XDP_PASS;
-+	} else if (pctx->current_key < BMC_MAX_KEY_IN_PACKET) { // else if there are still keys to process
 +		// does not support multiple keys in one request
 +		bpf_printk("write: does not support multiple key");
 +		return XDP_DROP;
  	}
  
  	/* bpf_printk("bmc_write_reply_main: failed"); */
-@@ -583,26 +617,51 @@ int bmc_update_cache(struct __sk_buff *skb)
+@@ -583,26 +619,51 @@ int bmc_update_cache(struct __sk_buff *skb)
  {
  	void *data_end = (void *)(long)skb->data_end;
  	void *data = (void *)(long)skb->data;
@@ -520,7 +522,7 @@ index a6ebd7a..f21376e 100644
  		int diff = 0;
  		// loop until both bytes are spaces ; or break if they are different
  #pragma clang loop unroll(disable)
-@@ -614,35 +673,60 @@ int bmc_update_cache(struct __sk_buff *skb)
+@@ -614,35 +675,60 @@ int bmc_update_cache(struct __sk_buff *skb)
  		}
  		if (diff == 0) {
  			bpf_spin_unlock(&entry->lock);
@@ -569,8 +571,8 @@ index a6ebd7a..f21376e 100644
 +			goto skip_update;
 +		}
 +		len += off;
- 	}
- 
++	}
++
 +	bpf_spin_lock(&entry->lock);
 +	entry->under_write = 1;
 +	entry->len = 0;
@@ -591,9 +593,9 @@ index a6ebd7a..f21376e 100644
 +	struct bmc_stats *stats = bpf_map_lookup_elem(&map_stats, &zero);
 +	if (!stats) {
 +		return TC_ACT_SHOT;
-+	}
+ 	}
 +	stats->update_count++;
-+
+ 
  	return TC_ACT_OK;
 +
 +skip_update:
