@@ -1,0 +1,329 @@
+From 6802320ae4f15faf2cefdc3483af6ba79f148c20 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Sun, 5 Oct 2025 11:48:37 -0600
+Subject: [PATCH 12/12] improve prefetching
+
+---
+ bmc/bmc_kern.c | 182 +++++++++++++++++++++++++++----------------------
+ 1 file changed, 99 insertions(+), 83 deletions(-)
+
+diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
+index aed9724..d179229 100644
+--- a/bmc/bmc_kern.c
++++ b/bmc/bmc_kern.c
+@@ -80,6 +80,7 @@ enum pkt_proc_phase {
+ 	DONE,
+ 	WRITE_END_TO_RESPONSE,
+ 	UPDATE_IP_UDP_HDR,
++	HASH_POSSIBLE_MATCH,
+ };
+ 
+ /*
+@@ -491,6 +492,15 @@ int bbb_hash_keys(struct xdp_batch_md *batch)
+ 	/* __u32 tmp_cnt = 0; */
+ 	/* __u32 tmp_cnt_miss = 0; */
+ 
++	{
++		int zero = 0;
++		stats = bpf_map_lookup_elem(&map_stats, &zero);
++		if (!stats) {
++			// must never happen
++			return 0;
++		}
++	}
++
+ 	for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+ 		if (k >= batch->size)
+ 			break;
+@@ -522,10 +532,26 @@ int bbb_hash_keys(struct xdp_batch_md *batch)
+ 		struct memcached_key *key = &pstate->key;
+ 		key->hash = my_jhash(payload, off);
+ 		key->len = off;
+-		/* bpf_printk("%s -- %d  %d", payload, key->hash, key->len); */
+-
+ 		__u32 cache_idx = key->hash % BMC_CACHE_ENTRY_COUNT;
+ 		pstate->cache_index = cache_idx;
++	}
++
++	for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
++		if (k >= batch->size)
++			break;
++		if (bs->S[k].phase != GET_REQ_HASH_KEY)
++			continue;
++
++		pkt_state_t *pstate = &bs->S[k];
++		/* __u32 off = pstate->key_len */
++		/* struct xdp_md *ctx = &batch->buffs[k]; */
++		/* void *data = (void *)(long)ctx->data; */
++		/* void *data_end = (void *)(long)ctx->data_end; */
++		/* char *payload = data; */
++		/* struct memcached_key *key = &pstate->key; */
++		/* bpf_printk("%s -- %d  %d", payload, key->hash, key->len); */
++
++		__u32 cache_idx = pstate->cache_index;
+ 		pf_arr_from_index(cache_idx);
+ 	}
+ 
+@@ -537,9 +563,7 @@ int bbb_hash_keys(struct xdp_batch_md *batch)
+ 		if (bs->S[k].phase != GET_REQ_HASH_KEY)
+ 			continue;
+ 
+-		int zero = 0;
+ 		struct xdp_md *ctx = &batch->buffs[k];
+-		char *payload = (char *)(long)ctx->data;
+ 		pkt_state_t *pstate = &bs->S[k];
+ 		struct memcached_key *key = &pstate->key;
+ 		__u32 cache_idx = pstate->cache_index;
+@@ -569,28 +593,15 @@ int bbb_hash_keys(struct xdp_batch_md *batch)
+ 			goto hash_cache_miss;
+ 		}
+ 
+-		/* bpf_printk("hash: found potential match"); */
+ 		// potential cache hit
+-		my_memcpy(key->data, payload, key->len);
+-
+-		header_size = ALL_HEADER_LEN + pstate->read_off;
+-		bpf_xdp_adjust_head(ctx, -header_size);
+-
+-		go_next = 1;
+-		pstate->phase = PREPARE_PACKET;
+-		// P((void *)(long)ctx->data); // prefetch the headers
+-		// Pw((void *)(long)ctx->data - ADJUST_HEAD_LEN); // prefetch the headers
++		/* bpf_printk("hash: found potential match"); */
++		pstate->phase = HASH_POSSIBLE_MATCH;
++		P(key->data);
++		char *payload = (char *)(long)ctx->data;
++		P(payload);
+ 		continue;
+-
+ hash_cache_miss:
+ 		/* tmp_cnt_miss++; */
+-		stats = bpf_map_lookup_elem(&map_stats, &zero);
+-		if (!stats) {
+-			// must never happen
+-			pstate->phase = DONE;
+-			DROP(k);
+-			continue;
+-		}
+ 		stats->miss_count++;
+ 		/* bpf_printk("hash: cache miss"); */
+ 
+@@ -606,11 +617,25 @@ hash_cache_miss:
+ 	for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+ 		if (k > batch->size)
+ 			break;
+-		if (bs->S[k].phase != PREPARE_PACKET)
++		pkt_state_t *pstate = &bs->S[k];
++		if (pstate->phase != HASH_POSSIBLE_MATCH)
+ 			continue;
++
++		struct memcached_key *key = &pstate->key;
+ 		struct xdp_md *ctx = &batch->buffs[k];
+-		// P((void *)(long)ctx->data); // prefetch the headers
+-		Pw((void *)(long)ctx->data - ADJUST_HEAD_LEN); // prefetch the headers
++		char *payload = (char *)(long)ctx->data;
++		my_memcpy(key->data, payload, key->len);
++
++		int header_size = ALL_HEADER_LEN + pstate->read_off;
++		bpf_xdp_adjust_head(ctx, -header_size);
++
++		go_next = 1;
++		pstate->phase = PREPARE_PACKET;
++
++		void *new_head = (void *)(long)ctx->data;
++		new_head -= ADJUST_HEAD_LEN;
++		P(new_head); // prefetch the headers
++		continue;
+ 	}
+ 
+ 	if (go_next)
+@@ -669,9 +694,7 @@ int bbb_prepare_packet(struct xdp_batch_md *batch)
+ 
+ 		void *data_end = (void *)(long)ctx->data_end;
+ 		if ((void *)(udp + 1) > data_end) {
+-			bs->S[k].phase = DONE;
+-			DROP(k);
+-			continue;
++			goto fail_and_drop;
+ 		}
+ 
+ 		tmp_ip = ip->saddr;
+@@ -681,18 +704,7 @@ int bbb_prepare_packet(struct xdp_batch_md *batch)
+ 		tmp_port = udp->source;
+ 		udp->source = udp->dest;
+ 		udp->dest = tmp_port;
+-	}
+-
+-	/* report_tput_batch(tmp_cnt); */
+ 
+-	// Pop headers so the next phase works directly on payload
+-	for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+-		if (k >= batch->size)
+-			break;
+-		if (bs->S[k].phase != PREPARE_PACKET)
+-			continue;
+-
+-		struct xdp_md *ctx = &batch->buffs[k];
+ 		if (bpf_xdp_adjust_head(ctx, ALL_HEADER_LEN)) // push new headers
+ 			goto fail_and_drop;
+ 
+@@ -704,14 +716,38 @@ int bbb_prepare_packet(struct xdp_batch_md *batch)
+ 		continue;
+ 
+ fail_and_drop:
+-		bpf_printk("prepare: failed resizing packet");
+ 		bs->S[k].phase = DONE;
+ 		DROP(k);
+ 		continue;
+ 	}
+ 
+-	if (go_next)
++	/* report_tput_batch(tmp_cnt); */
++
++	// Pop headers so the next phase works directly on payload
++	/* for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) { */
++	/* 	if (k >= batch->size) */
++	/* 		break; */
++	/* 	if (bs->S[k].phase != PREPARE_PACKET) */
++	/* 		continue; */
++
++	/* 	struct xdp_md *ctx = &batch->buffs[k]; */
++	/* } */
++
++	if (go_next) {
++		for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
++			if (k >= batch->size)
++				break;
++			pkt_state_t *pstate = &bs->S[k];
++			if (pstate->phase != RESPOND)
++				continue;
++
++			__u32 cache_idx = pstate->cache_index;
++			pf_arr_from_index(cache_idx);
++			struct memcached_key *key = &pstate->key;
++			P(key->data);
++		}
+ 		bpf_tail_call(batch, &map_progs_xdp, BMC_PROG_XDP_WRITE_REPLY);
++	}
+ 
+ 	transition(batch, bs);
+ 	return 0;
+@@ -731,28 +767,6 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+ 		return 0;
+ 	}
+ 
+-	// prefetch the entry before accessing
+-	// for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+-	// 	if (k >= batch->size)
+-	// 		break;
+-	// 	pkt_state_t *pstate = &bs->S[k];
+-	// 	if (pstate->phase != RESPOND)
+-	// 		continue;
+-
+-	// 	__u32 cache_idx = pstate->cache_index;
+-	// 	struct bmc_cache_entry *entry = bpf_map_lookup_elem(&map_kcache, &cache_idx);
+-	// 	if (!entry) {
+-	// 		// this must never happen
+-	// 		pstate->phase = DONE;
+-	// 		DROP(k);
+-	// 		continue;
+-	// 	}
+-	// 	// P(((void *)entry) + 4);
+-
+-	// 	struct memcached_key *key = &pstate->key;
+-	// 	// P(key->data);
+-	// }
+-
+ 	for (__u32 k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
+ 		if (k >= batch->size)
+ 			break;
+@@ -773,6 +787,7 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+ 		bpf_spin_lock(&entry->lock);
+ 		int possible_hit = (entry->valid &&
+ 				key->hash == entry->hash &&
++				entry->len > key->len &&
+ 				entry->under_write == 0);
+ 		if (possible_hit)
+ 			entry->in_use += 1;
+@@ -782,6 +797,7 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+ 			goto write_cache_miss;
+ 		}
+ 
++		__u32 entry_len = entry->len;
+ 		unsigned int cache_hit;
+ 		// if saved key still matches its corresponding cache entry
+ 		cache_hit = my_strncmp(key->data, &entry->data[6], key->len) == 0;
+@@ -795,7 +811,7 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+ 		void *data_end = (void *)(long)ctx->data_end;
+ 		void *data = (void *)(long)ctx->data;
+ 		__u64 pkt_size = data_end - data;
+-		__u64 target_size = entry->len + 5;
++		__u64 target_size = entry_len + 5;
+ 		__u64 delta = (__u64)target_size - (__u64)pkt_size;
+ 		if (delta != 0) {
+ 			/* if we do not have enough space to write the response */
+@@ -803,11 +819,11 @@ int bbb_write_reply(struct xdp_batch_md *batch)
+ 		}
+ 
+ 		data = (void *)(long)ctx->data;
+-		my_memcpy(data, entry->data, entry->len);
++		my_memcpy(data, entry->data, entry_len);
+ 		stats->hit_count++;
+ 		__sync_fetch_and_add(&entry->in_use, -1);
+ 		pstate->phase = WRITE_END_TO_RESPONSE;
+-		pstate->written = entry->len;
++		pstate->written = entry_len;
+ 		continue;
+ 
+ write_cache_miss:
+@@ -817,22 +833,22 @@ write_cache_miss:
+ 		ctx = &batch->buffs[k];
+ 		bpf_xdp_adjust_head(ctx, ADJUST_HEAD_LEN - (int) (ALL_HEADER_LEN));
+ 
+-		{
+-			void *data = (void *)(long)ctx->data;
+-			void *data_end = (void *)(long)ctx->data_end;
+-			struct memcached_udp_header *mhdr = data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr);
+-			if ((void *)(mhdr + 1) > data_end) {
+-				bpf_printk("!!! this must never happen");
+-				pstate->phase = DONE;
+-				DROP(k);
+-				continue;
+-			}
+-			if (check_memcd_hdr(mhdr, "write cache miss")) {
+-				pstate->phase = DONE;
+-				DROP(k);
+-				continue;
+-			}
+-		}
++		/* { */
++		/* 	void *data = (void *)(long)ctx->data; */
++		/* 	void *data_end = (void *)(long)ctx->data_end; */
++		/* 	struct memcached_udp_header *mhdr = data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr); */
++		/* 	if ((void *)(mhdr + 1) > data_end) { */
++		/* 		bpf_printk("!!! this must never happen"); */
++		/* 		pstate->phase = DONE; */
++		/* 		DROP(k); */
++		/* 		continue; */
++		/* 	} */
++		/* 	if (check_memcd_hdr(mhdr, "write cache miss")) { */
++		/* 		pstate->phase = DONE; */
++		/* 		DROP(k); */
++		/* 		continue; */
++		/* 	} */
++		/* } */
+ 		continue;
+ 	}
+ 
+@@ -906,7 +922,7 @@ fail_and_drop:
+ 			goto fail_and_drop_2;
+ 
+ 		__u32 tot_len = (__u64)payload - (__u64)ip;
+-		tot_len +=  written;
++		tot_len += written;
+ 
+ 		ip->tot_len = bpf_htons(tot_len);
+ 		/* ip->check = compute_ip_checksum(ip); */
+-- 
+2.34.1
+

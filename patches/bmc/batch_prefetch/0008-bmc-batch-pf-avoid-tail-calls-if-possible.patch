@@ -1,7 +1,7 @@
 From ae76f5e6687715c31ed77731965be628ccab145b Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Wed, 1 Oct 2025 01:37:48 -0600
-Subject: [PATCH 08/11] bmc: batch + pf: avoid tail calls if possible
+Subject: [PATCH 08/12] bmc: batch + pf: avoid tail calls if possible
 
 ---
  bmc/bmc_common.h |   3 -

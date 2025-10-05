@@ -1,7 +1,7 @@
 From 7f1d75437ea8390805a5e39eabb0ce90c02cbbb5 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Mon, 15 Sep 2025 14:24:23 +0000
-Subject: [PATCH 04/11] use tail calls to over come complexity
+Subject: [PATCH 04/12] use tail calls to over come complexity
 
 ---
  bmc/bmc_common.h |   6 +-

@@ -1,7 +1,7 @@
 From 289844a3cabae133ac7f9cd54647ca69a1b68d56 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Thu, 2 Oct 2025 06:48:11 -0600
-Subject: [PATCH 10/11] update things
+Subject: [PATCH 10/12] update things
 
 ---
  bmc/bmc_common.h |   5 +-
