@@ -1,0 +1,69 @@
+## Baseline
+#type       avg     std     min     5th    10th    50th    90th    95th    99th  99.9th 99.99th
+read     5956.6  6513.1    45.3   791.1   809.0  1100.8 12458.9 13736.6 22565.2 59211.4 127450.6
+update      0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0
+op_q        1.0     0.0     1.0     1.0     1.0     1.1     1.1     1.1     1.1     1.1     1.1
+
+Total QPS = 907929.1 (36317163 / 40.0s)
+
+Total Issued Gets = 1568630.3 (62745212 / 40.0s)
+
+Misses = 0 (0.0%)
+Retransmitted TXs = 26418842
+Skipped TXs = 0 (0.0%)
+
+RX 7932431174 bytes :  189.1 MB/s
+TX 3213682375 bytes :   76.6 MB/s
+#type       avg     std     min     5th    10th    50th    90th    95th    99th  99.9th 99.99th
+read     4729.3  5884.9    54.8   913.2   960.3  1066.7 12368.4 13248.2 15499.7 46590.5 74656.0
+update      0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0
+op_q        1.0     0.0     1.0     1.0     1.0     1.1     1.1     1.1     1.1     1.1     1.1
+
+Total QPS = 776674.1 (31066963 / 40.0s)
+
+Total Issued Gets = 1446564.7 (57862590 / 40.0s)
+
+Misses = 0 (0.0%)
+Retransmitted TXs = 26786417
+Skipped TXs = 0 (0.0%)
+
+RX 6796530533 bytes :  162.0 MB/s
+TX 2963913896 bytes :   70.7 MB/s
+
+
+
+## With batching and prefetching
+
+type       avg     std     min     5th    10th    50th    90th    95th    99th  99.9th 99.99th
+read     5902.8  5915.9   593.3   892.0   916.8  1095.7 12376.2 12784.3 15135.5 28587.2 70235.7
+update      0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0
+op_q        1.0     0.0     1.0     1.0     1.0     1.1     1.1     1.1     1.1     1.1     1.1
+
+Total QPS = 842060.8 (505236507 / 600.0s)
+
+Total Issued Gets = 1510028.8 (906017293 / 600.0s)
+
+Misses = 0 (0.0%)
+Retransmitted TXs = 400771569
+Skipped TXs = 0 (0.0%)
+
+RX 110255632536 bytes :  175.2 MB/s
+TX 46407664604 bytes :   73.8 MB/s
+mutilateudp: mutilateudp.cc:241: void assert_cmdline(): Assertion `!args.warmup_given' failed.
+mutilateudp: mutilateudp.cc:241: void assert_cmdline(): Assertion `!args.warmup_given' failed.
+#type       avg     std     min     5th    10th    50th    90th    95th    99th  99.9th 99.99th
+read     5956.6  6513.1    45.3   791.1   809.0  1100.8 12458.9 13736.6 22565.2 59211.4 127450.6
+update      0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0     0.0
+op_q        1.0     0.0     1.0     1.0     1.0     1.1     1.1     1.1     1.1     1.1     1.1
+
+Total QPS = 907929.1 (36317163 / 40.0s)
+
+Total Issued Gets = 1568630.3 (62745212 / 40.0s)
+
+Misses = 0 (0.0%)
+Retransmitted TXs = 26418842
+Skipped TXs = 0 (0.0%)
+
+RX 7932431174 bytes :  189.1 MB/s
+TX 3213682375 bytes :   76.6 MB/s
+
