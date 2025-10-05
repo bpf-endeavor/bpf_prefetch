@@ -21,15 +21,31 @@ LOG_FILE=/tmp/bmc_performance.txt
 
 LOCALHOST=`hostname`
 AGENT=$LOCALHOST
-NUM_AGENTS=20
-CONN_PER_AGENT=16
+NUM_AGENTS=24
+CONN_PER_AGENT=32
 
 # COUNT_RECORDS=1
 # COUNT_RECORDS=1000
-COUNT_RECORDS=300000
+# COUNT_RECORDS=100000
+# COUNT_RECORDS=300000
+COUNT_RECORDS=500000
+# COUNT_RECORDS=1000000
 
-WORKLOAD_DESC="--records=$COUNT_RECORDS --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"
-# WORKLOAD_DESC="--records=$COUNT_RECORDS -K 200 -V 800"
+WRK="twitter"
+case $WRK in
+  facebook)
+    WORKLOAD_DESC="--records=$COUNT_RECORDS --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"
+    ;;
+  twitter)
+    WORKLOAD_DESC="--records=$COUNT_RECORDS --popularity=zipf:1.5 --keysize=pareto:40,15,0.05 --valuesize=pareto:100,50,0.7 --update=0" # --iadist=fb_ia
+    ;;
+  test)
+    WORKLOAD_DESC="--records=$COUNT_RECORDS -K 100 -V 100 --update=0"
+    ;;
+  *)
+    echo "invalid workload name"
+    exit 1
+esac
 
 trap "handle_signal" SIGINT SIGHUP
 
