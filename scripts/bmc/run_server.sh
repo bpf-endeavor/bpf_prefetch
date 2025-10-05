@@ -118,16 +118,19 @@ main() {
 	clean_up &> /dev/null
 
 	# Memcached
-	taskset -c 8-12 \
+	taskset -c 4-8 \
 		$MEMCD -U $UDP_PORT -l $SERVER_IP \
-			-m 1024 -M -k -P $PID_FILE -d -t 4 -C 2>&1 > /dev/null
+			-m 1024 -M -k -P $PID_FILE -d -t 1 -C 2>&1 > /dev/null
 
 	if [ $HAS_BMC -eq 1 ]; then
 		$( sudo $BMC_BIN $IFINDEX 2>&1 > /dev/null ) &
 		TMP_PID=$!
 		disown $TMP_PID
 
-		sleep 3
+		# we should wait because it takes some time for eBPF programs to be
+		# loaded (mostly for verification). The tc commands assume the program
+		# is already loaded.
+		sleep 20
 		if [ ! -d /proc/$TMP_PID ]; then
 			echo "failed to run BMC"
 			clean_up

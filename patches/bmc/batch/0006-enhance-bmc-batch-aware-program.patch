@@ -1,4 +1,4 @@
-From b0f666a0a5afc7b1e42ed8af854bdb4df9df7c78 Mon Sep 17 00:00:00 2001
+From 91fa5615adc0864252b1a0e4926e4d06d4d69ded Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Thu, 25 Sep 2025 04:15:05 -0600
 Subject: [PATCH 6/6] enhance bmc batch aware program
@@ -22,7 +22,7 @@ index 2706d69..2e94c20 100644
  };
  
 diff --git a/bmc/bmc_kern.c b/bmc/bmc_kern.c
-index 3c83423..b552b8f 100644
+index 3c83423..696a384 100644
 --- a/bmc/bmc_kern.c
 +++ b/bmc/bmc_kern.c
 @@ -25,6 +25,12 @@
@@ -319,7 +319,7 @@ index 3c83423..b552b8f 100644
  	} else if (pctx->current_key == pctx->key_count) { // else if all saved keys have been processed but got no cache HIT; either because of a hash colision or a race with a cache update
  		stats->hit_misprediction += pctx->key_count;
 -		bpf_xdp_adjust_head(ctx, ADJUST_HEAD_LEN - (int) (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct memcached_udp_header))); // pop to the old headers and transmit to netstack
-+		bpf_xdp_adjust_head(ctx, ADJUST_HEAD_LEN - (int) (ALL_HEADER_LEN)); // pop to the old headers and transmit to netstack
++		bpf_xdp_adjust_head(ctx, 0 - (int) (ALL_HEADER_LEN)); // pop to the old headers and transmit to netstack
  		goto fail_and_pass;
  	} else if (pctx->current_key < BMC_MAX_KEY_IN_PACKET) { // else if there are still keys to process
  		bpf_printk("multiple keys not supported");
