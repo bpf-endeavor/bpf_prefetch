@@ -47,7 +47,7 @@ get_custom_kernel() {
 
 bring_bmc() {
 	# Print instructions
-	set -x
+	# set -x
 
 	PATCH_DIR=$(realpath $ROOTDIR/patches/bmc)
 	BMC_DIR=$THIRD/bmc-cache
@@ -73,6 +73,7 @@ bring_bmc() {
 	# BMC + patches
 	git clone https://github.com/Orange-OpenSource/bmc-cache/ $BMC_DIR
 	cd $BMC_DIR/bmc/
+	git checkout 2997145508e02c55aa92f63a0009ac2a26800810
 	for branch_name in $(ls $PATCH_DIR); do
 		git checkout -b $branch_name
 		git am $PATCH_DIR/$branch_name/*.patch
@@ -86,6 +87,45 @@ bring_bmc() {
 	done
 
 	set +x
+}
+
+install_go() {
+	cd $HOME
+	mkdir go_tmp_dir/
+	cd go_tmp_dir/
+	wget https://go.dev/dl/go1.22.3.linux-amd64.tar.gz
+	sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.22.3.linux-amd64.tar.gz
+	echo "export PATH=\$PATH:/usr/local/go/bin:$HOME/go/bin" | tee -a $HOME/.bashrc
+	export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+}
+
+bring_katran() {
+	KATRAN_DIR=$THIRD/katran
+	if [ -d $KATRAN_DIR ]; then
+		echo 'Katran directory already exists'
+		exit 1
+	fi
+
+	git clone git@github.com:facebookincubator/katran.git $KATRAN_DIR
+	cd $KATRAN_DIR
+	git checkout bce70c8c4c13fd6e2d9786503f1472e2ca493cfb
+
+	bash ./build_katran.sh
+
+	# Remove older version of go
+	sudo apt -y purge $(sudo apt list --installed 2> /dev/null | grep ^go | cut -d / -f 1)
+
+	# Install a newer version of go
+	install_go
+
+	# Compile the grpc client
+	cd example_grpc/
+	sudo apt install protobuf-compiler
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
+	go_bin=$HOME/go/bin
+	cp $go_bin/protoc-gen-go-grpc $go_bin/protoc-gen-go_grpc
+	cd ../
 }
 
 install_clang() {
