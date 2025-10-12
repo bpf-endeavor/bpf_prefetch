@@ -1,0 +1,35 @@
+From 6ef2dda45f333bbe7ebea410082ffa2682228bbf Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Sun, 12 Oct 2025 13:41:51 -0600
+Subject: [PATCH 3/3] update some parameters
+
+---
+ katran/lib/bpf/balancer_consts.h | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/katran/lib/bpf/balancer_consts.h b/katran/lib/bpf/balancer_consts.h
+index e5e0e23c..a4985587 100644
+--- a/katran/lib/bpf/balancer_consts.h
++++ b/katran/lib/bpf/balancer_consts.h
+@@ -298,13 +298,16 @@ v2 tracks misses for TCP non syns */
+ // max ammount of new connections per seconda per core for lru update
+ // if we go beyond this value - we will bypass lru update.
+ #ifndef MAX_CONN_RATE
+-#define MAX_CONN_RATE 125000
++// #define MAX_CONN_RATE 125000
++#define MAX_CONN_RATE 8000000
+ #endif
+ 
+ #ifndef IPIP_V4_PREFIX
+ // RFC1918: we are going to use 172.16/10 as our src (4268 is 172.16 in BE)
+ // for ipip header
+-#define IPIP_V4_PREFIX 4268
++// #define IPIP_V4_PREFIX 4268
++// Farbod: in my experiments use 192.168.1.0/24 as prefix of IPIP
++#define IPIP_V4_PREFIX 108736
+ #endif
+ 
+ // for default values:
+-- 
+2.34.1
+
