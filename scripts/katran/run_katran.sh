@@ -50,7 +50,9 @@ start_server() {
 		-forwarding_cores=$FORWARDING_CORE \
 		-shutdown_delay 1000 \
 		-prog_pos=2"
-	$(sudo sh -c "$CMD" 2>&1 1> /dev/null) &
+	echo $CMD
+	log_file=/tmp/katran_server_log.txt
+	$(sudo $CMD 2>$log_file 1>$log_file) &
 }
 
 config_lb() {
@@ -83,7 +85,7 @@ main() {
 	fi
 
 	start_server
-	sleep 2
+	sleep 20
 
 	pidof katran_server_grpc &> /dev/null
 	if [ $? -ne 0 ]; then
