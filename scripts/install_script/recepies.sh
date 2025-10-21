@@ -73,7 +73,8 @@ bring_bmc() {
 	# BMC + patches
 	git clone https://github.com/Orange-OpenSource/bmc-cache/ $BMC_DIR
 	cd $BMC_DIR/bmc/
-	git checkout 2997145508e02c55aa92f63a0009ac2a26800810
+	SHA=2997145508e02c55aa92f63a0009ac2a26800810
+	git checkout $SHA
 	for branch_name in $(ls $PATCH_DIR); do
 		git checkout -b $branch_name
 		git am $PATCH_DIR/$branch_name/*.patch
@@ -83,7 +84,7 @@ bring_bmc() {
 		mkdir -p $BIN_DIR/
 		cp ./bmc ./bmc_kern.o $BIN_DIR/
 		make clean
-		git checkout main
+		git checkout $SHA
 	done
 
 	set +x
@@ -91,6 +92,15 @@ bring_bmc() {
 
 install_go() {
 	cd $HOME
+	which go > /dev/null
+	if [ $? -eq 0 ]; then
+		V=$(go version | cut -d ' ' -f 3)
+		if [ $V = go1.22.3 ]; then
+			# we have already installed go
+			return
+		fi
+	fi
+
 	mkdir go_tmp_dir/
 	cd go_tmp_dir/
 	wget https://go.dev/dl/go1.22.3.linux-amd64.tar.gz
@@ -108,7 +118,8 @@ bring_katran() {
 
 	git clone git@github.com:facebookincubator/katran.git $KATRAN_DIR
 	cd $KATRAN_DIR
-	git checkout bce70c8c4c13fd6e2d9786503f1472e2ca493cfb
+	SHA=bce70c8c4c13fd6e2d9786503f1472e2ca493cfb
+	git checkout $SHA
 
 	bash ./build_katran.sh
 
@@ -119,13 +130,33 @@ bring_katran() {
 	install_go
 
 	# Compile the grpc client
-	cd example_grpc/
+	cd $KATRAN_DIR/example_grpc/
 	sudo apt install protobuf-compiler
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
 	go_bin=$HOME/go/bin
 	cp $go_bin/protoc-gen-go-grpc $go_bin/protoc-gen-go_grpc
 	cd ../
+
+	# Apply patches
+	PATCH_DIR=$(realpath $ROOTDIR/patches/katran)
+	for branch_name in $(ls $PATCH_DIR); do
+		# create a branch and apply the patch
+		git checkout -b $branch_name
+		git am $PATCH_DIR/$branch_name/*.patch
+
+		# compile
+		bash ./build_katran.sh
+
+		# store binaries
+		BIN_DIR=$THIRD/katran_bins/$branch_name
+		mkdir -p $BIN_DIR/
+		mkdir -p $BIN_DIR/bpf
+		cp ./_build/deps/bpfprog/bpf/*.o $BIN_DIR/bpf/
+		cp ./_build/build/example_grpc/katran_server_grpc $BIN_DIR/
+
+		git checkout $SHA
+	done
 }
 
 install_clang() {
