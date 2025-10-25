@@ -1,0 +1,29 @@
+From c8cdc19b338e8decf13b2ba1a68ac20fe9544816 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Sat, 25 Oct 2025 05:18:16 -0600
+Subject: [PATCH 4/4] fix build error
+
+---
+ katran/lib/CMakeLists.txt | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/katran/lib/CMakeLists.txt b/katran/lib/CMakeLists.txt
+index 6b9ec282..e2d9c8f7 100644
+--- a/katran/lib/CMakeLists.txt
++++ b/katran/lib/CMakeLists.txt
+@@ -72,9 +72,9 @@ add_library(bpfadapter STATIC
+     BpfLoader.h
+     Netlink.cpp
+     Netlink.h
+-    linux_includes/bpf.h
+-    linux_includes/bpf_common.h
+-    linux_includes/bpf_helpers.h
++    # linux_includes/bpf.h
++    # linux_includes/bpf_common.h
++    # linux_includes/bpf_helpers.h
+ )
+ 
+ target_link_libraries(bpfadapter
+-- 
+2.34.1
+

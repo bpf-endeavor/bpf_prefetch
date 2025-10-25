@@ -1,12 +1,11 @@
 #!/bin/bash
-set -e
 
 # Generate traffic towards this IP
 VIRTUAL_IP=10.10.0.1
 SERVICE_PORT=8080
 
 OTHER_SERVER_IP=192.168.1.2
-DEFAULT_MAC="0c:42:a1:dd:57:ec" # other server's mac
+DEFAULT_MAC="0c:42:a1:dd:5e:94" # other server's mac
 FORWARDING_CORE=3
 
 CURDIR=$(dirname $0)
@@ -29,30 +28,32 @@ start_server() {
 	XDPROOT_LOADER=${KATRAN_BUILD_DIR}/katran/lib/xdproot
 	XDPROOT_PIN=/sys/fs/bpf/jmp_${NET_IFACE}
 
+	# NOTE: do not load xdproot, our batch processing version does not support
+	# transition between batched and non-batched (i.e., xdproot) programs
+	#
 	# Load xdproot
-	if [ ! -f "{$XDPROOT_PIN}" ]; then
-		CMD="${XDPROOT_LOADER} \
-			-bpfprog ${DEPS_DIR}/bpfprog/bpf/xdp_root.o \
-			-bpfpath=${XDPROOT_PIN} \
-			-intf=${NET_IFACE}"
-		sudo sh -c "${CMD}"
-	fi
+	# if [ ! -f "{$XDPROOT_PIN}" ]; then
+	# 	CMD="${XDPROOT_LOADER} \
+	# 		-bpfprog ${DEPS_DIR}/bpfprog/bpf/xdp_root.o \
+	# 		-bpfpath=${XDPROOT_PIN} \
+	# 		-intf=${NET_IFACE}"
+	# 	sudo sh -c "${CMD}"
+	# fi
 
 	sudo pkill -SIGINT katran_server_grpc || true
 	sleep 2
 
+	# -map_path=$XDPROOT_PIN -prog_pos=2" \
 	CMD="${GRPC_SERVER} \
 		-balancer_prog=${DEPS_DIR}/bpfprog/bpf/balancer.bpf.o \
 		-intf=${NET_IFACE} \
 		-hc_forwarding=false \
-		-map_path=$XDPROOT_PIN \
 		-default_mac $DEFAULT_MAC \
 		-forwarding_cores=$FORWARDING_CORE \
-		-shutdown_delay 1000 \
-		-prog_pos=2"
-	echo $CMD
+		-shutdown_delay 1000"
+	echo "$CMD"
 	log_file=/tmp/katran_server_log.txt
-	$(sudo $CMD 2>$log_file 1>$log_file) &
+	sudo sh -c "$CMD" > $log_file &
 }
 
 config_lb() {
@@ -75,6 +76,7 @@ running=0
 on_signal() {
 	sudo pkill -SIGINT katran_server_grpc
 	running=0
+	sudo bpftool net detach xdp dev $NET_IFACE
 }
 
 main() {

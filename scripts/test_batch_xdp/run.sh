@@ -18,7 +18,7 @@ make
 
 curdir=$(realpath $(dirname $0))
 DIR=$HOME/bpf-app-offload-measurement/src
-cd $DIR
+cd $DIR || (echo failed; exit 1)
 
 TEST=simple
 # TEST=echo

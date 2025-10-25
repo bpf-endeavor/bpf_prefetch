@@ -1,22 +1,37 @@
-From 30f7404f487a38e8fd9b75e7cd2dd4b1948c507a Mon Sep 17 00:00:00 2001
+From 3cc7d38ad872a59705ae855934ba5603d5183b06 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Tue, 21 Oct 2025 07:16:35 -0600
-Subject: [PATCH 5/5] fix issue with tracking map pointers for a batch
+Subject: [PATCH 5/6] fix issue with tracking map pointers for a batch
 
 ---
+ katran/lib/KatranLb.h                   |    3 +-
  katran/lib/bpf/balancer.bpf.c           |  187 +-
  katran/lib/linux_includes/bpf.h         | 3579 +++++++++++++++++++++++
  katran/lib/linux_includes/bpf_common.h  |   56 +
  katran/lib/linux_includes/bpf_endian.h  |   53 +
  katran/lib/linux_includes/bpf_helpers.h |  572 ++++
  test_bpf_loading.sh                     |    0
- 6 files changed, 4392 insertions(+), 55 deletions(-)
+ 7 files changed, 4394 insertions(+), 56 deletions(-)
  create mode 100644 katran/lib/linux_includes/bpf.h
  create mode 100644 katran/lib/linux_includes/bpf_common.h
  create mode 100644 katran/lib/linux_includes/bpf_endian.h
  create mode 100644 katran/lib/linux_includes/bpf_helpers.h
  mode change 100644 => 100755 test_bpf_loading.sh
 
+diff --git a/katran/lib/KatranLb.h b/katran/lib/KatranLb.h
+index 9bca7b14..55a910e1 100644
+--- a/katran/lib/KatranLb.h
++++ b/katran/lib/KatranLb.h
+@@ -148,7 +148,8 @@ enum class KatranMonitorState {
+ /**
+  * Prog names
+  */
+-constexpr folly::StringPiece kBalancerProgName = "balancer_ingress";
++// constexpr folly::StringPiece kBalancerProgName = "balancer_ingress";
++constexpr folly::StringPiece kBalancerProgName = "bbb_balancer_ingress";
+ constexpr folly::StringPiece kHealthcheckerProgName = "healthcheck_encap";
+ } // namespace
+ 
 diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
 index fe9d9016..5a474bfc 100644
 --- a/katran/lib/bpf/balancer.bpf.c

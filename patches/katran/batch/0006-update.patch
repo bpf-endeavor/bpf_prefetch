@@ -1,292 +1,698 @@
-From 1affa304e3ba53cf5609c9c556999adb536ad7f9 Mon Sep 17 00:00:00 2001
+From 4c5448671e93e6ead00094a1193bbc521e35b81a Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
-Date: Sun, 12 Oct 2025 08:09:12 -0600
-Subject: [PATCH 2/6] compile with system installed clang and use system's
- linux headers
+Date: Sat, 25 Oct 2025 05:10:07 -0600
+Subject: [PATCH 6/6] update
 
 ---
- build_bpf_modules_opensource.sh         |    3 +-
- katran/lib/bpf/balancer.bpf.c           |    4 +-
- katran/lib/bpf/balancer_helpers.h       |    4 +-
- katran/lib/bpf/balancer_maps.h          |    4 +-
- katran/lib/bpf/control_data_maps.h      |    4 +-
- katran/lib/bpf/csum_helpers.h           |    4 +-
- katran/lib/bpf/encap_helpers.h          |    6 +-
- katran/lib/bpf/flow_debug_maps.h        |    4 +-
- katran/lib/bpf/handle_icmp.h            |    4 +-
- katran/lib/bpf/healthchecking.bpf.c     |    4 +-
- katran/lib/bpf/healthchecking_helpers.h |    4 +-
- katran/lib/bpf/healthchecking_ipip.c    |    4 +-
- katran/lib/bpf/healthchecking_maps.h    |    4 +-
- katran/lib/bpf/pckt_encap.h             |    6 +-
- katran/lib/bpf/pckt_parsing.h           |    2 +-
- katran/lib/bpf/xdp_pktcntr.c            |    4 +-
- katran/lib/bpf/xdp_root.c               |    4 +-
+ katran/lib/CMakeLists.txt               |    6 +-
+ katran/lib/bpf/balancer.bpf.c           |  491 +---
  katran/lib/linux_includes/bpf.h         | 3579 -----------------------
  katran/lib/linux_includes/bpf_common.h  |   56 -
  katran/lib/linux_includes/bpf_endian.h  |   53 -
  katran/lib/linux_includes/bpf_helpers.h |  572 ----
- 21 files changed, 35 insertions(+), 4294 deletions(-)
+ test_bpf_loading.sh                     |    1 +
+ 7 files changed, 74 insertions(+), 4684 deletions(-)
  delete mode 100644 katran/lib/linux_includes/bpf.h
  delete mode 100644 katran/lib/linux_includes/bpf_common.h
  delete mode 100644 katran/lib/linux_includes/bpf_endian.h
  delete mode 100644 katran/lib/linux_includes/bpf_helpers.h
 
-diff --git a/build_bpf_modules_opensource.sh b/build_bpf_modules_opensource.sh
-index 2227aca7..7994d5d0 100755
---- a/build_bpf_modules_opensource.sh
-+++ b/build_bpf_modules_opensource.sh
-@@ -66,7 +66,8 @@ if [ -z "${SRC_DIR-}" ] ; then
- fi
+diff --git a/katran/lib/CMakeLists.txt b/katran/lib/CMakeLists.txt
+index 6b9ec282..e2d9c8f7 100644
+--- a/katran/lib/CMakeLists.txt
++++ b/katran/lib/CMakeLists.txt
+@@ -72,9 +72,9 @@ add_library(bpfadapter STATIC
+     BpfLoader.h
+     Netlink.cpp
+     Netlink.h
+-    linux_includes/bpf.h
+-    linux_includes/bpf_common.h
+-    linux_includes/bpf_helpers.h
++    # linux_includes/bpf.h
++    # linux_includes/bpf_common.h
++    # linux_includes/bpf_helpers.h
+ )
  
- # Use the clang version based on the one fetched in 'build_katran.sh'
--CLANG_PATH="${BUILD_DIR}/deps/clang/clang+llvm-12.0.0-x86_64-linux-gnu-ubuntu-20.04"
-+# CLANG_PATH="${BUILD_DIR}/deps/clang/clang+llvm-12.0.0-x86_64-linux-gnu-ubuntu-20.04"
-+CLANG_PATH=
- if [ -f /etc/redhat-release ]; then
-   CLANG_PATH=/usr
- fi
+ target_link_libraries(bpfadapter
 diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
-index a2392132..0521d6b5 100644
+index 5a474bfc..b5c000c5 100644
 --- a/katran/lib/bpf/balancer.bpf.c
 +++ b/katran/lib/bpf/balancer.bpf.c
-@@ -10,8 +10,8 @@
+@@ -3,15 +3,17 @@
+  * This is main balancer's application code
+  */
+ // #define __bpf__
+-#include <linux/in.h>
+-#include <linux/ip.h>
+-#include <linux/ipv6.h>
+ #include <stdbool.h>
  #include <stddef.h>
  #include <string.h>
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+ #include <linux/bpf.h>
+ #include <bpf/bpf_helpers.h>
++
++#include <linux/in.h>
++#include <linux/ip.h>
++#include <linux/ipv6.h>
++
  #include "katran/lib/linux_includes/jhash.h"
  
  #include "katran/lib/bpf/balancer_consts.h"
-diff --git a/katran/lib/bpf/balancer_helpers.h b/katran/lib/bpf/balancer_helpers.h
-index 1f8cc34b..028d313c 100644
---- a/katran/lib/bpf/balancer_helpers.h
-+++ b/katran/lib/bpf/balancer_helpers.h
-@@ -25,8 +25,8 @@
- #include <linux/ipv6.h>
- #include <stdbool.h>
+@@ -62,7 +64,7 @@ struct pkt_state {
+   } dst;
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+   // if we don't find vip we drop packet so we don't need to track its validity
+-  struct vip_meta vip_info; 
++  struct vip_meta vip_info;
+ };
+ typedef struct pkt_state pkt_state_t;
  
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/balancer_structs.h"
-diff --git a/katran/lib/bpf/balancer_maps.h b/katran/lib/bpf/balancer_maps.h
-index 46cc8310..7260d150 100644
---- a/katran/lib/bpf/balancer_maps.h
-+++ b/katran/lib/bpf/balancer_maps.h
-@@ -22,8 +22,8 @@
-  * involving information pertaining to proper forwarding of packets
-  */
+@@ -778,405 +780,14 @@ __attribute__((__always_inline__)) static inline int check_udp_flow_migration(
+   return FURTHER_PROCESSING;
+ }
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+-// __attribute__((__always_inline__)) static inline int
+-// process_packet(struct xdp_md* xdp, __u64 nh_off, bool is_ipv6) {
+-//   void* data = (void*)(long)xdp->data;
+-//   void* data_end = (void*)(long)xdp->data_end;
+-//   struct ctl_value* cval;
+-//   struct real_definition* dst = NULL;
+-//   struct packet_description pckt = {};
+-//   struct vip_definition vip = {};
+-//   struct vip_meta* vip_info;
+-//   struct lb_stats* data_stats;
+-//   __u64 iph_len;
+-//   __u8 protocol;
+-//   __u16 original_sport;
+-// 
+-//   int action;
+-//   __u32 vip_num;
+-//   __u32 mac_addr_pos = 0;
+-//   __u16 pkt_bytes;
+-//   __u64 th_off = 0;
+-//   action = parse_l3_headers(
+-//       &pckt, &protocol, nh_off, &th_off, &pkt_bytes, data, data_end, is_ipv6);
+-//   if (action >= 0) {
+-//     return action;
+-//   }
+-//   action = handle_if_icmp(data, data_end, th_off, &pckt, protocol);
+-//   if (action >= 0) {
+-//     return action;
+-//   }
+-//   protocol = pckt.flow.proto;
+-// 
+-// #ifdef INLINE_DECAP_IPIP
+-//   /* This is to workaround a verifier issue for 5.2.
+-//    * The reason is that 5.2 verifier does not handle register
+-//    * copy states properly while 5.6 handles properly.
+-//    *
+-//    * For the following source code:
+-//    *   if (protocol == IPPROTO_IPIP || protocol == IPPROTO_IPV6) {
+-//    *     ...
+-//    *   }
+-//    * llvm12 may generate the following simplified code sequence
+-//    *   100  r5 = *(u8 *)(r9 +51)  // r5 is the protocol
+-//    *   120  r4 = r5
+-//    *   121  if r4 s> 0x10 goto target1
+-//    *   122  *(u64 *)(r10 -184) = r5
+-//    *   123  if r4 == 0x4 goto target2
+-//    *   ...
+-//    *   target2:
+-//    *   150  r1 = *(u64 *)(r10 -184)
+-//    *   151  if (r1 != 4) { __unreachable__}
+-//    *
+-//    * For the path 123->150->151, 5.6 correctly noticed
+-//    * at insn 150: r4, r5, *(u64 *)(r10 -184) all have value 4.
+-//    * while 5.2 has *(u64 *)(r10 -184) holding "r5" which could be
+-//    * any value 0-255. In 5.2, "__unreachable" code is verified
+-//    * and it caused verifier failure.
+-//    */
+-//   if (protocol == IPPROTO_IPIP) {
+-//     bool pass = true;
+-//     action = check_decap_dst(&pckt, is_ipv6, &pass);
+-//     if (action >= 0) {
+-//       return action;
+-//     }
+-//     return process_encaped_ipip_pckt(
+-//         &data, &data_end, xdp, &is_ipv6, &protocol, pass);
+-//   } else if (protocol == IPPROTO_IPV6) {
+-//     bool pass = true;
+-//     action = check_decap_dst(&pckt, is_ipv6, &pass);
+-//     if (action >= 0) {
+-//       return action;
+-//     }
+-//     return process_encaped_ipip_pckt(
+-//         &data, &data_end, xdp, &is_ipv6, &protocol, pass);
+-//   }
+-// #endif // INLINE_DECAP_IPIP
+-// 
+-//   if (protocol == IPPROTO_TCP) {
+-//     if (!parse_tcp(data, data_end, is_ipv6, &pckt)) {
+-//       return XDP_DROP;
+-//     }
+-//   } else if (protocol == IPPROTO_UDP) {
+-//     if (!parse_udp(data, data_end, is_ipv6, &pckt)) {
+-//       return XDP_DROP;
+-//     }
+-// #ifdef INLINE_DECAP_GUE
+-//     if (pckt.flow.port16[1] == bpf_htons(GUE_DPORT)) {
+-//       bool pass = true;
+-//       action = check_decap_dst(&pckt, is_ipv6, &pass);
+-//       if (action >= 0) {
+-//         return action;
+-//       }
+-//       return process_encaped_gue_pckt(
+-//           &data, &data_end, xdp, nh_off, is_ipv6, pass);
+-//     }
+-// #endif // of INLINE_DECAP_GUE
+-//   } else {
+-//     // send to tcp/ip stack
+-//     return XDP_PASS;
+-//   }
+-// 
+-//   if (is_ipv6) {
+-//     memcpy(vip.vipv6, pckt.flow.dstv6, 16);
+-//   } else {
+-//     vip.vip = pckt.flow.dst;
+-//   }
+-// 
+-//   vip.port = pckt.flow.port16[1];
+-//   vip.proto = pckt.flow.proto;
+-//   vip_info = bpf_map_lookup_elem(&vip_map, &vip);
+-//   if (!vip_info) {
+-//     vip.port = 0;
+-//     vip_info = bpf_map_lookup_elem(&vip_map, &vip);
+-//     if (!vip_info) {
+-//       return XDP_PASS;
+-//     }
+-// 
+-//     if (!(vip_info->flags & F_HASH_DPORT_ONLY) &&
+-//         !(vip_info->flags & F_HASH_SRC_DST_PORT)) {
+-//       // VIP, which doesnt care about dst port (all packets to this VIP w/ diff
+-//       // dst port but from the same src port/ip must go to the same real
+-//       pckt.flow.port16[1] = 0;
+-//     }
+-//   }
+-// 
+-//   if (data_end - data > MAX_PCKT_SIZE) {
+-//     REPORT_PACKET_TOOBIG(xdp, data, data_end - data, false);
+-// #ifdef ICMP_TOOBIG_GENERATION
+-//     __u32 stats_key = MAX_VIPS + ICMP_TOOBIG_CNTRS;
+-//     data_stats = bpf_map_lookup_elem(&stats, &stats_key);
+-//     if (!data_stats) {
+-//       return XDP_DROP;
+-//     }
+-//     if (is_ipv6) {
+-//       data_stats->v2 += 1;
+-//     } else {
+-//       data_stats->v1 += 1;
+-//     }
+-//     return send_icmp_too_big(xdp, is_ipv6, data_end - data);
+-// #else
+-//     return XDP_DROP;
+-// #endif
+-//   }
+-// 
+-//   __u32 stats_key = MAX_VIPS + LRU_CNTRS;
+-//   data_stats = bpf_map_lookup_elem(&stats, &stats_key);
+-//   if (!data_stats) {
+-//     return XDP_DROP;
+-//   }
+-// 
+-//   // total packets
+-//   data_stats->v1 += 1;
+-// 
+-//   if ((vip_info->flags & F_HASH_NO_SRC_PORT)) {
+-//     // service, where diff src port, but same ip must go to the same real,
+-//     // e.g. gfs
+-//     pckt.flow.port16[0] = 0;
+-//   }
+-// 
+-//   vip_num = vip_info->vip_num;
+-//   __u32 cpu_num = bpf_get_smp_processor_id();
+-//   void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-//   if (!lru_map) {
+-//     lru_map = &fallback_cache;
+-//     __u32 lru_stats_key = MAX_VIPS + FALLBACK_LRU_CNTR;
+-//     struct lb_stats* lru_stats = bpf_map_lookup_elem(&stats, &lru_stats_key);
+-//     if (!lru_stats) {
+-//       return XDP_DROP;
+-//     }
+-//     // We were not able to retrieve per cpu/core lru and falling back to
+-//     // default one. This counter should never be anything except 0 in prod.
+-//     // We are going to use it for monitoring.
+-//     lru_stats->v1 += 1;
+-//   }
+-// 
+-//   // Lookup dst based on id in packet
+-//   if ((vip_info->flags & F_QUIC_VIP)) {
+-//     bool is_icmp = (pckt.flags & F_ICMP);
+-//     if (is_icmp) {
+-//       // as per rfc792, the "Destination Unreachable Message" has the internet
+-//       // header plus the first 64 bits of the original datagram's data. So it is
+-//       // not guaranteed to have a complete quic header in icmp messages. also if
+-//       // the quic header from the original datagram is a short header, it has no
+-//       // server generated connection id which can be used for routing.
+-//       // fallback to CH to route quic icmp messages.
+-//       __u32 stats_key = MAX_VIPS + QUIC_ICMP_STATS;
+-//       struct lb_stats* data_stats = bpf_map_lookup_elem(&stats, &stats_key);
+-//       if (!data_stats) {
+-//         return XDP_DROP;
+-//       }
+-//       data_stats->v1 += 1;
+-//       // collect the number of quic icmp messages server would ignore
+-//       if (ignorable_quic_icmp_code(data, data_end, is_ipv6)) {
+-//         data_stats->v2 += 1;
+-//       }
+-//     } else {
+-//       __u32 quic_packets_stats_key = 0;
+-//       struct lb_quic_packets_stats* quic_packets_stats =
+-//           bpf_map_lookup_elem(&quic_stats_map, &quic_packets_stats_key);
+-//       if (!quic_packets_stats) {
+-//         return XDP_DROP;
+-//       }
+-//       struct quic_parse_result qpr = parse_quic(data, data_end, is_ipv6, &pckt);
+-//       if (qpr.server_id > 0) {
+-//         // server_id is expected to always be positive. get a server id from
+-//         // quic packet
+-//         increment_quic_cid_version_stats(quic_packets_stats, qpr.cid_version);
+-//         __u32 key = qpr.server_id;
+-//         __u32* real_pos = bpf_map_lookup_elem(&server_id_map, &key);
+-//         if (real_pos) {
+-//           // get a real position for the server id
+-//           key = *real_pos;
+-//           if (key == 0) {
+-//             // pos 0 means the entry for the server id is not initialized.
+-//             // fallback to ch
+-//             quic_packets_stats->cid_invalid_server_id += 1;
+-//             quic_packets_stats->cid_invalid_server_id_sample = qpr.server_id;
+-//             quic_packets_stats->ch_routed += 1;
+-//           } else {
+-//             pckt.real_index = key;
+-//             dst = bpf_map_lookup_elem(&reals, &key);
+-//             if (!dst) {
+-//               // fail to find a real server with the real pos, drop the packet
+-//               quic_packets_stats->cid_unknown_real_dropped += 1;
+-//               REPORT_QUIC_PACKET_DROP_NO_REAL(
+-//                   xdp, data, data_end - data, false);
+-//               return XDP_DROP;
+-//             }
+-//             int res = check_and_update_real_index_in_lru(&pckt, lru_map);
+-//             if (res == DST_MATCH_IN_LRU) {
+-//               quic_packets_stats->dst_match_in_lru += 1;
+-//             } else if (res == DST_MISMATCH_IN_LRU) {
+-//               quic_packets_stats->dst_mismatch_in_lru += 1;
+-//               incr_server_id_routing_stats(
+-//                   vip_num, /* new conn */ false, /* mismatch in lru */ true);
+-//             } else {
+-//               /* DST_NOT_FOUND_IN_LRU */
+-//               quic_packets_stats->dst_not_found_in_lru += 1;
+-//             }
+-//             quic_packets_stats->cid_routed += 1;
+-//           }
+-//         } else {
+-//           // cannot get a real pos with the server id, fallback to ch
+-//           quic_packets_stats->cid_invalid_server_id += 1;
+-//           quic_packets_stats->cid_invalid_server_id_sample = qpr.server_id;
+-//           quic_packets_stats->ch_routed += 1;
+-//         }
+-//       } else if (!qpr.is_initial) {
+-//         // cannot get a server id from quic packet, fallback to ch
+-//         quic_packets_stats->ch_routed += 1;
+-//       } else {
+-//         quic_packets_stats->cid_initial += 1;
+-//         incr_server_id_routing_stats(
+-//             vip_num, /* new conn */ true, /* mismatch in lru */ false);
+-//       }
+-//     }
+-//   }
+-// #ifdef UDP_STABLE_ROUTING
+-//   if (pckt.flow.proto == IPPROTO_UDP &&
+-//       vip_info->flags & F_UDP_STABLE_ROUTING_VIP) {
+-//     process_udp_stable_routing(data, data_end, &dst, &pckt, is_ipv6);
+-//   }
+-// #endif // UDP_STABLE_ROUTING
+-// 
+-//   // save the original sport before making real selection, possibly changing its
+-//   // value.
+-//   original_sport = pckt.flow.port16[0];
+-// 
+-//   if (!dst) {
+-// #ifdef TCP_SERVER_ID_ROUTING
+-//     // First try to lookup dst in the tcp_hdr_opt (if enabled)
+-//     if (pckt.flow.proto == IPPROTO_TCP) {
+-//       __u32 tpr_packets_stats_key = 0;
+-//       struct lb_tpr_packets_stats* tpr_packets_stats =
+-//           bpf_map_lookup_elem(&tpr_stats_map, &tpr_packets_stats_key);
+-//       if (!tpr_packets_stats) {
+-//         return XDP_DROP;
+-//       }
+-// 
+-//       if (pckt.flags & F_SYN_SET) {
+-//         tpr_packets_stats->tcp_syn += 1;
+-//         incr_server_id_routing_stats(
+-//             vip_num, /* new conn */ true, /* mismatch in lru */ false);
+-//       } else {
+-//         if (tcp_hdr_opt_lookup(xdp, is_ipv6, &dst, &pckt) ==
+-//             FURTHER_PROCESSING) {
+-//           tpr_packets_stats->ch_routed += 1;
+-//         } else {
+-//           // update this routing decision in the lru_map as well
+-//           if (lru_map && !(vip_info->flags & F_LRU_BYPASS)) {
+-//             int res = check_and_update_real_index_in_lru(&pckt, lru_map);
+-//             if (res == DST_MISMATCH_IN_LRU) {
+-//               tpr_packets_stats->dst_mismatch_in_lru += 1;
+-//               incr_server_id_routing_stats(
+-//                   vip_num, /* new conn */ false, /* mismatch in lru */ true);
+-//             }
+-//           }
+-//           tpr_packets_stats->sid_routed += 1;
+-//         }
+-//       }
+-//     }
+-// #endif // TCP_SERVER_ID_ROUTING
+-// 
+-//     // Next, try to lookup dst in the lru_cache
+-//     if (!dst && !(pckt.flags & F_SYN_SET) &&
+-//         !(vip_info->flags & F_LRU_BYPASS)) {
+-//       connection_table_lookup(&dst, &pckt, lru_map, /*isGlobalLru=*/false);
+-//     }
+-// 
+-// #ifdef GLOBAL_LRU_LOOKUP
+-//     if (!dst && !(pckt.flags & F_SYN_SET) && vip_info->flags & F_GLOBAL_LRU) {
+-//       int global_lru_lookup_result =
+-//           perform_global_lru_lookup(&dst, &pckt, cpu_num, vip_info, is_ipv6);
+-//       if (global_lru_lookup_result >= 0) {
+-//         return global_lru_lookup_result;
+-//       }
+-//     }
+-// #endif // GLOBAL_LRU_LOOKUP
+-// 
+-//     check_udp_flow_migration(&dst, &pckt, vip_info, &vip);
+-// 
+-//     // if dst is not found, route via consistent-hashing of the flow.
+-//     if (!dst) {
+-//       if (pckt.flow.proto == IPPROTO_TCP) {
+-//         __u32 lru_stats_key = MAX_VIPS + LRU_MISS_CNTR;
+-//         struct lb_stats* lru_stats =
+-//             bpf_map_lookup_elem(&stats, &lru_stats_key);
+-//         if (!lru_stats) {
+-//           return XDP_DROP;
+-//         }
+-//         if (pckt.flags & F_SYN_SET) {
+-//           // miss because of new tcp session
+-//           lru_stats->v1 += 1;
+-//         } else {
+-//           // miss of non-syn tcp packet. could be either because of LRU
+-//           // trashing or because another katran is restarting and all the
+-//           // sessions have been reshuffled
+-//           REPORT_TCP_NONSYN_LRUMISS(xdp, data, data_end - data, false);
+-//           lru_stats->v2 += 1;
+-//         }
+-//       }
+-//       if (!get_packet_dst(&dst, &pckt, vip_info, is_ipv6, lru_map)) {
+-//         return XDP_DROP;
+-//       }
+-// 
+-//       // track the lru miss counter of vip in vip_miss_stats
+-//       if (update_vip_lru_miss_stats(&vip, &pckt, vip_info, is_ipv6) >= 0) {
+-//         return XDP_DROP;
+-//       }
+-// 
+-//       // lru misses (either new connection or lru is full and starts to trash)
+-//       data_stats->v2 += 1;
+-//     }
+-//   }
+-// 
+-//   cval = bpf_map_lookup_elem(&ctl_array, &mac_addr_pos);
+-// 
+-//   if (!cval) {
+-//     return XDP_DROP;
+-//   }
+-// 
+-//   data_stats = bpf_map_lookup_elem(&stats, &vip_num);
+-//   if (!data_stats) {
+-//     return XDP_DROP;
+-//   }
+-//   data_stats->v1 += 1;
+-//   data_stats->v2 += pkt_bytes;
+-// 
+-//   // per real statistics
+-//   data_stats = bpf_map_lookup_elem(&reals_stats, &pckt.real_index);
+-//   if (!data_stats) {
+-//     return XDP_DROP;
+-//   }
+-//   data_stats->v1 += 1;
+-//   data_stats->v2 += pkt_bytes;
+-// #ifdef LOCAL_DELIVERY_OPTIMIZATION
+-//   if ((vip_info->flags & F_LOCAL_VIP) && (dst->flags & F_LOCAL_REAL)) {
+-//     return XDP_PASS;
+-//   }
+-// #endif
+-//   // restore the original sport value to use it as a seed for the GUE sport
+-//   pckt.flow.port16[0] = original_sport;
+-//   if (dst->flags & F_IPV6) {
+-//     if (!PCKT_ENCAP_V6(xdp, cval, is_ipv6, &pckt, dst, pkt_bytes)) {
+-//       return XDP_DROP;
+-//     }
+-//   } else {
+-//     if (!PCKT_ENCAP_V4(xdp, cval, &pckt, dst, pkt_bytes)) {
+-//       return XDP_DROP;
+-//     }
+-//   }
+-// 
+-//   return XDP_TX;
+-// }
+-
+ #define DROP_AND_CONTINUE() pstate->phase = DONE; DROP(k); continue;
+ // #define BATCH_SIZE 8
+ #define BATCH_SIZE XDP_MAX_BATCH_SIZE
  
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/balancer_structs.h"
-diff --git a/katran/lib/bpf/control_data_maps.h b/katran/lib/bpf/control_data_maps.h
-index 57bb7db3..4686ccc4 100644
---- a/katran/lib/bpf/control_data_maps.h
-+++ b/katran/lib/bpf/control_data_maps.h
-@@ -22,8 +22,8 @@
-  * information about encapsulation / decapsulation
-  */
+ SEC(PROG_SEC_NAME)
+-int bbb_balancer_ingress(struct xdp_batch_md* batch) {
++int bbb_balancer_ingress(struct xdp_batch_md* batch)
++{
++  /* bpf_printk("balancer ingress: batch size: %d", batch->size); */
+   LOAD_BATCH_STATE();
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+   if (batch->size > BATCH_SIZE) {
+@@ -1215,13 +826,24 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+     data_stats->v2 += data_len;
+     eth_proto = eth->h_proto;
  
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/balancer_structs.h"
-diff --git a/katran/lib/bpf/csum_helpers.h b/katran/lib/bpf/csum_helpers.h
-index ce0e3320..2c87db1e 100644
---- a/katran/lib/bpf/csum_helpers.h
-+++ b/katran/lib/bpf/csum_helpers.h
-@@ -23,8 +23,8 @@
- #include <linux/udp.h>
- #include <stdbool.h>
+-    pstate->is_ipv6 = eth_proto == BE_ETH_P_IPV6;
+-    pstate->phase = PARSE_HEADER;
++    if (eth_proto == BE_ETH_P_IPV6) {
++      pstate->is_ipv6 = true;
++    } else if (eth_proto == BE_ETH_P_IP) {
++      pstate->is_ipv6 = false;
++    } else {
++      /* bpf_printk("ignore non-ip packet"); */
++      pstate->phase = DONE;
++      PASS(k);
++      continue;
++    }
  
--#include "katran/lib/linux_includes/bpf_endian.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <bpf/bpf_endian.h>
-+#include <bpf/bpf_helpers.h>
++    pstate->phase = PARSE_HEADER;
+     memset(&pstate->pckt, 0, sizeof(struct packet_description));
+     memset(&pstate->vip, 0, sizeof(struct vip_definition));
+     pstate->vip_num = 0;
++    pstate->original_sport = 0;
+     pstate->dst.is_valid = false;
++    pstate->pkt_bytes = 0;
+     continue;
+   }
  
- __attribute__((__always_inline__)) static inline __u16 csum_fold_helper(
-     __u64 csum) {
-diff --git a/katran/lib/bpf/encap_helpers.h b/katran/lib/bpf/encap_helpers.h
-index 2e4e4d27..a629af36 100644
---- a/katran/lib/bpf/encap_helpers.h
-+++ b/katran/lib/bpf/encap_helpers.h
-@@ -22,9 +22,9 @@
- #include <linux/udp.h>
- #include <string.h>
+@@ -1252,6 +874,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+     }
+     action = handle_if_icmp(data, data_end, th_off, &pstate->pckt, protocol);
+     if (action >= 0) {
++      /* bpf_printk("handle icmp: %d", action); */
+       pstate->phase = DONE;
+       ACTION(action, k);
+       continue;
+@@ -1316,15 +939,11 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_endian.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_endian.h>
-+#include <bpf/bpf_helpers.h>
+     if (protocol == IPPROTO_TCP) {
+       if (!parse_tcp(data, data_end, pstate->is_ipv6, &pstate->pckt)) {
+-        pstate->phase = DONE;
+-        DROP(k);
+-        continue;
++        DROP_AND_CONTINUE();
+       }
+     } else if (protocol == IPPROTO_UDP) {
+       if (!parse_udp(data, data_end, pstate->is_ipv6, &pstate->pckt)) {
+-        pstate->phase = DONE;
+-        DROP(k);
+-        continue;
++        DROP_AND_CONTINUE();
+       }
+ #ifdef INLINE_DECAP_GUE
+       if (pstate->pckt.flow.port16[1] == bpf_htons(GUE_DPORT)) {
+@@ -1346,6 +965,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+       // send to tcp/ip stack
+       pstate->phase = DONE;
+       PASS(k);
++      /* bpf_printk("pass @%d", k); */
+       continue;
+     }
  
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/csum_helpers.h"
-diff --git a/katran/lib/bpf/flow_debug_maps.h b/katran/lib/bpf/flow_debug_maps.h
-index dea0c917..784d5eab 100644
---- a/katran/lib/bpf/flow_debug_maps.h
-+++ b/katran/lib/bpf/flow_debug_maps.h
-@@ -17,8 +17,8 @@
- #ifndef __FLOW_DEBUG_MAPS_H
- #define __FLOW_DEBUG_MAPS_H
+@@ -1389,10 +1009,10 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+     }
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+     pstate->vip_info = *vip_info;
+-
+     struct xdp_md *xdp = &batch->buffs[k];
+     void *data = (void *)(long)xdp->data;
+     void *data_end = (void *)(long)xdp->data_end;
++
+     if (data_end - data > MAX_PCKT_SIZE) {
+       REPORT_PACKET_TOOBIG(xdp, data, data_end - data, false);
+ #ifdef ICMP_TOOBIG_GENERATION
+@@ -1413,20 +1033,15 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+       ACTION(action, k);
+       continue;
+ #else
+-      pstate->phase = DONE;
+-      DROP(k);
+-      continue;
++      DROP_AND_CONTINUE();
+ #endif
+     }
  
- #include "katran/lib/bpf/balancer_structs.h"
- #include "katran/lib/bpf/flow_debug.h"
-diff --git a/katran/lib/bpf/handle_icmp.h b/katran/lib/bpf/handle_icmp.h
-index b00ccfe3..db2b5694 100644
---- a/katran/lib/bpf/handle_icmp.h
-+++ b/katran/lib/bpf/handle_icmp.h
-@@ -29,8 +29,8 @@
- #include <linux/ipv6.h>
- #include <stddef.h>
+     __u32 stats_key = MAX_VIPS + LRU_CNTRS;
+     data_stats = bpf_map_lookup_elem(&stats, &stats_key);
+     if (!data_stats) {
+-      pstate->phase = DONE;
+-      DROP(k);
+-      continue;
++      DROP_AND_CONTINUE();
+     }
+-
+     // total packets
+     data_stats->v1 += 1;
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_endian.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_endian.h>
+@@ -1470,8 +1085,8 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+     void *data_end = (void *)(long)xdp->data_end;
  
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/balancer_helpers.h"
-diff --git a/katran/lib/bpf/healthchecking.bpf.c b/katran/lib/bpf/healthchecking.bpf.c
-index aca40d1d..18cd41d6 100644
---- a/katran/lib/bpf/healthchecking.bpf.c
-+++ b/katran/lib/bpf/healthchecking.bpf.c
-@@ -21,8 +21,8 @@
- #include <linux/string.h>
- #include <linux/udp.h>
+     struct vip_meta* vip_info = &pstate->vip_info;
+-
+     struct real_definition* dst = NULL;
++
+     // Lookup dst based on id in packet
+     if ((vip_info->flags & F_QUIC_VIP)) {
+       bool is_icmp = (pstate->pckt.flags & F_ICMP);
+@@ -1618,7 +1233,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+     }
+     // !!
+     pstate->phase = LRU_LOOKUP;
+-    if (dst) {
++    if (dst != NULL) {
+       pstate->dst.is_valid = true;
+       pstate->dst.data = *dst;
+     }
+@@ -1632,7 +1247,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+     if (pstate->phase != LRU_LOOKUP)
+       continue;
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+-
+     struct vip_meta* vip_info = &pstate->vip_info;
  
- #include "katran/lib/bpf/encap_helpers.h"
+     bool dst_was_not_valid = true;
+@@ -1669,7 +1283,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
  
-diff --git a/katran/lib/bpf/healthchecking_helpers.h b/katran/lib/bpf/healthchecking_helpers.h
-index 95a643f8..7a1d1128 100644
---- a/katran/lib/bpf/healthchecking_helpers.h
-+++ b/katran/lib/bpf/healthchecking_helpers.h
-@@ -26,8 +26,8 @@
- #include <linux/udp.h>
- #include <stdbool.h>
+     pstate->phase = CONSISTENT_HASH;
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+-    if (dst_was_not_valid && dst) {
++    if (dst_was_not_valid && dst != NULL) {
+       pstate->dst.is_valid = true;
+       pstate->dst.data = *dst;
+     }
+@@ -1686,6 +1300,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch) {
+ SEC(PROG_SEC_NAME)
+ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+ {
++  /* bpf_printk("consistent_hashing:"); */
+   LOAD_BATCH_STATE();
  
- #include "katran/lib/bpf/encap_helpers.h"
+   struct lb_stats* data_stats;
+@@ -1698,12 +1313,10 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+       continue;
  
-diff --git a/katran/lib/bpf/healthchecking_ipip.c b/katran/lib/bpf/healthchecking_ipip.c
-index cc51f9ae..0b5f3aa0 100644
---- a/katran/lib/bpf/healthchecking_ipip.c
-+++ b/katran/lib/bpf/healthchecking_ipip.c
-@@ -19,8 +19,8 @@
- #include <linux/pkt_cls.h>
- #include <linux/string.h>
+     struct vip_meta* vip_info = &pstate->vip_info;
+-
+     struct real_definition* dst = NULL;
+     if (pstate->dst.is_valid) {
+       dst = &pstate->dst.data;
+     }
+-
+     struct xdp_md *xdp = &batch->buffs[k];
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+     // if dst is not found, route via consistent-hashing of the flow.
+@@ -1754,7 +1367,7 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+   }
  
- #define CTRL_MAP_SIZE 4
+   bpf_tail_call(batch, &prog_arr_map, PROG_ENCAP_AND_TX);
+-  bpf_printk("failed tail call");
++  /* bpf_printk("failed tail call"); */
  
-diff --git a/katran/lib/bpf/healthchecking_maps.h b/katran/lib/bpf/healthchecking_maps.h
-index ff61786d..3d2e597f 100644
---- a/katran/lib/bpf/healthchecking_maps.h
-+++ b/katran/lib/bpf/healthchecking_maps.h
-@@ -17,8 +17,8 @@
- #ifndef __HEALTHCHECKING_MAPS_H
- #define __HEALTHCHECKING_MAPS_H
+   return 0;
+ }
+@@ -1762,6 +1375,7 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+ SEC(PROG_SEC_NAME)
+ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+ {
++  /* bpf_printk("encap_and_tx:"); */
+   LOAD_BATCH_STATE();
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
+   struct lb_stats* data_stats;
+@@ -1827,11 +1441,46 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+       }
+     }
  
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/healthchecking_consts.h"
-diff --git a/katran/lib/bpf/pckt_encap.h b/katran/lib/bpf/pckt_encap.h
-index 0bf82f6c..cff18b18 100644
---- a/katran/lib/bpf/pckt_encap.h
-+++ b/katran/lib/bpf/pckt_encap.h
-@@ -27,9 +27,9 @@
- #include <linux/ipv6.h>
- #include <string.h>
++    /* bpf_printk("send response"); */
+     pstate->phase = DONE;
+     TX(k);
+     continue;
+   }
  
--#include "katran/lib/linux_includes/bpf.h"
--#include "katran/lib/linux_includes/bpf_endian.h"
--#include "katran/lib/linux_includes/bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_endian.h>
-+#include <bpf/bpf_helpers.h>
- 
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/balancer_helpers.h"
-diff --git a/katran/lib/bpf/pckt_parsing.h b/katran/lib/bpf/pckt_parsing.h
-index 7e7cefec..871ffe09 100644
---- a/katran/lib/bpf/pckt_parsing.h
-+++ b/katran/lib/bpf/pckt_parsing.h
-@@ -33,7 +33,7 @@
- #include <stdbool.h>
- #include <stddef.h>
- 
--#include "katran/lib/linux_includes/bpf.h"
-+#include <linux/bpf.h>
- 
- #include "katran/lib/bpf/balancer_consts.h"
- #include "katran/lib/bpf/balancer_helpers.h"
-diff --git a/katran/lib/bpf/xdp_pktcntr.c b/katran/lib/bpf/xdp_pktcntr.c
-index 1eeb5eb2..c8054b68 100644
---- a/katran/lib/bpf/xdp_pktcntr.c
-+++ b/katran/lib/bpf/xdp_pktcntr.c
-@@ -22,8 +22,8 @@
- #include <linux/ipv6.h>
- #include <linux/pkt_cls.h>
- 
--#include "bpf.h"
--#include "bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
- 
- #define CTRL_ARRAY_SIZE 2
- #define CNTRS_ARRAY_SIZE 512
-diff --git a/katran/lib/bpf/xdp_root.c b/katran/lib/bpf/xdp_root.c
-index ab3d9d0d..2fa3aaa9 100644
---- a/katran/lib/bpf/xdp_root.c
-+++ b/katran/lib/bpf/xdp_root.c
-@@ -14,8 +14,8 @@
-  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-  */
- 
--#include "bpf.h"
--#include "bpf_helpers.h"
-+#include <linux/bpf.h>
-+#include <bpf/bpf_helpers.h>
- 
- #define ROOT_ARRAY_SIZE 3
++  // update statistics
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= batch->size)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++
++    struct lb_stats* data_stats;
++    __u32 stats_key;
++    int action = batch->actions[k];
++
++    if (action == XDP_PASS) {
++      stats_key = MAX_VIPS + XDP_PASS_CNTR;
++    } else if (action == XDP_DROP) {
++      stats_key = MAX_VIPS + XDP_DROP_CNTR;
++    } else if (action == XDP_TX) {
++      stats_key = MAX_VIPS + XDP_TX_CNTR;
++    } else {
++      bpf_printk("wrong verdict set for the packet!");
++      DROP_AND_CONTINUE();
++    }
++
++    data_stats = bpf_map_lookup_elem(&stats, &stats_key);
++    if (!data_stats) {
++      return XDP_DROP;
++    }
++    data_stats->v1 += 1;
++
++    struct xdp_md *xdp = &batch->buffs[k];
++    void *data = (void *)(long)xdp->data;
++    void *data_end = (void *)(long)xdp->data_end;
++    __u64 data_len = data_end - data;
++    data_stats->v2 += data_len;
++  }
++
+   return 0;
+ }
  
 diff --git a/katran/lib/linux_includes/bpf.h b/katran/lib/linux_includes/bpf.h
 deleted file mode 100644
@@ -4572,6 +4978,16 @@ index a1fe8667..00000000
 -#endif
 -// clang-format on
 -#endif
+diff --git a/test_bpf_loading.sh b/test_bpf_loading.sh
+index 42245537..4cb60f1a 100755
+--- a/test_bpf_loading.sh
++++ b/test_bpf_loading.sh
+@@ -14,4 +14,5 @@ if [ -f $PIN_PATH ]; then
+ fi
+ 
+ sudo bpftool prog load $OBJ $PIN_PATH type xdp
++sudo rm $PIN_PATH || ( echo 'Failed to unload' ; exit 1 )
+ 
 -- 
 2.34.1
 

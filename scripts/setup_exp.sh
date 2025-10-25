@@ -87,6 +87,18 @@ function add_flow_rules {
 	sudo ethtool -U $DEV flow-type tcp4 dst-port 8080 action 3
 }
 
+function set_irq_affinity {
+	if [ -z "$NET_PCI" ]; then
+		echo NET_PCI is not set, can not set IRQ affinity
+		return
+	fi
+	queue=3
+	core=3
+	irq=$(grep $NET_PCI /proc/interrupts | grep "comp$queue@" | cut -d ':' -f 1 | tr -d ' ')
+	echo Updating IRQ@$irq smp affinity:
+	echo $core | sudo tee /proc/irq/$irq/smp_affinity_list
+}
+
 function report_nic_numa_node {
 	DEV=$1
 	x=$(cat /sys/class/net/$DEV/device/numa_node)
@@ -107,6 +119,7 @@ function main {
 	# Update flow rules
 	remove_all_flow_rules $NET_IFACE
 	add_flow_rules $NET_IFACE
+	set_irq_affinity
 
 	if [ $CPU_FREQ_AVAIL = true ]; then
 		sudo cpupower frequency-set -g performance

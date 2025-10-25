@@ -151,11 +151,18 @@ bring_katran() {
 		# store binaries
 		BIN_DIR=$THIRD/katran_bins/$branch_name
 		mkdir -p $BIN_DIR/
-		mkdir -p $BIN_DIR/bpf
-		cp ./_build/deps/bpfprog/bpf/*.o $BIN_DIR/bpf/
+		mkdir -p $BIN_DIR/
+		cp ./_build/deps/bpfprog/bpf/balancer.bpf.o $BIN_DIR/
 		cp ./_build/build/example_grpc/katran_server_grpc $BIN_DIR/
 
+		cd example_grpc/
+		./build_grpc_client.sh
+		cp ./katran_client $BIN_DIR
+		cd ../
+
 		git checkout $SHA
+		# Make sure we have discarded every change
+		git checkout .
 	done
 }
 
