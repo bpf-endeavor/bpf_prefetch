@@ -82,7 +82,12 @@ static __always_inline hashtab_elem_t *lookup_elem_raw(arena_list_head_t *head, 
         }
         if (l->hash != hash) {
             /*bpf_printk("hash did not matched");*/
-            goto next_item;
+            // NOTE: Katran C++ compiler config does not like jumping to label
+            /* goto next_item; */
+            tmp = l->hash_node.next;
+            l = arena_container_of(tmp, hashtab_elem_t, hash_node);
+            cast_kern(l);
+            continue;
         }
         void __arena *l_key = EXTRACT_KEY(htab, l);
         if (my_memcmp((void *)l_key, key, key_sz) == 0) {
@@ -102,7 +107,8 @@ static __always_inline hashtab_elem_t *lookup_elem_raw(arena_list_head_t *head, 
             /*bpf_printk("val: %s", v);*/
             return l;
         }
-next_item:
+
+/* next_item: */
         tmp = l->hash_node.next;
         l = arena_container_of(tmp, hashtab_elem_t, hash_node);
         cast_kern(l);
@@ -159,6 +165,7 @@ static inline void __arena *htab_lookup_elem(htab_t *htab, void *key)
         cast_kern(l_val);
         return l_val;
     }
+    bpf_printk("elem used: %d", htab->elems_used);
     return NULL;
 }
 

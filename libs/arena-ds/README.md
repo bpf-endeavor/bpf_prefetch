@@ -8,3 +8,7 @@ It includes [work in progress]:
 * DRI-24-8
 * Treap
 * Trie
+
+## How to use them
+
+...
