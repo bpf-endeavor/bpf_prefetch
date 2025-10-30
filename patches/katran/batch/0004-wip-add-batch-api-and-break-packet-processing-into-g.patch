@@ -1,7 +1,7 @@
 From 01162072d47728ed97481633c5edf5d1bdb62a90 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Thu, 16 Oct 2025 03:32:30 -0600
-Subject: [PATCH 4/6] wip: add batch api and break packet processing into
+Subject: [PATCH 4/7] wip: add batch api and break packet processing into
  groups
 
 ---

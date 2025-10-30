@@ -1,0 +1,672 @@
+From ac66d6337cca9ce452f9bcdf417ffe4d4f5d9cb1 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Thu, 30 Oct 2025 03:28:07 -0600
+Subject: [PATCH 7/7] wip: trying to use arena map in load balancer
+
+---
+ CMakeLists.txt                |   2 +
+ build_katran.sh               |  11 ++-
+ katran/lib/BaseBpfAdapter.cpp |  61 ++++++++++++++
+ katran/lib/BaseBpfAdapter.h   |   7 ++
+ katran/lib/CMakeLists.txt     |   3 +
+ katran/lib/KatranLb.cpp       |  44 +++++++++-
+ katran/lib/KatranLb.h         |   5 ++
+ katran/lib/Makefile-bpf       |   2 +-
+ katran/lib/bpf/balancer.bpf.c | 150 ++++++++++++++++++++++++++++++----
+ test_bpf_loading.sh           |   4 +-
+ 10 files changed, 267 insertions(+), 22 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a2a93959..f54217fd 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -8,6 +8,8 @@ set(CMAKE_MODULE_PATH
+   "${CMAKE_CURRENT_SOURCE_DIR}/build/fbcode_builder/CMake"
+   ${CMAKE_MODULE_PATH})
+ 
++add_compile_options(-fpermissive)
++
+ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+ # for modules vended by fbcode_builder and getdeps
+ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build/fbcode_builder/CMake)
+diff --git a/build_katran.sh b/build_katran.sh
+index 034b58fa..0716cdcc 100755
+--- a/build_katran.sh
++++ b/build_katran.sh
+@@ -606,6 +606,13 @@ build_katran() {
+     cd "$KATRAN_BUILD_DIR" || exit
+     LIB_BPF_PREFIX="$INSTALL_DIR"
+ 
++    # NOTE: this is hard coded TODO: make it configurable !!!
++    MY_LIB_DIR=$HOME/bpf_prefetch/libs
++    if [ ! -d $MY_LIB_DIR ]; then
++        echo "Could not find the include library"
++        exit 1
++    fi
++
+     # Base set of CMake flags
+     CMAKE_FLAGS="-DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+     -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
+@@ -613,7 +620,9 @@ build_katran() {
+     -DPKG_CONFIG_USE_CMAKE_PREFIX_PATH=ON \
+     -DLIB_BPF_PREFIX=$LIB_BPF_PREFIX \
+     -DCMAKE_CXX_STANDARD=17 \
+-    -DBUILD_TESTS=On"
++    -DBUILD_TESTS=On \
++    -DBEESWAX_HELPER_LIB_INCLUDE_DIR=$MY_LIB_DIR
++    "
+ 
+     # Append verbose flag if VERBOSE is set to 1
+     if [ "$VERBOSE" -eq 1 ]; then
+diff --git a/katran/lib/BaseBpfAdapter.cpp b/katran/lib/BaseBpfAdapter.cpp
+index 9d8d5de6..11ce5176 100644
+--- a/katran/lib/BaseBpfAdapter.cpp
++++ b/katran/lib/BaseBpfAdapter.cpp
+@@ -31,6 +31,9 @@
+ #include <ctime>
+ #include <stdexcept>
+ 
++#include <glog/logging.h>
++#include <folly/String.h>
++
+ extern "C" {
+ #include <arpa/inet.h>
+ #include <asm/unistd.h> // @manual
+@@ -120,6 +123,12 @@ struct perf_event_mmap_page* FOLLY_NULLABLE mmap_perf_event(int fd, int pages) {
+ 
+ namespace katran {
+ 
++static size_t roundup_page(size_t sz)
++{
++  size_t page_size = sysconf(_SC_PAGE_SIZE);
++  return ((sz + page_size - 1) / page_size) * page_size;
++}
++
+ static bool flagPrintBpfDbg = false;
+ 
+ // custom libbpf print function so we would be able to control
+@@ -428,6 +437,58 @@ int BaseBpfAdapter::getBpfMapUsedSize(const std::string& name) {
+   }
+ }
+ 
++void *BaseBpfAdapter::getMapMMapAreaByName(const std::string name, size_t *out_map_sz)
++{
++  int ret = 0;
++  int fd = getMapFdByName(name); // struct bpf_map *
++  if (fd < 0) {
++    LOG(ERROR) << "can't find ``" << name << "'' map, error: "
++                                          << folly::errnoStr(errno);
++    throw std::runtime_error("failed to find Arena map");
++  }
++  struct bpf_map_info map_info = {};
++  ret = getBpfMapInfo(fd, &map_info);
++  if (ret != 0) {
++    LOG(ERROR) << "Failed to get bpf map info" << std::endl;
++    throw std::runtime_error("failed to get bpf map info");
++  }
++
++  size_t value_size = (size_t)map_info.value_size;
++  if (map_info.type == BPF_MAP_TYPE_ARENA) {
++    size_t page_size = sysconf(_SC_PAGE_SIZE);
++    value_size = page_size;
++  }
++
++  if ((map_info.map_flags & BPF_F_MMAPABLE) == 0) {
++    LOG(ERROR) << "Map is not mmapable!" << std::endl;
++    throw std::runtime_error("selected map is not mmapable");
++  }
++
++  const size_t map_sz = value_size * (map_info.max_entries);
++
++  const void * begin_addr = map_info.map_extra;
++  int flag = MAP_SHARED;
++  if (begin_addr != NULL) {
++    flag |= MAP_FIXED;
++  }
++
++  void *area = mmap(begin_addr, map_sz, PROT_READ | PROT_WRITE, flag, fd, 0);
++
++  if (area == MAP_FAILED) {
++    LOG(ERROR) << "err code:" << errno << std::endl;
++    LOG(ERROR) << "arena fd: " << fd << std::endl;
++    LOG(ERROR) << "map info:  val size: " << map_info.value_size
++        << "  max entries: " << map_info.max_entries << std::endl;
++    LOG(ERROR) << "map extra: " << map_info.map_extra << std::endl;
++    LOG(ERROR) << "failed to mmap, size:" << map_sz << std::endl;
++    *out_map_sz = 0;
++    return nullptr;
++  }
++
++  *out_map_sz = map_sz;
++  return area;
++}
++
+ int BaseBpfAdapter::getInterfaceIndex(const std::string& interface_name) {
+   int ifindex = if_nametoindex(interface_name.c_str());
+   if (!ifindex) {
+diff --git a/katran/lib/BaseBpfAdapter.h b/katran/lib/BaseBpfAdapter.h
+index 3c8aa08c..372c0c47 100644
+--- a/katran/lib/BaseBpfAdapter.h
++++ b/katran/lib/BaseBpfAdapter.h
+@@ -387,6 +387,13 @@ class BaseBpfAdapter {
+    */
+   static int bpfMapGetFdById(uint32_t map_id);
+ 
++  /**
++   * @param const char * name, name of the map
++   * @param size_t *out_map_sz, will be set to the size of map if the operation is successful
++   * @return pointer to the mmaped area
++   */
++  virtual void *getMapMMapAreaByName(const std::string name, size_t *out_map_sz);
++
+   /**
+    * @param uint32_t prog_id valid id of a bpf prog
+    * @return int fd of the prog if success, -1 on failure
+diff --git a/katran/lib/CMakeLists.txt b/katran/lib/CMakeLists.txt
+index e2d9c8f7..d70514ae 100644
+--- a/katran/lib/CMakeLists.txt
++++ b/katran/lib/CMakeLists.txt
+@@ -188,6 +188,9 @@ target_include_directories(
+   ${BPF_INCLUDE_DIRS}
+   ${FOLLY_INCLUDE_DIR}
+   ${KATRAN_INCLUDE_DIR}
++  # Farbod: I'm unsure what's the best way to add these header files to the
++  # project
++  ${BEESWAX_HELPER_LIB_INCLUDE_DIR}
+ )
+ 
+ add_library(mac_helpers STATIC
+diff --git a/katran/lib/KatranLb.cpp b/katran/lib/KatranLb.cpp
+index 5c77280d..b4a31e14 100644
+--- a/katran/lib/KatranLb.cpp
++++ b/katran/lib/KatranLb.cpp
+@@ -36,6 +36,10 @@
+ #include "katran/lib/KatranLbStructs.h"
+ #include "katran/lib/KatranMonitor.h"
+ 
++extern "C" {
++#include "arena-ds/htab.h"
++}
++
+ namespace katran {
+ 
+ namespace {
+@@ -251,6 +255,8 @@ void KatranLb::initialSanityChecking(bool flowDebug, bool globalLru) {
+   maps.push_back(KatranLbMaps::lru_miss_stats);
+   maps.push_back(KatranLbMaps::vip_miss_stats);
+   maps.push_back(KatranLbMaps::vip_to_down_reals_map);
++  /* maps.push_back(KatranLbMaps::vip_map_htab); */
++  /* maps.push_back(KatranLbMaps::arena); */
+ 
+   if (flowDebug) {
+     maps.push_back(KatranLbMaps::flow_debug_maps);
+@@ -837,6 +843,36 @@ void KatranLb::loadBpfProgs() {
+     LOG(ERROR) << "can't update lru miss stat vip, error: "
+                << folly::errnoStr(errno);
+   }
++
++  /// Initialize Arena htab
++  /* void *htab_ptr = nullptr; */
++
++  /* size_t arena_sz = 0; */
++  /* void *area = bpfAdapter_->getMapMMapAreaByName(KatranLbMaps::arena, &arena_sz); */
++  /* if (area == nullptr) { */
++  /*   LOG(ERROR) << "Failed to memory map '" << KatranLbMaps::arena */
++  /*     << "' size: " <<  arena_sz */
++  /*     << " error: " << folly::errnoStr(errno); */
++  /*   throw std::runtime_error("failed to memory map arena"); */
++  /* } */
++
++  /* const uint32_t max_entries = 512; // MAX_VIPS default: 512 */
++  /* const size_t page_size = sysconf(_SC_PAGE_SIZE); */
++  /* if (max_entries * page_size > arena_sz) { */
++  /*   LOG(ERROR) << "Arena map does not have enough pages"  << std::endl; */
++  /*   throw std::runtime_error("failed to populate arena map!"); */
++  /* } */
++
++  /* // use the helper function from the library to initialize the htab */
++  /* htab_init_userspace(area, max_entries, &htab_ptr); */
++  /* htab_ = (void *)htab_ptr; */
++  /* LOG(INFO) << "init htab_ addr: " << htab_ << std::endl; */
++
++  /* // write the pointer to the map */
++  /* int zero = 0; */
++  /* int htab_ptr_map_fd = bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map_htab); */
++  /* bpfAdapter_->bpfUpdateMap(htab_ptr_map_fd, &zero, &htab_ptr, BPF_ANY); */
++  // -------------
+ }
+ 
+ bool KatranLb::reloadBalancerProg(
+@@ -2993,15 +3029,19 @@ bool KatranLb::updateVipMap(
+   if (action == ModifyAction::ADD) {
+     auto res = bpfAdapter_->bpfUpdateMap(
+         bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map), &vip_def, meta);
++    /* int res = htab_update_elem_userspace(htab_, &vip_def, meta); */
+     if (res != 0) {
+       LOG(ERROR) << "can't add new element into vip_map, error: "
+                  << folly::errnoStr(errno);
+       lbStats_.bpfFailedCalls++;
+       return false;
+     }
++    LOG(INFO) << "Update VIP" << std::endl;
++    LOG(INFO) << "update htab_ addr: " << htab_ << std::endl;
+   } else {
+-    auto res = bpfAdapter_->bpfMapDeleteElement(
+-        bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map), &vip_def);
++    /* auto res = bpfAdapter_->bpfMapDeleteElement( */
++    /*     bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map), &vip_def); */
++    int res = -1; // not implemented
+     if (res != 0) {
+       LOG(ERROR) << "can't delete element from vip_map, error: "
+                  << folly::errnoStr(errno);
+diff --git a/katran/lib/KatranLb.h b/katran/lib/KatranLb.h
+index 55a910e1..ea6f0ce3 100644
+--- a/katran/lib/KatranLb.h
++++ b/katran/lib/KatranLb.h
+@@ -133,6 +133,8 @@ constexpr auto stats = "stats";
+ constexpr auto vip_map = "vip_map";
+ constexpr auto vip_miss_stats = "vip_miss_stats";
+ constexpr auto vip_to_down_reals_map = "vip_to_down_reals_map";
++constexpr auto vip_map_htab = "vip_map_htab";
++constexpr auto arena = "arena";
+ } // namespace KatranLbMaps
+ 
+ namespace {
+@@ -1495,6 +1497,9 @@ class KatranLb {
+   std::unordered_set<uint64_t> invalidServerIds_;
+ 
+   std::unique_ptr<KatranSimulator> simulator_;
++
++  /* Pointer to hasmap on Arena memory */
++  void *htab_{nullptr};
+ };
+ 
+ } // namespace katran
+diff --git a/katran/lib/Makefile-bpf b/katran/lib/Makefile-bpf
+index 81956c1b..765ad57e 100644
+--- a/katran/lib/Makefile-bpf
++++ b/katran/lib/Makefile-bpf
+@@ -40,4 +40,4 @@ $(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c
+ 	$(CLANG) $(INCLUDEFLAGS) $(EXTRA_CFLAGS) \
+ 	$(DEBUGBPF) -D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
+ 		-Wno-compare-distinct-pointer-types \
+-		-O2 -emit-llvm -c -g $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
++		-target bpf -O2 -emit-llvm -c -g $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index b5c000c5..5b8bd034 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -2,7 +2,11 @@
+  * Copyright 2004-present Facebook. All Rights Reserved.
+  * This is main balancer's application code
+  */
+-// #define __bpf__
++
++#ifndef __bpf__
++#define __bpf__
++#endif
++
+ #include <stdbool.h>
+ #include <stddef.h>
+ #include <string.h>
+@@ -18,12 +22,14 @@
+ 
+ #include "katran/lib/bpf/balancer_consts.h"
+ #include "katran/lib/bpf/balancer_helpers.h"
+-#include "katran/lib/bpf/balancer_maps.h"
+ #include "katran/lib/bpf/balancer_structs.h"
++#include "katran/lib/bpf/balancer_maps.h"
+ #include "katran/lib/bpf/handle_icmp.h"
+ #include "katran/lib/bpf/pckt_encap.h"
+ #include "katran/lib/bpf/pckt_parsing.h"
+ 
++// #define TCP_SERVER_ID_ROUTING // enable server id routing
++
+ /* Some macros to ease working with a batch */
+ #define ACTION(act, index) batch->actions[index] = act
+ #define PASS(k) ACTION(XDP_PASS, k)
+@@ -33,6 +39,32 @@
+ #define PREFETCH 1
+ #include "honey/prefetching.h"
+ 
++// Farbod: in order to prefetch I am using a htab implemenetation in Arena
++// (seethrough hashmap)
++#define USING_ARENA_HTAB
++/* long my_kfunc_reg_arena(void *p__map) __ksym; */
++/* typedef struct vip_definition my_key_t; */
++/* typedef struct vip_meta my_value_t; */
++// add this flag so that the library knows we are using custom key/value types
++/* #define HTAB_KEY_DEFINED */
++/* struct { */
++/*   __uint(type, BPF_MAP_TYPE_ARENA); */
++/*   __uint(map_flags, BPF_F_MMAPABLE); */
++/*   __uint(max_entries, 100000); /1* number of pages *1/ */
++/* } arena SEC(".maps"); */
++/* #include "arena-ds/htab.h" */
++
++// userspace program should initialize this
++/* struct { */
++/*   __uint(type, BPF_MAP_TYPE_ARRAY); */
++/*   __type(key, int); */
++/*   __type(value, __u64); */
++/*   __uint(max_entries, 1); */
++/*   /1* __uint(map_flags, BPF_F_MMAPABLE); *1/ */
++/*   __uint(map_flags, NO_FLAGS); */
++/* } vip_map_htab SEC(".maps"); */
++// ------------------------------------
++
+ 
+ /* Batch processing state */
+ enum pkt_phase {
+@@ -65,6 +97,8 @@ struct pkt_state {
+ 
+   // if we don't find vip we drop packet so we don't need to track its validity
+   struct vip_meta vip_info;
++
++  __u32 cpu_num;
+ };
+ typedef struct pkt_state pkt_state_t;
+ 
+@@ -780,16 +814,45 @@ __attribute__((__always_inline__)) static inline int check_udp_flow_migration(
+   return FURTHER_PROCESSING;
+ }
+ 
+-#define DROP_AND_CONTINUE() pstate->phase = DONE; DROP(k); continue;
++#define DROP_AND_CONTINUE() {pstate->phase = DONE; DROP(k); continue;}
+ // #define BATCH_SIZE 8
+ #define BATCH_SIZE XDP_MAX_BATCH_SIZE
+ 
++/* static inline __attribute__((always_inline)) */
++/* htab_t *__get_vip_map(void) */
++/* { */
++/*   int zero = 0; */
++/*   void *ptr = bpf_map_lookup_elem(&vip_map_htab, &zero); */
++/*   if (ptr == NULL) { */
++/*     // this must never happen! */
++/*     return NULL; */
++/*   } */
++
++/*   // ptr is a pointer to addrses of htab :) */
++/*   htab_t *h = *(htab_t **)ptr; */
++/*   if (h == NULL) { */
++/*     // we have some issue in user-space program */
++/*     bpf_printk("arena htab is not initialized!"); */
++/*     // make sure arena is associated with this program */
++/*     my_kfunc_reg_arena(&arena); */
++/*   } */
++
++/*   bpf_printk("before: arena htab: %p", h); */
++/*   bpf_printk("arena htab: %p", h); */
++/*   return h; */
++/* } */
++
+ SEC(PROG_SEC_NAME)
+ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ {
+   /* bpf_printk("balancer ingress: batch size: %d", batch->size); */
+   LOAD_BATCH_STATE();
+ 
++  /* htab_t __arena *_vip_map = __get_vip_map(); */
++  /* if (_vip_map == NULL) { */
++  /*   return 0; */
++  /* } */
++
+   if (batch->size > BATCH_SIZE) {
+     bpf_printk("Error: miss configuration driver's batch size is larger than Katran's!");
+     return 0;
+@@ -804,6 +867,17 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     return 0;
+   }
+ 
++  /* NOTE: prefetch header, it should be already in cache but perf says we have
++   * cache misses reading eth_proto. Test device driver MLX5.
++   * */
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    struct xdp_md *ctx = &batch->buffs[k];
++    void* data = (void*)(long)ctx->data;
++    P(data);
++    pkt_state_t *pstate = &bs->S[k];
++    Pw(pstate);
++  }
++
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+       break;
+@@ -842,8 +916,9 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     memset(&pstate->vip, 0, sizeof(struct vip_definition));
+     pstate->vip_num = 0;
+     pstate->original_sport = 0;
+-    pstate->dst.is_valid = false;
+     pstate->pkt_bytes = 0;
++    memset(&pstate->dst, 0, sizeof(pstate->dst));
++    memset(&pstate->vip_info, 0, sizeof(struct vip_meta));
+     continue;
+   }
+ 
+@@ -859,7 +934,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     void* data_end = (void*)(long)xdp->data_end;
+ 
+     __u8 protocol;
+-    __u16 nh_off = pstate->nh_off & 0xfff;
++    __u16 nh_off = sizeof(struct ethhdr);
+ 
+     int action;
+     __u32 vip_num;
+@@ -969,6 +1044,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       continue;
+     }
+ 
++    /* bpf_printk("go to find vip"); */
+     pstate->phase = FIND_VIP;
+     continue;
+   }
+@@ -990,13 +1066,16 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     pstate->vip.proto = pstate->pckt.flow.proto;
+ 
+     struct vip_meta* vip_info;
++    /* struct vip_meta __arena * vip_info; */
+     vip_info = bpf_map_lookup_elem(&vip_map, &pstate->vip);
++    /* vip_info = htab_lookup_elem(_vip_map, &pstate->vip); */
+     if (!vip_info) {
+       pstate->vip.port = 0;
+       vip_info = bpf_map_lookup_elem(&vip_map, &pstate->vip);
++      /* vip_info = htab_lookup_elem(_vip_map, &pstate->vip); */
+       if (!vip_info) {
+         pstate->phase = DONE;
+-        DROP(k);
++        PASS(k);
+         continue;
+       }
+ 
+@@ -1006,6 +1085,9 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+         // dst port but from the same src port/ip must go to the same real
+         pstate->pckt.flow.port16[1] = 0;
+       }
++    } else {
++      // for debugging
++      // bpf_printk("%d  %d  %d", pstate->vip.vip, pstate->vip.port, pstate->vip.proto);
+     }
+ 
+     pstate->vip_info = *vip_info;
+@@ -1054,6 +1136,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     __u32 vip_num = vip_info->vip_num;
+     pstate->vip_num = vip_num;
+     __u32 cpu_num = bpf_get_smp_processor_id();
++    pstate->cpu_num = cpu_num; // incase eBPF program is migrated
+     void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+     if (!lru_map) {
+       // Farbod: I disabled fallback cache
+@@ -1070,6 +1153,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       DROP_AND_CONTINUE();
+     }
+ 
++    /* bpf_printk("go to server vip"); */
+     pstate->phase = SERVER_ID_MATCHING;
+   }
+ 
+@@ -1104,8 +1188,17 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+         }
+ 
+         // Farbod: verifier is complaining
+-        if (data + sizeof(struct ethhdr) > data_end)
+-          DROP_AND_CONTINUE();
++        if (pstate->is_ipv6) {
++          void *tmp = data + sizeof(struct ethhdr) + sizeof(struct ipv6hdr) + sizeof(struct icmp6hdr);
++          if (tmp > data_end) {
++            DROP_AND_CONTINUE();
++          }
++        } else {
++          void *tmp = data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct icmphdr);
++          if (tmp > data_end) {
++            DROP_AND_CONTINUE();
++          }
++        }
+ 
+         data_stats->v1 += 1;
+         // collect the number of quic icmp messages server would ignore
+@@ -1149,8 +1242,9 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ 
+               __u32 cpu_num = bpf_get_smp_processor_id();
+               void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-              if (!lru_map)
++              if (!lru_map) {
+                 DROP_AND_CONTINUE();
++              }
+ 
+               int res = check_and_update_real_index_in_lru(&pstate->pckt, lru_map);
+               if (res == DST_MATCH_IN_LRU) {
+@@ -1237,6 +1331,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       pstate->dst.is_valid = true;
+       pstate->dst.data = *dst;
+     }
++    /* bpf_printk("go to lur lookup"); */
+     continue;
+   }
+ 
+@@ -1256,16 +1351,21 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       dst_was_not_valid = false;
+     }
+ 
+-    __u32 cpu_num = bpf_get_smp_processor_id();
++    __u32 cpu_num = pstate->cpu_num;
+     void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-    if (!lru_map)
++    if (!lru_map) {
++      bpf_printk("LUR_LOOKUP: lru map not found!!!");
+       DROP_AND_CONTINUE();
++    }
+ 
+     // Next, try to lookup dst in the lru_cache
+     if (!dst && !(pstate->pckt.flags & F_SYN_SET) &&
+         !(vip_info->flags & F_LRU_BYPASS)) {
+       connection_table_lookup(&dst, &pstate->pckt, lru_map, /*isGlobalLru=*/false);
+     }
++    if (dst != NULL) {
++      /* bpf_printk("found dst before hashing!"); */
++    }
+ 
+ #ifdef GLOBAL_LRU_LOOKUP
+     if (!dst && !(pstate->pckt.flags & F_SYN_SET) && vip_info->flags & F_GLOBAL_LRU) {
+@@ -1288,10 +1388,11 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       pstate->dst.data = *dst;
+     }
+ 
++    /* bpf_printk("go to consistent hashing"); */
+     continue;
+   }
+ 
+-  bpf_tail_call(batch, &prog_arr_map, PROG_CONSISTENT_HASHING);
++  bpf_tail_call_static(batch, &prog_arr_map, PROG_CONSISTENT_HASHING);
+   bpf_printk("failed tail call");
+ 
+   return 0;
+@@ -1315,6 +1416,7 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+     struct vip_meta* vip_info = &pstate->vip_info;
+     struct real_definition* dst = NULL;
+     if (pstate->dst.is_valid) {
++      /* bpf_printk("consitent hashing: we already know the dst"); */
+       dst = &pstate->dst.data;
+     }
+     struct xdp_md *xdp = &batch->buffs[k];
+@@ -1340,12 +1442,16 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+         }
+       }
+ 
+-      __u32 cpu_num = bpf_get_smp_processor_id();
++      __u32 cpu_num = pstate->cpu_num;
+       void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-      if (!lru_map)
++      if (!lru_map) {
++        /* bpf_printk("failed to get lru_map (2)"); */
+         DROP_AND_CONTINUE();
++      }
+ 
++      /* bpf_printk("doing hashing"); */
+       if (!get_packet_dst(&dst, &pstate->pckt, vip_info, pstate->is_ipv6, lru_map)) {
++        /* bpf_printk("failed to get packet dst"); */
+         DROP_AND_CONTINUE();
+       }
+ 
+@@ -1360,14 +1466,17 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+       // we found dst. update it
+       pstate->dst.is_valid = true;
+       pstate->dst.data = *dst;
++    } else {
++      /* bpf_printk("not doing hashing"); */
+     }
+ 
++    /* bpf_printk("go to encap and tx"); */
+     pstate->phase = ENCAP_AND_TX;
+     continue;
+   }
+ 
+-  bpf_tail_call(batch, &prog_arr_map, PROG_ENCAP_AND_TX);
+-  /* bpf_printk("failed tail call"); */
++  bpf_tail_call_static(batch, &prog_arr_map, PROG_ENCAP_AND_TX);
++  bpf_printk("failed tail call");
+ 
+   return 0;
+ }
+@@ -1379,7 +1488,6 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+   LOAD_BATCH_STATE();
+ 
+   struct lb_stats* data_stats;
+-
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+       break;
+@@ -1452,6 +1560,12 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+     if (k >= batch->size)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != DONE) {
++      // this must never happen!
++      bpf_printk("pkt not DONE!!");
++      pstate->phase = DONE;
++      DROP(k);
++    }
+ 
+     struct lb_stats* data_stats;
+     __u32 stats_key;
+@@ -1485,3 +1599,5 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+ }
+ 
+ char _license[] SEC("license") = "GPL";
++
++/* vim: set et ts=2 sw=2: */
+diff --git a/test_bpf_loading.sh b/test_bpf_loading.sh
+index 4cb60f1a..a6a824ad 100755
+--- a/test_bpf_loading.sh
++++ b/test_bpf_loading.sh
+@@ -14,5 +14,7 @@ if [ -f $PIN_PATH ]; then
+ fi
+ 
+ sudo bpftool prog load $OBJ $PIN_PATH type xdp
++echo 'Program was loaded successfully'
++sudo bpftool map show
+ sudo rm $PIN_PATH || ( echo 'Failed to unload' ; exit 1 )
+-
++echo 'Done!'
+-- 
+2.34.1
+
