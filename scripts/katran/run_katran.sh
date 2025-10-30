@@ -1,6 +1,7 @@
 #!/bin/bash
 
 MODE=original
+EXP=SERVER_ID_ROUTING
 
 # Generate traffic towards this IP
 VIRTUAL_IP=10.10.0.1
@@ -17,6 +18,15 @@ if [ -z "${NET_IFACE}" ]
 then
 	echo NET_IFACE is not set
 	exit 1
+fi
+
+
+FILL_SERVER_ID_PROG=./fill_katran_server_id_map/build/a.out
+if [ ! -f $FILL_SERVER_ID_PROG ]; then
+	# compile
+	pushd ./fill_katran_server_id_map/
+	make
+	popd
 fi
 
 start_server() {
@@ -60,9 +70,17 @@ config_lb() {
 		exit 1
 	fi
 	echo configuring...
-	$CLIENT -A -t $VIRTUAL_IP:$SERVICE_PORT
-	$CLIENT -a -t $VIRTUAL_IP:$SERVICE_PORT -r $OTHER_SERVER_IP
-	$CLIENT -l
+	if [ $EXP = SERVER_ID_ROUTING ]; then
+		$CLIENT -A -t $VIRTUAL_IP:$SERVICE_PORT -vf NO_LRU
+		$CLIENT -a -t $VIRTUAL_IP:$SERVICE_PORT -r $OTHER_SERVER_IP
+		$CLIENT -l
+		echo Configuring server id map ...
+		sudo $FILL_SERVER_ID_PROG
+	else
+		$CLIENT -A -t $VIRTUAL_IP:$SERVICE_PORT
+		$CLIENT -a -t $VIRTUAL_IP:$SERVICE_PORT -r $OTHER_SERVER_IP
+		$CLIENT -l
+	fi
 }
 
 report_stats() {
@@ -82,7 +100,9 @@ on_signal() {
 }
 
 usage() {
-	echo "Usage: run_katran.sh [--baseline | --batch ]"
+	echo "Usage: run_katran.sh MODE EXP"
+	echo "   MODE: [--baseline | --batch ] which version of Katran to use in experiment"
+	echo "   EXP:  [--id-routing | --lru-routing ] select experiment configuration"
 }
 
 parse_args() {
@@ -126,7 +146,7 @@ main() {
 	fi
 
 	start_server
-	sleep 20
+	sleep 10
 
 	pidof katran_server_grpc > /dev/null
 	if [ $? -ne 0 ]; then

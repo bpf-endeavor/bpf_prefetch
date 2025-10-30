@@ -1,0 +1,609 @@
+From 418650eddaaab0465ae7721044976937228daa78 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Thu, 30 Oct 2025 11:48:52 -0600
+Subject: [PATCH 8/8] prefetch server id array in two phases
+
+---
+ katran/lib/bpf/balancer.bpf.c     | 251 +++++++++++++++++-------------
+ katran/lib/bpf/balancer_consts.h  |   8 +
+ katran/lib/bpf/balancer_maps.h    |  37 +++++
+ katran/lib/bpf/balancer_structs.h |  43 +++++
+ katran/lib/bpf/pckt_parsing.h     |  76 +++++++--
+ 5 files changed, 301 insertions(+), 114 deletions(-)
+
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index 5b8bd034..31b77304 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -7,6 +7,10 @@
+ #define __bpf__
+ #endif
+ 
++#define TCP_SERVER_ID_ROUTING // enable server id routing
++#define MY_2PHASE_OPT_LOOKUP
++#define PREFETCH 1
++
+ #include <stdbool.h>
+ #include <stddef.h>
+ #include <string.h>
+@@ -28,7 +32,9 @@
+ #include "katran/lib/bpf/pckt_encap.h"
+ #include "katran/lib/bpf/pckt_parsing.h"
+ 
+-// #define TCP_SERVER_ID_ROUTING // enable server id routing
++#include "honey/prefetching.h"
++// #include "honey/batch_processing.h"
++
+ 
+ /* Some macros to ease working with a batch */
+ #define ACTION(act, index) batch->actions[index] = act
+@@ -36,9 +42,6 @@
+ #define DROP(k) ACTION(XDP_DROP, k)
+ #define TX(k)   ACTION(XDP_TX, k)
+ 
+-#define PREFETCH 1
+-#include "honey/prefetching.h"
+-
+ // Farbod: in order to prefetch I am using a htab implemenetation in Arena
+ // (seethrough hashmap)
+ #define USING_ARENA_HTAB
+@@ -65,55 +68,14 @@
+ /* } vip_map_htab SEC(".maps"); */
+ // ------------------------------------
+ 
++// Farbod: test if using these will help
++#ifndef likely
++# define likely(X)		__builtin_expect(!!(X), 1)
++#endif
+ 
+-/* Batch processing state */
+-enum pkt_phase {
+-  START = 100,
+-  PARSE_HEADER,
+-  FIND_VIP,
+-  SERVER_ID_MATCHING,
+-  LRU_LOOKUP,
+-  CONSISTENT_HASH,
+-  ENCAP_AND_TX,
+-  DONE,
+-};
+-
+-struct pkt_state {
+-  bool is_ipv6;
+-  enum pkt_phase phase;
+-  struct packet_description pckt;
+-  struct vip_definition vip;
+-  __u32 vip_num;
+-  __u16 nh_off;
+-  __u16 original_sport;
+-  __u16 pkt_bytes;
+-
+-  // dst variable may be NULL across multiple sections (depending on how we
+-  // find the destination server). so I need to track its validity
+-  struct {
+-    bool is_valid;
+-    struct real_definition data;
+-  } dst;
+-
+-  // if we don't find vip we drop packet so we don't need to track its validity
+-  struct vip_meta vip_info;
+-
+-  __u32 cpu_num;
+-};
+-typedef struct pkt_state pkt_state_t;
+-
+-struct batch_state {
+-  pkt_state_t S[XDP_MAX_BATCH_SIZE];
+-};
+-typedef struct batch_state batch_state_t;
+-
+-struct {
+-  __uint(type, BPF_MAP_TYPE_ARRAY);
+-  __type(key, int);
+-  __type(value, batch_state_t);
+-  __uint(max_entries, 1);
+-  __uint(map_flags, NO_FLAGS);
+-} batch_state_map SEC(".maps");
++#ifndef unlikely
++# define unlikely(X)		__builtin_expect(!!(X), 0)
++#endif
+ 
+ static inline __attribute__((always_inline))
+ batch_state_t *get_batch_state(void)
+@@ -128,33 +90,26 @@ batch_state_t *get_batch_state(void)
+   if (bs == NULL) { bpf_printk("failed to load batch state"); return XDP_ABORTED; }
+ 
+ 
+-enum bpf_progs {
+-	PROG_INGRESS,
+-	PROG_CONSISTENT_HASHING,
+-	PROG_ENCAP_AND_TX,
+-
+-	COUNT_PROGS, // must be the last one
+-};
+-
+-// forward declaration of functions for use in populating the PROG_ARRAY
+-int bbb_balancer_ingress(struct xdp_batch_md* batch);
+-int bbb_consistent_hashing(struct xdp_batch_md* batch);
+-int bbb_encap_and_tx(struct xdp_batch_md* batch);
+-
+-struct {
+-  __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+-  __type(key, int);
+-  __type(value, int);
+-  __uint(max_entries, COUNT_PROGS);
+-  __uint(map_flags, NO_FLAGS);
+-  __array(values, int (void *));
+-} prog_arr_map SEC(".maps")= {
+-  .values = {
+-    [PROG_INGRESS] = (void *)&bbb_balancer_ingress,
+-    [PROG_CONSISTENT_HASHING] = (void *)&bbb_consistent_hashing,
+-    [PROG_ENCAP_AND_TX] = (void *)&bbb_encap_and_tx,
+-  },
+-};
++static inline __attribute__((always_inline))
++void __prefetch_server_id_map(__u32 server_id)
++{
++  __u64 off = server_id * sizeof(__u32);
++  __u64 addr = server_id_map_base + off;
++  void *ptr = (void *)addr;
++  P(ptr);
++}
++
++static inline __attribute__((always_inline))
++void __init(void)
++{
++  int zero = 0;
++  if (server_id_map_base == 0) {
++    void* ptr = bpf_map_lookup_elem(&server_id_map, &zero);
++    if (!ptr)
++      return;
++   server_id_map_base = (__u64)ptr;
++  }
++}
+ 
+ /* --------------------------------------------------------------- */
+ 
+@@ -845,6 +800,7 @@ __attribute__((__always_inline__)) static inline int check_udp_flow_migration(
+ SEC(PROG_SEC_NAME)
+ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ {
++  __init();
+   /* bpf_printk("balancer ingress: batch size: %d", batch->size); */
+   LOAD_BATCH_STATE();
+ 
+@@ -867,17 +823,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     return 0;
+   }
+ 
+-  /* NOTE: prefetch header, it should be already in cache but perf says we have
+-   * cache misses reading eth_proto. Test device driver MLX5.
+-   * */
+-  for (int k = 0; k < BATCH_SIZE; k++) {
+-    struct xdp_md *ctx = &batch->buffs[k];
+-    void* data = (void*)(long)ctx->data;
+-    P(data);
+-    pkt_state_t *pstate = &bs->S[k];
+-    Pw(pstate);
+-  }
+-
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+       break;
+@@ -1240,9 +1185,10 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+                 DROP_AND_CONTINUE();
+               }
+ 
+-              __u32 cpu_num = bpf_get_smp_processor_id();
++              __u32 cpu_num = pstate->cpu_num;
+               void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+               if (!lru_map) {
++                // must never happen
+                 DROP_AND_CONTINUE();
+               }
+ 
+@@ -1294,20 +1240,33 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+         struct lb_tpr_packets_stats* tpr_packets_stats =
+           bpf_map_lookup_elem(&tpr_stats_map, &tpr_packets_stats_key);
+         if (!tpr_packets_stats) {
++          // this never happens
+           return XDP_DROP;
+         }
+ 
+         if (pstate->pckt.flags & F_SYN_SET) {
+           tpr_packets_stats->tcp_syn += 1;
+           incr_server_id_routing_stats(
+-              vip_num, /* new conn */ true, /* mismatch in lru */ false);
++              pstate->vip_num, /* new conn */ true, /* mismatch in lru */ false);
+         } else {
+-          if (tcp_hdr_opt_lookup(xdp, is_ipv6, &dst, &pstate->pckt) ==
+-              FURTHER_PROCESSING) {
++
++#ifdef MY_2PHASE_OPT_LOOKUP
++          /* bpf_printk("phase 1"); */
++          int res = tcp_hdr_opt_lookup_p1(xdp, pstate->is_ipv6, &dst, &pstate->pckt, pstate);
++          if (res == FURTHER_PROCESSING) {
++            /* bpf_printk("phase 1 failed"); */
++            tpr_packets_stats->ch_routed += 1;
++            continue;
++          }
++          pstate->phase = TCP_HDR_OPT_LOOKUP_2;
++          continue; // make sure we don't set the phase to LRU_LOOKUP
++#else
++          int res = tcp_hdr_opt_lookup(xdp, pstate->is_ipv6, &dst, &pstate->pckt);
++          if (res == FURTHER_PROCESSING) {
+             tpr_packets_stats->ch_routed += 1;
+           } else {
+ 
+-            __u32 cpu_num = bpf_get_smp_processor_id();
++            __u32 cpu_num = pstate->cpu_num;
+             void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+ 
+             // update this routing decision in the lru_map as well
+@@ -1316,11 +1275,12 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+               if (res == DST_MISMATCH_IN_LRU) {
+                 tpr_packets_stats->dst_mismatch_in_lru += 1;
+                 incr_server_id_routing_stats(
+-                    vip_num, /* new conn */ false, /* mismatch in lru */ true);
++                    pstate->vip_num, /* new conn */ false, /* mismatch in lru */ true);
+               }
+             }
+             tpr_packets_stats->sid_routed += 1;
+           }
++#endif
+         }
+       }
+ #endif // TCP_SERVER_ID_ROUTING
+@@ -1335,6 +1295,58 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     continue;
+   }
+ 
++#if defined(TCP_SERVER_ID_ROUTING) && defined(MY_2PHASE_OPT_LOOKUP)
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= batch->size)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != TCP_HDR_OPT_LOOKUP_2)
++      continue;
++
++    /* bpf_printk("phase 2"); */
++    __u32 tpr_packets_stats_key = 0;
++    struct lb_tpr_packets_stats* tpr_packets_stats =
++      bpf_map_lookup_elem(&tpr_stats_map, &tpr_packets_stats_key);
++    if (!tpr_packets_stats) {
++      // this never happens
++      return XDP_DROP;
++    }
++
++    struct vip_meta* vip_info = &pstate->vip_info;
++
++    struct xdp_md *xdp = &batch->buffs[k];
++    struct real_definition* dst = NULL;
++
++    int res = tcp_hdr_opt_lookup_p2(xdp, pstate->is_ipv6, &dst, &pstate->pckt, pstate);
++    if (res == FURTHER_PROCESSING) {
++      /* bpf_printk("phase 2 failed"); */
++      tpr_packets_stats->ch_routed += 1;
++      pstate->phase = LRU_LOOKUP; // continue with LRU lookup
++      continue;
++    } else {
++      __u32 cpu_num = pstate->cpu_num;
++      void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
++
++      // update this routing decision in the lru_map as well
++      if (lru_map && !(vip_info->flags & F_LRU_BYPASS)) {
++        int res = check_and_update_real_index_in_lru(&pstate->pckt, lru_map);
++        if (res == DST_MISMATCH_IN_LRU) {
++          tpr_packets_stats->dst_mismatch_in_lru += 1;
++          incr_server_id_routing_stats(
++              pstate->vip_num, /* new conn */ false, /* mismatch in lru */ true);
++        }
++      }
++      tpr_packets_stats->sid_routed += 1;
++
++      // update teh dst value
++      pstate->dst.is_valid = true;
++      pstate->dst.data = *dst;
++      pstate->phase = LRU_LOOKUP;
++      /* bpf_printk("found dst and everything done"); */
++    }
++  }
++#endif
++
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+       break;
+@@ -1488,6 +1500,28 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+   LOAD_BATCH_STATE();
+ 
+   struct lb_stats* data_stats;
++
++  struct ctl_value* cval;
++  __u32 mac_addr_pos = 0;
++  cval = bpf_map_lookup_elem(&ctl_array, &mac_addr_pos);
++  if (!cval) {
++    // this must never happen
++    return 0;
++  }
++
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= batch->size)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != ENCAP_AND_TX)
++      continue;
++
++    struct xdp_md *ctx = &batch->buffs[k];
++    void *data = (void *)(long)ctx->data;
++    void *ptr = data - sizeof(struct iphdr);
++    P(ptr);
++  }
++
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+       break;
+@@ -1500,14 +1534,6 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+       bpf_printk("I have made a mistake with tracking dst value");
+       DROP_AND_CONTINUE();
+     }
+-    struct real_definition* dst = &pstate->dst.data;
+-
+-    struct ctl_value* cval;
+-    __u32 mac_addr_pos = 0;
+-    cval = bpf_map_lookup_elem(&ctl_array, &mac_addr_pos);
+-    if (!cval) {
+-      DROP_AND_CONTINUE();
+-    }
+ 
+     struct xdp_md *xdp = &batch->buffs[k];
+ 
+@@ -1529,6 +1555,7 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+ 
+ #ifdef LOCAL_DELIVERY_OPTIMIZATION
+     struct vip_meta* vip_info = &pstate->vip_info;
++    struct real_definition* dst = &pstate->dst.data;
+ 
+     if ((vip_info->flags & F_LOCAL_VIP) && (dst->flags & F_LOCAL_REAL)) {
+       pstate->phase = DONE;
+@@ -1537,6 +1564,22 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+     }
+ #endif
+ 
++    // prefetch the encap headroom
++    void *data = (void *)(long)xdp->data;
++    void *ptr = data - sizeof(struct iphdr);
++    P(ptr);
++  }
++
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= batch->size)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != ENCAP_AND_TX)
++      continue;
++
++    struct xdp_md *xdp = &batch->buffs[k];
++    struct real_definition* dst = &pstate->dst.data;
++
+     // restore the original sport value to use it as a seed for the GUE sport
+     pstate->pckt.flow.port16[0] = pstate->original_sport;
+     if (dst->flags & F_IPV6) {
+diff --git a/katran/lib/bpf/balancer_consts.h b/katran/lib/bpf/balancer_consts.h
+index a4985587..b046aca8 100644
+--- a/katran/lib/bpf/balancer_consts.h
++++ b/katran/lib/bpf/balancer_consts.h
+@@ -433,4 +433,12 @@ v2 tracks misses for TCP non syns */
+ #define DST_MISMATCH_IN_LRU 1
+ #define DST_NOT_FOUND_IN_LRU 2
+ 
++enum bpf_progs {
++	PROG_INGRESS,
++	PROG_CONSISTENT_HASHING,
++	PROG_ENCAP_AND_TX,
++
++	COUNT_PROGS, // must be the last one
++};
++
+ #endif // of __BALANCER_CONSTS_H
+diff --git a/katran/lib/bpf/balancer_maps.h b/katran/lib/bpf/balancer_maps.h
+index 7260d150..ab2be6a5 100644
+--- a/katran/lib/bpf/balancer_maps.h
++++ b/katran/lib/bpf/balancer_maps.h
+@@ -247,4 +247,41 @@ struct {
+       });
+ } vip_to_down_reals_map SEC(".maps");
+ 
++// For batch processing 
++struct {
++  __uint(type, BPF_MAP_TYPE_ARRAY);
++  __type(key, int);
++  __type(value, batch_state_t);
++  __uint(max_entries, 1);
++  __uint(map_flags, NO_FLAGS);
++} batch_state_map SEC(".maps");
++
++// NOTE: Break Katran to subprograms to overcome complexity limit introduced from
++// batch processing
++// forward declaration of functions for use in populating the PROG_ARRAY
++int bbb_balancer_ingress(struct xdp_batch_md* batch);
++int bbb_consistent_hashing(struct xdp_batch_md* batch);
++int bbb_encap_and_tx(struct xdp_batch_md* batch);
++
++struct {
++  __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
++  __type(key, int);
++  __type(value, int);
++  __uint(max_entries, COUNT_PROGS);
++  __uint(map_flags, NO_FLAGS);
++  __array(values, int (void *));
++} prog_arr_map SEC(".maps")= {
++  .values = {
++    [PROG_INGRESS] = (void *)&bbb_balancer_ingress,
++    [PROG_CONSISTENT_HASHING] = (void *)&bbb_consistent_hashing,
++    [PROG_ENCAP_AND_TX] = (void *)&bbb_encap_and_tx,
++  },
++};
++
++
++#ifdef MY_2PHASE_OPT_LOOKUP
++// A global variable used for prefetching during TCP_HDR_OPT lookup
++static __u64 server_id_map_base = 0;
++#endif
++
+ #endif // of _BALANCER_MAPS
+diff --git a/katran/lib/bpf/balancer_structs.h b/katran/lib/bpf/balancer_structs.h
+index cbb21b2e..9285076d 100644
+--- a/katran/lib/bpf/balancer_structs.h
++++ b/katran/lib/bpf/balancer_structs.h
+@@ -172,4 +172,47 @@ struct lb_stable_rt_packets_stats {
+   __u64 invalid_packet_type;
+ };
+ 
++/* Batch processing state */
++enum pkt_phase {
++  START = 100,
++  PARSE_HEADER,
++  FIND_VIP,
++  SERVER_ID_MATCHING,
++  LRU_LOOKUP,
++  CONSISTENT_HASH,
++  ENCAP_AND_TX,
++  TCP_HDR_OPT_LOOKUP_2,
++
++  DONE,
++};
++
++struct pkt_state {
++  bool is_ipv6;
++  enum pkt_phase phase;
++  struct packet_description pckt;
++  struct vip_definition vip;
++  __u32 vip_num;
++  __u16 nh_off;
++  __u16 original_sport;
++  __u16 pkt_bytes;
++
++  // dst variable may be NULL across multiple sections (depending on how we
++  // find the destination server). so I need to track its validity
++  struct {
++    bool is_valid;
++    struct real_definition data;
++  } dst;
++
++  // if we don't find vip we drop packet so we don't need to track its validity
++  struct vip_meta vip_info;
++
++  __u32 cpu_num;
++  __u32 server_id;
++};
++typedef struct pkt_state pkt_state_t;
++
++struct batch_state {
++  pkt_state_t S[XDP_MAX_BATCH_SIZE];
++};
++typedef struct batch_state batch_state_t;
+ #endif // of _BALANCER_STRUCTS
+diff --git a/katran/lib/bpf/pckt_parsing.h b/katran/lib/bpf/pckt_parsing.h
+index 871ffe09..f32e3a36 100644
+--- a/katran/lib/bpf/pckt_parsing.h
++++ b/katran/lib/bpf/pckt_parsing.h
+@@ -206,15 +206,18 @@ __attribute__((__always_inline__)) int parse_hdr_opt_raw(
+   return 0;
+ }
+ 
+-__attribute__((noinline)) int parse_hdr_opt(
+-    const struct xdp_md* xdp,
+-    struct hdr_opt_state* state) {
+-  __u8 *tcp_opt, kind, hdr_len;
+-
+-  const void* data = (void*)(long)xdp->data;
+-  const void* data_end = (void*)(long)xdp->data_end;
+-  return parse_hdr_opt_raw(data, data_end, state);
+-}
++/* NOTE: since I have changed the context to xdp_batch_md, this global function
++ *       thinks xdp is context of that type. this breaks everything.
++ * */
++/* __attribute__((noinline)) int parse_hdr_opt( */
++/*     const struct xdp_md* xdp, */
++/*     struct hdr_opt_state* state) { */
++/*   __u8 *tcp_opt, kind, hdr_len; */
++
++/*   const void* data = (void*)(long)xdp->data; */
++/*   const void* data_end = (void*)(long)xdp->data_end; */
++/*   return parse_hdr_opt_raw(data, data_end, state); */
++/* } */
+ 
+ int parse_hdr_opt_skb(
+     const struct __sk_buff* skb,
+@@ -252,7 +255,9 @@ tcp_hdr_opt_lookup_server_id(
+   opt_state.hdr_bytes_remaining = tcp_hdr_opt_len;
+   opt_state.byte_offset = sizeof(struct tcphdr) + tcp_offset;
+   for (int i = 0; i < TCP_HDR_OPT_MAX_OPT_CHECKS; i++) {
+-    err = parse_hdr_opt(xdp, &opt_state);
++    // look at the note above parse_hdr_opt for the reason it will not work
++    /* err = parse_hdr_opt(xdp, &opt_state); */
++    err = parse_hdr_opt_raw(data, data_end, &opt_state);
+     if (err || !opt_state.hdr_bytes_remaining) {
+       break;
+     }
+@@ -333,6 +338,57 @@ __attribute__((__always_inline__)) static inline int tcp_hdr_opt_lookup(
+   }
+   return 0;
+ }
++
++#ifdef MY_2PHASE_OPT_LOOKUP
++static inline __attribute__((always_inline)) void __prefetch_server_id_map(__u32 server_id);
++
++/* Break the operation into two parts and do prefetching in the middle */
++__attribute__((__always_inline__)) static inline int tcp_hdr_opt_lookup_p1(
++    const struct xdp_md* xdp,
++    bool is_ipv6,
++    struct real_definition** real,
++    struct packet_description* pckt,
++    pkt_state_t *pstate)
++{
++  __u32 server_id = 0;
++  int err = 0;
++  if (tcp_hdr_opt_lookup_server_id(xdp, is_ipv6, &server_id) ==
++      FURTHER_PROCESSING) {
++    return FURTHER_PROCESSING;
++  }
++  pstate->server_id = server_id;
++  __prefetch_server_id_map(server_id);
++  return 0;
++}
++
++__attribute__((__always_inline__)) static inline int tcp_hdr_opt_lookup_p2(
++    const struct xdp_md* xdp,
++    bool is_ipv6,
++    struct real_definition** real,
++    struct packet_description* pckt,
++    pkt_state_t *pstate)
++{
++  __u32 key = pstate->server_id;
++  __u32* real_pos = bpf_map_lookup_elem(&server_id_map, &key);
++  if (!real_pos) {
++    return FURTHER_PROCESSING;
++  }
++  key = *real_pos;
++  if (key == 0) {
++    // Since server_id_map is a bpf_map_array all its members are 0-initialized
++    // This can lead to a false match for non-existing key to real at index 0.
++    // So, just skip key of value 0 to avoid misrouting of packets.
++    return FURTHER_PROCESSING;
++  }
++  pckt->real_index = key;
++  *real = bpf_map_lookup_elem(&reals, &key);
++  if (!(*real)) {
++    return FURTHER_PROCESSING;
++  }
++  return 0;
++}
++#endif
++
+ #endif // TCP_SERVER_ID_ROUTING
+ 
+ __attribute__((__always_inline__)) static inline struct quic_parse_result
+-- 
+2.34.1
+

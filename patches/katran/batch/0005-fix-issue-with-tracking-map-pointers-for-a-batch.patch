@@ -1,7 +1,7 @@
 From 3cc7d38ad872a59705ae855934ba5603d5183b06 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Tue, 21 Oct 2025 07:16:35 -0600
-Subject: [PATCH 5/7] fix issue with tracking map pointers for a batch
+Subject: [PATCH 5/8] fix issue with tracking map pointers for a batch
 
 ---
  katran/lib/KatranLb.h                   |    3 +-
