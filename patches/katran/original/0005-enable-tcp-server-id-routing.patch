@@ -1,0 +1,39 @@
+From d2bd12a17b257439efc02aeddd8d467167d37427 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Fri, 31 Oct 2025 14:06:27 -0600
+Subject: [PATCH 5/5] enable tcp server id routing
+
+---
+ katran/lib/Makefile-bpf       | 2 +-
+ katran/lib/bpf/balancer.bpf.c | 5 +++++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/katran/lib/Makefile-bpf b/katran/lib/Makefile-bpf
+index 27a12200..a779c2c7 100644
+--- a/katran/lib/Makefile-bpf
++++ b/katran/lib/Makefile-bpf
+@@ -39,4 +39,4 @@ $(obj)/bpf/%.o: $(src)/katran/lib/bpf/%.c
+ 	$(CLANG) $(INCLUDEFLAGS) $(EXTRA_CFLAGS) \
+ 	$(DEBUGBPF) -D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
+ 		-Wno-compare-distinct-pointer-types \
+-		-O2 -emit-llvm -c -g $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
++		-target bpf -O2 -emit-llvm -c -g $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index 0521d6b5..62dc6aa3 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -3,6 +3,11 @@
+  * This is main balancer's application code
+  */
+ 
++#ifndef __bpf__
++#define __bpf__
++#endif
++#define TCP_SERVER_ID_ROUTING
++
+ #include <linux/in.h>
+ #include <linux/ip.h>
+ #include <linux/ipv6.h>
+-- 
+2.34.1
+

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODE=original
+MODE=NOT_SET
 EXP=SERVER_ID_ROUTING
 
 # Generate traffic towards this IP
@@ -127,6 +127,11 @@ parse_args() {
 				;;
 		esac
 	done
+
+	if [ $MODE = NOT_SET ]; then
+		echo "Explicitly define katran version [--baseline or --batch]"
+		exit 1
+	fi
 
 
 	KATRAN_DIR=$OTHERS/katran_bins/$MODE

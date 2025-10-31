@@ -1,7 +1,7 @@
 From c8cdc19b338e8decf13b2ba1a68ac20fe9544816 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sat, 25 Oct 2025 05:18:16 -0600
-Subject: [PATCH 4/4] fix build error
+Subject: [PATCH 4/5] fix build error
 
 ---
  katran/lib/CMakeLists.txt | 6 +++---
