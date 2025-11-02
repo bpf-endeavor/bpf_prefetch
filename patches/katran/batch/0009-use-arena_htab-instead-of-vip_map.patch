@@ -1,0 +1,660 @@
+From aaf5487692b0d8f5a6c4db1292ab3382a9d622d6 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Sun, 2 Nov 2025 15:24:34 -0700
+Subject: [PATCH 9/9] use arena_htab instead of vip_map
+
+---
+ katran/lib/KatranLb.cpp       |  85 +++++----
+ katran/lib/bpf/balancer.bpf.c | 339 ++++++++++++++++++++++++----------
+ 2 files changed, 290 insertions(+), 134 deletions(-)
+
+diff --git a/katran/lib/KatranLb.cpp b/katran/lib/KatranLb.cpp
+index b4a31e14..77a720ea 100644
+--- a/katran/lib/KatranLb.cpp
++++ b/katran/lib/KatranLb.cpp
+@@ -36,9 +36,15 @@
+ #include "katran/lib/KatranLbStructs.h"
+ #include "katran/lib/KatranMonitor.h"
+ 
+-extern "C" {
++#define USE_HTAB_FOR_VIP_MAP
++
++#ifdef USE_HTAB_FOR_VIP_MAP
++typedef struct katran::vip_definition my_key_t;
++typedef struct katran::vip_meta my_value_t;
++// add this flag so that the library knows we are using custom key/value types
++#define HTAB_KEY_DEFINED 1
+ #include "arena-ds/htab.h"
+-}
++#endif
+ 
+ namespace katran {
+ 
+@@ -255,8 +261,11 @@ void KatranLb::initialSanityChecking(bool flowDebug, bool globalLru) {
+   maps.push_back(KatranLbMaps::lru_miss_stats);
+   maps.push_back(KatranLbMaps::vip_miss_stats);
+   maps.push_back(KatranLbMaps::vip_to_down_reals_map);
+-  /* maps.push_back(KatranLbMaps::vip_map_htab); */
+-  /* maps.push_back(KatranLbMaps::arena); */
++
++#ifdef USE_HTAB_FOR_VIP_MAP
++  maps.push_back(KatranLbMaps::vip_map_htab);
++  maps.push_back(KatranLbMaps::arena);
++#endif
+ 
+   if (flowDebug) {
+     maps.push_back(KatranLbMaps::flow_debug_maps);
+@@ -844,35 +853,37 @@ void KatranLb::loadBpfProgs() {
+                << folly::errnoStr(errno);
+   }
+ 
++#ifdef USE_HTAB_FOR_VIP_MAP
+   /// Initialize Arena htab
+-  /* void *htab_ptr = nullptr; */
+-
+-  /* size_t arena_sz = 0; */
+-  /* void *area = bpfAdapter_->getMapMMapAreaByName(KatranLbMaps::arena, &arena_sz); */
+-  /* if (area == nullptr) { */
+-  /*   LOG(ERROR) << "Failed to memory map '" << KatranLbMaps::arena */
+-  /*     << "' size: " <<  arena_sz */
+-  /*     << " error: " << folly::errnoStr(errno); */
+-  /*   throw std::runtime_error("failed to memory map arena"); */
+-  /* } */
+-
+-  /* const uint32_t max_entries = 512; // MAX_VIPS default: 512 */
+-  /* const size_t page_size = sysconf(_SC_PAGE_SIZE); */
+-  /* if (max_entries * page_size > arena_sz) { */
+-  /*   LOG(ERROR) << "Arena map does not have enough pages"  << std::endl; */
+-  /*   throw std::runtime_error("failed to populate arena map!"); */
+-  /* } */
+-
+-  /* // use the helper function from the library to initialize the htab */
+-  /* htab_init_userspace(area, max_entries, &htab_ptr); */
+-  /* htab_ = (void *)htab_ptr; */
+-  /* LOG(INFO) << "init htab_ addr: " << htab_ << std::endl; */
+-
+-  /* // write the pointer to the map */
+-  /* int zero = 0; */
+-  /* int htab_ptr_map_fd = bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map_htab); */
+-  /* bpfAdapter_->bpfUpdateMap(htab_ptr_map_fd, &zero, &htab_ptr, BPF_ANY); */
++  void *htab_ptr = nullptr;
++
++  size_t arena_sz = 0;
++  void *area = bpfAdapter_->getMapMMapAreaByName(KatranLbMaps::arena, &arena_sz);
++  if (area == nullptr) {
++    LOG(ERROR) << "Failed to memory map '" << KatranLbMaps::arena
++      << "' size: " <<  arena_sz
++      << " error: " << folly::errnoStr(errno);
++    throw std::runtime_error("failed to memory map arena");
++  }
++
++  const uint32_t max_entries = 512; // MAX_VIPS default: 512
++  const size_t page_size = sysconf(_SC_PAGE_SIZE);
++  if (max_entries * page_size > arena_sz) {
++    LOG(ERROR) << "Arena map does not have enough pages"  << std::endl;
++    throw std::runtime_error("failed to populate arena map!");
++  }
++
++  // use the helper function from the library to initialize the htab
++  htab_init_userspace(area, max_entries, &htab_ptr);
++  htab_ = (void *)htab_ptr;
++  LOG(INFO) << "init htab_ addr: " << htab_ << std::endl;
++
++  // write the pointer to the map
++  int zero = 0;
++  int htab_ptr_map_fd = bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map_htab);
++  bpfAdapter_->bpfUpdateMap(htab_ptr_map_fd, &zero, &htab_ptr, BPF_ANY);
+   // -------------
++#endif
+ }
+ 
+ bool KatranLb::reloadBalancerProg(
+@@ -3027,9 +3038,12 @@ bool KatranLb::updateVipMap(
+     vip_meta* meta) {
+   vip_definition vip_def = vipKeyToVipDefinition(vip);
+   if (action == ModifyAction::ADD) {
++#ifdef USE_HTAB_FOR_VIP_MAP
++    int res = htab_update_elem_userspace(htab_, &vip_def, meta);
++#else
+     auto res = bpfAdapter_->bpfUpdateMap(
+         bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map), &vip_def, meta);
+-    /* int res = htab_update_elem_userspace(htab_, &vip_def, meta); */
++#endif
+     if (res != 0) {
+       LOG(ERROR) << "can't add new element into vip_map, error: "
+                  << folly::errnoStr(errno);
+@@ -3039,9 +3053,12 @@ bool KatranLb::updateVipMap(
+     LOG(INFO) << "Update VIP" << std::endl;
+     LOG(INFO) << "update htab_ addr: " << htab_ << std::endl;
+   } else {
+-    /* auto res = bpfAdapter_->bpfMapDeleteElement( */
+-    /*     bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map), &vip_def); */
++#ifdef USE_HTAB_FOR_VIP_MAP
+     int res = -1; // not implemented
++#else
++    auto res = bpfAdapter_->bpfMapDeleteElement(
++        bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map), &vip_def);
++#endif
+     if (res != 0) {
+       LOG(ERROR) << "can't delete element from vip_map, error: "
+                  << folly::errnoStr(errno);
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index 31b77304..9910e9da 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -9,6 +9,7 @@
+ 
+ #define TCP_SERVER_ID_ROUTING // enable server id routing
+ #define MY_2PHASE_OPT_LOOKUP
++#define USE_HTAB_FOR_VIP_MAP
+ #define PREFETCH 1
+ 
+ #include <stdbool.h>
+@@ -33,8 +34,6 @@
+ #include "katran/lib/bpf/pckt_parsing.h"
+ 
+ #include "honey/prefetching.h"
+-// #include "honey/batch_processing.h"
+-
+ 
+ /* Some macros to ease working with a batch */
+ #define ACTION(act, index) batch->actions[index] = act
+@@ -45,27 +44,28 @@
+ // Farbod: in order to prefetch I am using a htab implemenetation in Arena
+ // (seethrough hashmap)
+ #define USING_ARENA_HTAB
+-/* long my_kfunc_reg_arena(void *p__map) __ksym; */
+-/* typedef struct vip_definition my_key_t; */
+-/* typedef struct vip_meta my_value_t; */
++long my_kfunc_reg_arena(void *p__map) __ksym;
++typedef struct vip_definition my_key_t;
++typedef struct vip_meta my_value_t;
+ // add this flag so that the library knows we are using custom key/value types
+-/* #define HTAB_KEY_DEFINED */
+-/* struct { */
+-/*   __uint(type, BPF_MAP_TYPE_ARENA); */
+-/*   __uint(map_flags, BPF_F_MMAPABLE); */
+-/*   __uint(max_entries, 100000); /1* number of pages *1/ */
+-/* } arena SEC(".maps"); */
+-/* #include "arena-ds/htab.h" */
++#define HTAB_KEY_DEFINED
++struct {
++  __uint(type, BPF_MAP_TYPE_ARENA);
++  __uint(map_flags, BPF_F_MMAPABLE);
++  __uint(max_entries, 100000); /* number of pages */
++  __uint(map_extra, 0x500000);
++} arena SEC(".maps");
++#include "arena-ds/htab.h"
+ 
+ // userspace program should initialize this
+-/* struct { */
+-/*   __uint(type, BPF_MAP_TYPE_ARRAY); */
+-/*   __type(key, int); */
+-/*   __type(value, __u64); */
+-/*   __uint(max_entries, 1); */
+-/*   /1* __uint(map_flags, BPF_F_MMAPABLE); *1/ */
+-/*   __uint(map_flags, NO_FLAGS); */
+-/* } vip_map_htab SEC(".maps"); */
++struct {
++  __uint(type, BPF_MAP_TYPE_ARRAY);
++  __type(key, int);
++  __type(value, __u64);
++  __uint(max_entries, 1);
++  /* __uint(map_flags, BPF_F_MMAPABLE); */
++  __uint(map_flags, NO_FLAGS);
++} vip_map_htab SEC(".maps");
+ // ------------------------------------
+ 
+ // Farbod: test if using these will help
+@@ -77,6 +77,113 @@
+ # define unlikely(X)		__builtin_expect(!!(X), 0)
+ #endif
+ 
++// Farbod: Kudos to Cilium project
++/* Memory iterators used below. */
++#define __it_bwd(x, op) (x -= sizeof(__u##op))
++
++/* Memory operators used below. */
++#define __it_set(a, op) (*(__u##op *)__it_bwd(a, op)) = 0
++#define fallthrough ;
++
++static __always_inline void __bpf_memzero(void *d, int _, __u64 len)
++{
++  if (!__builtin_constant_p(len))
++    __builtin_trap();
++
++  d += len;
++
++  if (len > 1 && len % 2 == 1) {
++    __it_set(d, 8);
++    len -= 1;
++  }
++
++  switch (len) {
++    case 128:          __it_set(d, 64); fallthrough;
++    case 120: jmp_120: __it_set(d, 64); fallthrough;
++    case 112: jmp_112: __it_set(d, 64); fallthrough;
++    case 104: jmp_104: __it_set(d, 64); fallthrough;
++    case  96: jmp_96:  __it_set(d, 64); fallthrough;
++    case  88: jmp_88:  __it_set(d, 64); fallthrough;
++    case  80: jmp_80:  __it_set(d, 64); fallthrough;
++    case  72: jmp_72:  __it_set(d, 64); fallthrough;
++    case  64: jmp_64:  __it_set(d, 64); fallthrough;
++    case  56: jmp_56:  __it_set(d, 64); fallthrough;
++    case  48: jmp_48:  __it_set(d, 64); fallthrough;
++    case  40: jmp_40:  __it_set(d, 64); fallthrough;
++    case  32: jmp_32:  __it_set(d, 64); fallthrough;
++    case  24: jmp_24:  __it_set(d, 64); fallthrough;
++    case  16: jmp_16:  __it_set(d, 64); fallthrough;
++    case   8: jmp_8:   __it_set(d, 64);
++              break;
++
++    case 126: __it_set(d, 16); __it_set(d, 32); goto jmp_120;
++    case 118: __it_set(d, 16); __it_set(d, 32); goto jmp_112;
++    case 110: __it_set(d, 16); __it_set(d, 32); goto jmp_104;
++    case 102: __it_set(d, 16); __it_set(d, 32); goto jmp_96;
++    case  94: __it_set(d, 16); __it_set(d, 32); goto jmp_88;
++    case  86: __it_set(d, 16); __it_set(d, 32); goto jmp_80;
++    case  78: __it_set(d, 16); __it_set(d, 32); goto jmp_72;
++    case  70: __it_set(d, 16); __it_set(d, 32); goto jmp_64;
++    case  62: __it_set(d, 16); __it_set(d, 32); goto jmp_56;
++    case  54: __it_set(d, 16); __it_set(d, 32); goto jmp_48;
++    case  46: __it_set(d, 16); __it_set(d, 32); goto jmp_40;
++    case  38: __it_set(d, 16); __it_set(d, 32); goto jmp_32;
++    case  30: __it_set(d, 16); __it_set(d, 32); goto jmp_24;
++    case  22: __it_set(d, 16); __it_set(d, 32); goto jmp_16;
++    case  14: __it_set(d, 16); __it_set(d, 32); goto jmp_8;
++    case   6: __it_set(d, 16); __it_set(d, 32);
++              break;
++
++    case 124: __it_set(d, 32); goto jmp_120;
++    case 116: __it_set(d, 32); goto jmp_112;
++    case 108: __it_set(d, 32); goto jmp_104;
++    case 100: __it_set(d, 32); goto jmp_96;
++    case  92: __it_set(d, 32); goto jmp_88;
++    case  84: __it_set(d, 32); goto jmp_80;
++    case  76: __it_set(d, 32); goto jmp_72;
++    case  68: __it_set(d, 32); goto jmp_64;
++    case  60: __it_set(d, 32); goto jmp_56;
++    case  52: __it_set(d, 32); goto jmp_48;
++    case  44: __it_set(d, 32); goto jmp_40;
++    case  36: __it_set(d, 32); goto jmp_32;
++    case  28: __it_set(d, 32); goto jmp_24;
++    case  20: __it_set(d, 32); goto jmp_16;
++    case  12: __it_set(d, 32); goto jmp_8;
++    case   4: __it_set(d, 32);
++              break;
++
++    case 122: __it_set(d, 16); goto jmp_120;
++    case 114: __it_set(d, 16); goto jmp_112;
++    case 106: __it_set(d, 16); goto jmp_104;
++    case  98: __it_set(d, 16); goto jmp_96;
++    case  90: __it_set(d, 16); goto jmp_88;
++    case  82: __it_set(d, 16); goto jmp_80;
++    case  74: __it_set(d, 16); goto jmp_72;
++    case  66: __it_set(d, 16); goto jmp_64;
++    case  58: __it_set(d, 16); goto jmp_56;
++    case  50: __it_set(d, 16); goto jmp_48;
++    case  42: __it_set(d, 16); goto jmp_40;
++    case  34: __it_set(d, 16); goto jmp_32;
++    case  26: __it_set(d, 16); goto jmp_24;
++    case  18: __it_set(d, 16); goto jmp_16;
++    case  10: __it_set(d, 16); goto jmp_8;
++    case   2: __it_set(d, 16);
++              break;
++
++    case  1: __it_set(d, 8);
++             break;
++
++    default:
++             /* __builtin_memset() is crappy slow since it cannot
++              * make any assumptions about alignment & underlying
++              * efficient unaligned access on the target we're
++              * running.
++              */
++             __builtin_trap();
++  }
++}
++
++
+ static inline __attribute__((always_inline))
+ batch_state_t *get_batch_state(void)
+ {
+@@ -770,32 +877,33 @@ __attribute__((__always_inline__)) static inline int check_udp_flow_migration(
+ }
+ 
+ #define DROP_AND_CONTINUE() {pstate->phase = DONE; DROP(k); continue;}
+-// #define BATCH_SIZE 8
+-#define BATCH_SIZE XDP_MAX_BATCH_SIZE
+-
+-/* static inline __attribute__((always_inline)) */
+-/* htab_t *__get_vip_map(void) */
+-/* { */
+-/*   int zero = 0; */
+-/*   void *ptr = bpf_map_lookup_elem(&vip_map_htab, &zero); */
+-/*   if (ptr == NULL) { */
+-/*     // this must never happen! */
+-/*     return NULL; */
+-/*   } */
+-
+-/*   // ptr is a pointer to addrses of htab :) */
+-/*   htab_t *h = *(htab_t **)ptr; */
+-/*   if (h == NULL) { */
+-/*     // we have some issue in user-space program */
+-/*     bpf_printk("arena htab is not initialized!"); */
+-/*     // make sure arena is associated with this program */
+-/*     my_kfunc_reg_arena(&arena); */
+-/*   } */
+-
+-/*   bpf_printk("before: arena htab: %p", h); */
+-/*   bpf_printk("arena htab: %p", h); */
+-/*   return h; */
+-/* } */
++#define BATCH_SIZE 8
++// #define BATCH_SIZE XDP_MAX_BATCH_SIZE
++
++#ifdef USE_HTAB_FOR_VIP_MAP
++static inline __attribute__((always_inline))
++htab_t *__get_vip_map(void)
++{
++  int zero = 0;
++  void *ptr = bpf_map_lookup_elem(&vip_map_htab, &zero);
++  if (ptr == NULL) {
++    // this must never happen!
++    return NULL;
++  }
++
++  // ptr is a pointer to addrses of htab :)
++  void *tmp = *(void **)ptr;
++  if (tmp == NULL) {
++    // we have some issue in user-space program
++    bpf_printk("arena htab is not initialized!");
++    // make sure arena is associated with this program
++    my_kfunc_reg_arena(&arena);
++  }
++  cast_kern(tmp);
++  htab_t *h = (htab_t *)tmp;
++  return h;
++}
++#endif
+ 
+ SEC(PROG_SEC_NAME)
+ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+@@ -804,12 +912,16 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+   /* bpf_printk("balancer ingress: batch size: %d", batch->size); */
+   LOAD_BATCH_STATE();
+ 
+-  /* htab_t __arena *_vip_map = __get_vip_map(); */
+-  /* if (_vip_map == NULL) { */
+-  /*   return 0; */
+-  /* } */
++#ifdef USE_HTAB_FOR_VIP_MAP
++  htab_t __arena *_vip_map = __get_vip_map();
++  if (_vip_map == NULL) {
++    return 0;
++  }
++#endif
++
++  const __u8 count_packets = batch->size;
+ 
+-  if (batch->size > BATCH_SIZE) {
++  if (count_packets > BATCH_SIZE) {
+     bpf_printk("Error: miss configuration driver's batch size is larger than Katran's!");
+     return 0;
+   }
+@@ -824,7 +936,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+   }
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+ 
+     pkt_state_t *pstate = &bs->S[k];
+@@ -857,18 +969,18 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     }
+ 
+     pstate->phase = PARSE_HEADER;
+-    memset(&pstate->pckt, 0, sizeof(struct packet_description));
+-    memset(&pstate->vip, 0, sizeof(struct vip_definition));
++    __bpf_memzero(&pstate->pckt, 0, sizeof(struct packet_description));
++    __bpf_memzero(&pstate->vip, 0, sizeof(struct vip_definition));
+     pstate->vip_num = 0;
+     pstate->original_sport = 0;
+     pstate->pkt_bytes = 0;
+-    memset(&pstate->dst, 0, sizeof(pstate->dst));
+-    memset(&pstate->vip_info, 0, sizeof(struct vip_meta));
++    __bpf_memzero(&pstate->dst, 0, sizeof(pstate->dst));
++    __bpf_memzero(&pstate->vip_info, 0, sizeof(struct vip_meta));
+     continue;
+   }
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != PARSE_HEADER)
+@@ -995,7 +1107,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+   }
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != FIND_VIP)
+@@ -1010,14 +1122,20 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     pstate->vip.port = pstate->pckt.flow.port16[1];
+     pstate->vip.proto = pstate->pckt.flow.proto;
+ 
++#ifdef USE_HTAB_FOR_VIP_MAP
++    struct vip_meta __arena * vip_info;
++    vip_info = htab_lookup_elem(_vip_map, &pstate->vip);
++#else
+     struct vip_meta* vip_info;
+-    /* struct vip_meta __arena * vip_info; */
+     vip_info = bpf_map_lookup_elem(&vip_map, &pstate->vip);
+-    /* vip_info = htab_lookup_elem(_vip_map, &pstate->vip); */
++#endif
+     if (!vip_info) {
+       pstate->vip.port = 0;
++#ifdef USE_HTAB_FOR_VIP_MAP
++      vip_info = htab_lookup_elem(_vip_map, &pstate->vip);
++#else
+       vip_info = bpf_map_lookup_elem(&vip_map, &pstate->vip);
+-      /* vip_info = htab_lookup_elem(_vip_map, &pstate->vip); */
++#endif
+       if (!vip_info) {
+         pstate->phase = DONE;
+         PASS(k);
+@@ -1103,7 +1221,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+   }
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != SERVER_ID_MATCHING)
+@@ -1256,6 +1374,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+           if (res == FURTHER_PROCESSING) {
+             /* bpf_printk("phase 1 failed"); */
+             tpr_packets_stats->ch_routed += 1;
++            pstate->phase = LRU_LOOKUP;
+             continue;
+           }
+           pstate->phase = TCP_HDR_OPT_LOOKUP_2;
+@@ -1297,7 +1416,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ 
+ #if defined(TCP_SERVER_ID_ROUTING) && defined(MY_2PHASE_OPT_LOOKUP)
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != TCP_HDR_OPT_LOOKUP_2)
+@@ -1348,7 +1467,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ #endif
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != LRU_LOOKUP)
+@@ -1500,30 +1619,16 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+   LOAD_BATCH_STATE();
+ 
+   struct lb_stats* data_stats;
+-
+-  struct ctl_value* cval;
++  const __u8 count_packets = batch->size;
+   __u32 mac_addr_pos = 0;
+-  cval = bpf_map_lookup_elem(&ctl_array, &mac_addr_pos);
++  struct ctl_value * const cval = bpf_map_lookup_elem(&ctl_array, &mac_addr_pos);
+   if (!cval) {
+     // this must never happen
+     return 0;
+   }
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
+-      break;
+-    pkt_state_t *pstate = &bs->S[k];
+-    if (pstate->phase != ENCAP_AND_TX)
+-      continue;
+-
+-    struct xdp_md *ctx = &batch->buffs[k];
+-    void *data = (void *)(long)ctx->data;
+-    void *ptr = data - sizeof(struct iphdr);
+-    P(ptr);
+-  }
+-
+-  for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != ENCAP_AND_TX)
+@@ -1535,8 +1640,6 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+       DROP_AND_CONTINUE();
+     }
+ 
+-    struct xdp_md *xdp = &batch->buffs[k];
+-
+     __u32 vip_num = pstate->vip_num;
+     data_stats = bpf_map_lookup_elem(&stats, &vip_num);
+     if (!data_stats) {
+@@ -1563,15 +1666,22 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+       continue;
+     }
+ #endif
+-
+-    // prefetch the encap headroom
+-    void *data = (void *)(long)xdp->data;
+-    void *ptr = data - sizeof(struct iphdr);
+-    P(ptr);
+   }
+ 
++  /* for (int k = 0; k < BATCH_SIZE; k++) { */
++  /*   if (k >= count_packets) */
++  /*     break; */
++  /*   pkt_state_t *pstate = &bs->S[k]; */
++  /*   if (pstate->phase != ENCAP_AND_TX) */
++  /*     continue; */
++  /*   struct xdp_md *xdp = &batch->buffs[k]; */
++  /*   void *data = (void *)(long)xdp->data; */
++  /*   P(data - 6); */
++  /* } */
++
++
+   for (int k = 0; k < BATCH_SIZE; k++) {
+-    if (k >= batch->size)
++    if (k >= count_packets)
+       break;
+     pkt_state_t *pstate = &bs->S[k];
+     if (pstate->phase != ENCAP_AND_TX)
+@@ -1598,6 +1708,11 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+     continue;
+   }
+ 
++  __u8 pass , drop , tx;
++  __u32 pbytes, dbytes, tbytes;
++  pass = drop = tx = 0;
++  pbytes = dbytes = tbytes = 0;
++
+   // update statistics
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+@@ -1610,32 +1725,56 @@ int bbb_encap_and_tx(struct xdp_batch_md* batch)
+       DROP(k);
+     }
+ 
+-    struct lb_stats* data_stats;
+-    __u32 stats_key;
++    struct xdp_md *xdp = &batch->buffs[k];
++    void *data = (void *)(long)xdp->data;
++    void *data_end = (void *)(long)xdp->data_end;
++    __u64 data_len = data_end - data;
+     int action = batch->actions[k];
+ 
+     if (action == XDP_PASS) {
+-      stats_key = MAX_VIPS + XDP_PASS_CNTR;
++      pass++;
++      pbytes += data_len;
+     } else if (action == XDP_DROP) {
+-      stats_key = MAX_VIPS + XDP_DROP_CNTR;
++      drop++;
++      dbytes += data_len;
+     } else if (action == XDP_TX) {
+-      stats_key = MAX_VIPS + XDP_TX_CNTR;
++      tx++;
++      tbytes += data_len;
+     } else {
+       bpf_printk("wrong verdict set for the packet!");
+       DROP_AND_CONTINUE();
+     }
++  }
+ 
++  __u32 stats_key;
++  if (pass) {
++    stats_key = MAX_VIPS + XDP_PASS_CNTR;
+     data_stats = bpf_map_lookup_elem(&stats, &stats_key);
+     if (!data_stats) {
+       return XDP_DROP;
+     }
+-    data_stats->v1 += 1;
++    data_stats->v1 += pass;
++    data_stats->v2 += pbytes;
++  }
+ 
+-    struct xdp_md *xdp = &batch->buffs[k];
+-    void *data = (void *)(long)xdp->data;
+-    void *data_end = (void *)(long)xdp->data_end;
+-    __u64 data_len = data_end - data;
+-    data_stats->v2 += data_len;
++  if (drop) {
++    stats_key = MAX_VIPS + XDP_DROP_CNTR;
++    data_stats = bpf_map_lookup_elem(&stats, &stats_key);
++    if (!data_stats) {
++      return XDP_DROP;
++    }
++    data_stats->v1 += drop;
++    data_stats->v2 += dbytes;
++  }
++
++  if (tx) {
++    stats_key = MAX_VIPS + XDP_TX_CNTR;
++    data_stats = bpf_map_lookup_elem(&stats, &stats_key);
++    if (!data_stats) {
++      return XDP_DROP;
++    }
++    data_stats->v1 += tx;
++    data_stats->v2 += tbytes;
+   }
+ 
+   return 0;
+-- 
+2.34.1
+

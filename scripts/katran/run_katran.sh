@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MODE=NOT_SET
-EXP=SERVER_ID_ROUTING
+EXP=NOT_SET
 
 # Generate traffic towards this IP
 VIRTUAL_IP=10.10.0.1
@@ -59,8 +59,7 @@ start_server() {
 		-shutdown_delay 1000"
 	echo "$CMD"
 	log_file=/tmp/katran_server_log.txt
-	$(sudo sh -c "$CMD" &> $log_file) &
-	disown $!
+	$(sudo -b sh -c "$CMD" &> $log_file < /dev/null) &
 }
 
 config_lb() {
@@ -76,10 +75,13 @@ config_lb() {
 		$CLIENT -l
 		echo Configuring server id map ...
 		sudo $FILL_SERVER_ID_PROG
-	else
+	elif [ $EXP = LRU_CACHE_ROUTING ]; then
 		$CLIENT -A -t $VIRTUAL_IP:$SERVICE_PORT
 		$CLIENT -a -t $VIRTUAL_IP:$SERVICE_PORT -r $OTHER_SERVER_IP
 		$CLIENT -l
+	else
+		echo "Unknown experiment scenario: $EXP"
+		exit 1
 	fi
 }
 
@@ -114,11 +116,19 @@ parse_args() {
 				;;
 			--batch)
 				MODE=batch
-				shift; shift
+				shift;
 				;;
 			--baseline)
 				MODE=original
-				shift; shift
+				shift;
+				;;
+			--id-routing)
+				EXP=SERVER_ID_ROUTING
+				shift;
+				;;
+			--lru-routing)
+				EXP=LRU_CACHE_ROUTING
+				shift;
 				;;
 			*)
 				echo unrecognized argument!
@@ -133,6 +143,10 @@ parse_args() {
 		exit 1
 	fi
 
+	if [ $EXP = NOT_SET ]; then
+		echo "Explicitly define the experiment scenario [--id-routing or --lru-routing]"
+		exit 1
+	fi
 
 	KATRAN_DIR=$OTHERS/katran_bins/$MODE
 	CLIENT=$KATRAN_DIR/katran_client
@@ -151,7 +165,7 @@ main() {
 	fi
 
 	start_server
-	sleep 10
+	sleep 15
 
 	pidof katran_server_grpc > /dev/null
 	if [ $? -ne 0 ]; then
