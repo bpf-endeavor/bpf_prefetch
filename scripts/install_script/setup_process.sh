@@ -28,6 +28,8 @@ PROCESS=(
 	install_kernel_tools
 	bring_bmc
 	bring_arena_kmod
-	bring_katran
+	bring_katran_p1
+	bring_katran_p2
+	bring_katran_p3
 )
 

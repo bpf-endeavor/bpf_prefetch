@@ -91,12 +91,14 @@ bring_bmc() {
 }
 
 install_go() {
-	cd $HOME
-	which go > /dev/null
-	if [ $? -eq 0 ]; then
+	pushd $HOME
+	status=$(which go > /dev/null || echo $?)
+	if [ $status -eq 0 ]; then
+		echo "here"
 		V=$(go version | cut -d ' ' -f 3)
 		if [ $V = go1.22.3 ]; then
 			# we have already installed go
+			echo "Go already exists"
 			return
 		fi
 	fi
@@ -107,9 +109,11 @@ install_go() {
 	sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.22.3.linux-amd64.tar.gz
 	echo "export PATH=\$PATH:/usr/local/go/bin:$HOME/go/bin" | tee -a $HOME/.bashrc
 	export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+	rm -r $HOME/go_tmp_dir/
+	popd
 }
 
-bring_katran() {
+bring_katran_p1() {
 	KATRAN_DIR=$THIRD/katran
 	if [ -d $KATRAN_DIR ]; then
 		echo 'Katran directory already exists'
@@ -122,25 +126,43 @@ bring_katran() {
 	git checkout $SHA
 
 	bash ./build_katran.sh
+}
 
+bring_katran_p2() {
+	KATRAN_DIR=$THIRD/katran
+	cd $KATRAN_DIR || exit 1
 	# Remove older version of go
-	sudo apt -y purge $(sudo apt list --installed 2> /dev/null | grep ^go | cut -d / -f 1)
+	sudo apt -y purge $(sudo apt list --installed 2> /dev/null | grep ^go | cut -d / -f 1) || true
 
 	# Install a newer version of go
 	install_go
 
 	# Compile the grpc client
 	cd $KATRAN_DIR/example_grpc/
-	sudo apt install protobuf-compiler
+	sudo apt install -y protobuf-compiler
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
 	go_bin=$HOME/go/bin
 	cp $go_bin/protoc-gen-go-grpc $go_bin/protoc-gen-go_grpc
 	cd ../
+}
+
+bring_katran_p3() {
+	SHA=bce70c8c4c13fd6e2d9786503f1472e2ca493cfb
+	KATRAN_DIR=$THIRD/katran
+	cd $KATRAN_DIR || exit 1
 
 	# Apply patches
 	PATCH_DIR=$(realpath $ROOTDIR/patches/katran)
 	for branch_name in $(ls $PATCH_DIR); do
+		git checkout $SHA
+		git checkout .
+		git clean -f
+
+		if [ -n "$(git branch | grep $branch_name)" ]; then
+			git branch -D $branch_name
+		fi
+
 		# create a branch and apply the patch
 		git checkout -b $branch_name
 		git am $PATCH_DIR/$branch_name/*.patch
@@ -163,6 +185,7 @@ bring_katran() {
 		git checkout $SHA
 		# Make sure we have discarded every change
 		git checkout .
+		git clean -f
 	done
 }
 
