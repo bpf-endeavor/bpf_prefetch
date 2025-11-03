@@ -266,8 +266,8 @@ static inline size_t round_up_pow_two(size_t x)
     return round_down_pow_two(x) << 1;
 }
 
-static inline int htab_init_userspace(void *area, __u32 max_entries,
-        htab_t **htab_ptr /* out */)
+static inline int htab_init_userspace_2(void *area, __u32 max_entries,
+        htab_t **htab_ptr /* out */, uint32_t *used_pages /* out */)
 {
 #define COUNT_OBJ(A, B) ((((A) + (B)) - 1) / (B))
 #define ROUND_UP(N, S) (COUNT_OBJ(N, S) * (S))
@@ -298,6 +298,10 @@ static inline int htab_init_userspace(void *area, __u32 max_entries,
         }
     }
 
+    if (used_pages != NULL) {
+        *used_pages = count_pages;
+    }
+
     htab_t *htab = area;
     void __arena *buckets = area + htab_size_rounded;
     void __arena *elems = area + (count_bucket_page * PAGE_SIZE);
@@ -314,6 +318,12 @@ static inline int htab_init_userspace(void *area, __u32 max_entries,
 
     *htab_ptr = htab;
     return 0;
+}
+
+static inline int htab_init_userspace(void *area, __u32 max_entries,
+        htab_t **htab_ptr /* out */)
+{
+    return htab_init_userspace_2(area, max_entries, htab_ptr, NULL);
 }
 
 static inline int htab_update_elem_userspace(htab_t *htab,

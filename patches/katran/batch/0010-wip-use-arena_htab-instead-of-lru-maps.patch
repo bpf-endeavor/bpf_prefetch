@@ -1,0 +1,420 @@
+From 628d9bc41e625406fcfd5df08248a0ff4197c8b9 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Sun, 2 Nov 2025 17:51:10 -0700
+Subject: [PATCH 10/10] wip: use arena_htab instead of lru maps
+
+---
+ katran/lib/KatranLb.cpp       |  60 +++++++++++++++--
+ katran/lib/KatranLb.h         |   2 +-
+ katran/lib/bpf/balancer.bpf.c | 118 +++++++++++++++++++---------------
+ 3 files changed, 121 insertions(+), 59 deletions(-)
+
+diff --git a/katran/lib/KatranLb.cpp b/katran/lib/KatranLb.cpp
+index 77a720ea..efa06f35 100644
+--- a/katran/lib/KatranLb.cpp
++++ b/katran/lib/KatranLb.cpp
+@@ -37,6 +37,7 @@
+ #include "katran/lib/KatranMonitor.h"
+ 
+ #define USE_HTAB_FOR_VIP_MAP
++#define USE_HTAB_FOR_LRU_MAP
+ 
+ #ifdef USE_HTAB_FOR_VIP_MAP
+ typedef struct katran::vip_definition my_key_t;
+@@ -263,7 +264,7 @@ void KatranLb::initialSanityChecking(bool flowDebug, bool globalLru) {
+   maps.push_back(KatranLbMaps::vip_to_down_reals_map);
+ 
+ #ifdef USE_HTAB_FOR_VIP_MAP
+-  maps.push_back(KatranLbMaps::vip_map_htab);
++  maps.push_back(KatranLbMaps::htab_ptr_map);
+   maps.push_back(KatranLbMaps::arena);
+ #endif
+ 
+@@ -479,7 +480,7 @@ void KatranLb::initLrus(bool flowDebug, bool globalLru) {
+     if (numaNodes_.size() != 0) {
+       if (numaNodes_.size() != forwardingCores_.size()) {
+         throw std::runtime_error(
+-            "numaNodes size mut be equal to forwardingCores");
++            "numaNodes size must be equal to forwardingCores");
+       }
+       numa_mapping_specified = true;
+     }
+@@ -763,7 +764,9 @@ void KatranLb::loadBpfProgs() {
+       config_.balancerProgPath, KatranLbMaps::flow_debug_maps);
+   globalLruInProg = bpfAdapter_->isMapInBpfObject(
+       config_.balancerProgPath, KatranLbMaps::global_lru_maps);
++#ifndef USE_HTAB_FOR_LRU_MAP
+   initLrus(flowDebugInProg, globalLruInProg);
++#endif
+   if (flowDebugInProg) {
+     initFlowDebugPrototypeMap();
+   }
+@@ -839,7 +842,9 @@ void KatranLb::loadBpfProgs() {
+     introspectionStarted_ = true;
+   }
+ 
++#ifndef USE_HTAB_FOR_LRU_MAP
+   attachLrus(flowDebugInProg, globalLruInProg);
++#endif
+ 
+   vip_definition vip_def;
+   memset(&vip_def, 0, sizeof(vip_definition));
+@@ -853,7 +858,7 @@ void KatranLb::loadBpfProgs() {
+                << folly::errnoStr(errno);
+   }
+ 
+-#ifdef USE_HTAB_FOR_VIP_MAP
++#if defined(USE_HTAB_FOR_VIP_MAP) || defined(USE_HTAB_FOR_LRU_MAP)
+   /// Initialize Arena htab
+   void *htab_ptr = nullptr;
+ 
+@@ -866,22 +871,63 @@ void KatranLb::loadBpfProgs() {
+     throw std::runtime_error("failed to memory map arena");
+   }
+ 
+-  const uint32_t max_entries = 512; // MAX_VIPS default: 512
+   const size_t page_size = sysconf(_SC_PAGE_SIZE);
++  uint32_t used_pages = 0;
++  uint32_t total_used_pages = 0;
++  size_t offset = 0;
++  int htab_ptr_map_fd = bpfAdapter_->getMapFdByName(KatranLbMaps::htab_ptr_map);
++
++#ifdef USE_HTAB_FOR_VIP_MAP
++  const uint32_t max_entries = 512; // MAX_VIPS default: 512
+   if (max_entries * page_size > arena_sz) {
+     LOG(ERROR) << "Arena map does not have enough pages"  << std::endl;
+     throw std::runtime_error("failed to populate arena map!");
+   }
+ 
+   // use the helper function from the library to initialize the htab
+-  htab_init_userspace(area, max_entries, &htab_ptr);
++  used_pages = 0;
++  htab_init_userspace_2(area, max_entries, &htab_ptr, &used_pages);
+   htab_ = (void *)htab_ptr;
+-  LOG(INFO) << "init htab_ addr: " << htab_ << std::endl;
++
++  LOG(INFO) << "Arena: used pages: " << used_pages << std::endl;
++  total_used_pages += used_pages;
+ 
+   // write the pointer to the map
+   int zero = 0;
+-  int htab_ptr_map_fd = bpfAdapter_->getMapFdByName(KatranLbMaps::vip_map_htab);
+   bpfAdapter_->bpfUpdateMap(htab_ptr_map_fd, &zero, &htab_ptr, BPF_ANY);
++#endif
++
++#ifdef USE_HTAB_FOR_LRU_MAP
++  const uint32_t per_core_lru_size = config_.LruSize / forwardingCores_.size();
++  for (int i = 0; i < forwardingCores_.size(); i++) {
++    auto core = forwardingCores_[i];
++    if ((core > kMaxForwardingCores) || core < 0) {
++      LOG(FATAL) << "got core# " << core
++        << " which is not in supported range: [ 0: "
++        << kMaxForwardingCores << " ]";
++      throw std::runtime_error("unsuported number of forwarding cores");
++    }
++
++    offset = total_used_pages * page_size;
++    if (offset > arena_sz) {
++      throw std::runtime_error("not enough arena memory!");
++    }
++
++    void *tmp_area = area + offset;
++    used_pages = 0;
++    htab_init_userspace_2(tmp_area, per_core_lru_size, &htab_ptr, &used_pages);
++
++    LOG(INFO) << "Arena: used pages: " << used_pages << std::endl;
++    total_used_pages += used_pages;
++    if (total_used_pages * page_size > arena_sz) {
++      throw std::runtime_error("not enough arena memory (2)!");
++    }
++
++    uint32_t key = core + 1;
++    bpfAdapter_->bpfUpdateMap(htab_ptr_map_fd, &key, &htab_ptr, BPF_ANY);
++  }
++#endif
++
+   // -------------
+ #endif
+ }
+diff --git a/katran/lib/KatranLb.h b/katran/lib/KatranLb.h
+index ea6f0ce3..056f7311 100644
+--- a/katran/lib/KatranLb.h
++++ b/katran/lib/KatranLb.h
+@@ -133,7 +133,7 @@ constexpr auto stats = "stats";
+ constexpr auto vip_map = "vip_map";
+ constexpr auto vip_miss_stats = "vip_miss_stats";
+ constexpr auto vip_to_down_reals_map = "vip_to_down_reals_map";
+-constexpr auto vip_map_htab = "vip_map_htab";
++constexpr auto htab_ptr_map = "htab_ptr_map";
+ constexpr auto arena = "arena";
+ } // namespace KatranLbMaps
+ 
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index 9910e9da..6f114f83 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -10,6 +10,7 @@
+ #define TCP_SERVER_ID_ROUTING // enable server id routing
+ #define MY_2PHASE_OPT_LOOKUP
+ #define USE_HTAB_FOR_VIP_MAP
++#define USE_HTAB_FOR_LRU_MAP
+ #define PREFETCH 1
+ 
+ #include <stdbool.h>
+@@ -34,6 +35,7 @@
+ #include "katran/lib/bpf/pckt_parsing.h"
+ 
+ #include "honey/prefetching.h"
++#include "honey/report_throughput.h"
+ 
+ /* Some macros to ease working with a batch */
+ #define ACTION(act, index) batch->actions[index] = act
+@@ -62,13 +64,13 @@ struct {
+   __uint(type, BPF_MAP_TYPE_ARRAY);
+   __type(key, int);
+   __type(value, __u64);
+-  __uint(max_entries, 1);
++  __uint(max_entries, MAX_SUPPORTED_CPUS + 1);
+   /* __uint(map_flags, BPF_F_MMAPABLE); */
+   __uint(map_flags, NO_FLAGS);
+-} vip_map_htab SEC(".maps");
++} htab_ptr_map SEC(".maps");
+ // ------------------------------------
+ 
+-// Farbod: test if using these will help
++// TODO: test if using these will help
+ #ifndef likely
+ # define likely(X)		__builtin_expect(!!(X), 1)
+ #endif
+@@ -77,6 +79,7 @@ struct {
+ # define unlikely(X)		__builtin_expect(!!(X), 0)
+ #endif
+ 
++// TODO: test if it makes a difference
+ // Farbod: Kudos to Cilium project
+ /* Memory iterators used below. */
+ #define __it_bwd(x, op) (x -= sizeof(__u##op))
+@@ -197,6 +200,7 @@ batch_state_t *get_batch_state(void)
+   if (bs == NULL) { bpf_printk("failed to load batch state"); return XDP_ABORTED; }
+ 
+ 
++#ifdef MY_2PHASE_OPT_LOOKUP
+ static inline __attribute__((always_inline))
+ void __prefetch_server_id_map(__u32 server_id)
+ {
+@@ -205,17 +209,20 @@ void __prefetch_server_id_map(__u32 server_id)
+   void *ptr = (void *)addr;
+   P(ptr);
+ }
++#endif
+ 
+ static inline __attribute__((always_inline))
+ void __init(void)
+ {
+   int zero = 0;
++#ifdef MY_2PHASE_OPT_LOOKUP
+   if (server_id_map_base == 0) {
+     void* ptr = bpf_map_lookup_elem(&server_id_map, &zero);
+     if (!ptr)
+       return;
+    server_id_map_base = (__u64)ptr;
+   }
++#endif
+ }
+ 
+ /* --------------------------------------------------------------- */
+@@ -385,6 +392,7 @@ __attribute__((__always_inline__)) static inline void connection_table_lookup(
+   if (!dst_lru) {
+     return;
+   }
++  report_tput();
+   if (!isGlobalLru && pckt->flow.proto == IPPROTO_UDP) {
+     cur_time = bpf_ktime_get_ns();
+     if (cur_time - dst_lru->atime > LRU_UDP_TIMEOUT) {
+@@ -880,12 +888,12 @@ __attribute__((__always_inline__)) static inline int check_udp_flow_migration(
+ #define BATCH_SIZE 8
+ // #define BATCH_SIZE XDP_MAX_BATCH_SIZE
+ 
+-#ifdef USE_HTAB_FOR_VIP_MAP
++
++#if defined(USE_HTAB_FOR_VIP_MAP) || defined(USE_HTAB_FOR_LRU_MAP)
+ static inline __attribute__((always_inline))
+-htab_t *__get_vip_map(void)
++htab_t *__lookup_htab_ptr(__u32 key)
+ {
+-  int zero = 0;
+-  void *ptr = bpf_map_lookup_elem(&vip_map_htab, &zero);
++  void *ptr = bpf_map_lookup_elem(&htab_ptr_map, &key);
+   if (ptr == NULL) {
+     // this must never happen!
+     return NULL;
+@@ -903,6 +911,22 @@ htab_t *__get_vip_map(void)
+   htab_t *h = (htab_t *)tmp;
+   return h;
+ }
++
++#ifdef USE_HTAB_FOR_VIP_MAP
++static inline __attribute__((always_inline))
++htab_t *__get_vip_map(void)
++{
++  return __lookup_htab_ptr(0);
++}
++#endif
++
++#ifdef USE_HTAB_FOR_LRU_MAP
++static inline __attribute__((always_inline))
++htab_t *__get_lru_map(__u32 core)
++{
++  return __lookup_htab_ptr(core + 1);
++}
++#endif
+ #endif
+ 
+ SEC(PROG_SEC_NAME)
+@@ -913,7 +937,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+   LOAD_BATCH_STATE();
+ 
+ #ifdef USE_HTAB_FOR_VIP_MAP
+-  htab_t __arena *_vip_map = __get_vip_map();
++  htab_t *_vip_map = __get_vip_map();
+   if (_vip_map == NULL) {
+     return 0;
+   }
+@@ -935,6 +959,31 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     return 0;
+   }
+ 
++    const __u32 cpu_num = bpf_get_smp_processor_id();
++#ifdef USE_HTAB_FOR_LRU_MAP
++    void __arena * lru_map = __get_lru_map(cpu_num);
++    if (!lru_map) {
++      return 0;
++    }
++#else
++    void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
++    if (!lru_map) {
++      // Farbod: I disabled fallback cache
++      /* lru_map = &fallback_cache; */
++      __u32 lru_stats_key = MAX_VIPS + FALLBACK_LRU_CNTR;
++      struct lb_stats* lru_stats = bpf_map_lookup_elem(&stats, &lru_stats_key);
++      if (!lru_stats) {
++        return 0;
++      }
++      // We were not able to retrieve per cpu/core lru and falling back to
++      // default one. This counter should never be anything except 0 in prod.
++      // We are going to use it for monitoring.
++      lru_stats->v1 += 1;
++      return 0;
++    }
++#endif
++
++
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= count_packets)
+       break;
+@@ -1198,23 +1247,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ 
+     __u32 vip_num = vip_info->vip_num;
+     pstate->vip_num = vip_num;
+-    __u32 cpu_num = bpf_get_smp_processor_id();
+     pstate->cpu_num = cpu_num; // incase eBPF program is migrated
+-    void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-    if (!lru_map) {
+-      // Farbod: I disabled fallback cache
+-      /* lru_map = &fallback_cache; */
+-      __u32 lru_stats_key = MAX_VIPS + FALLBACK_LRU_CNTR;
+-      struct lb_stats* lru_stats = bpf_map_lookup_elem(&stats, &lru_stats_key);
+-      if (!lru_stats) {
+-        DROP_AND_CONTINUE();
+-      }
+-      // We were not able to retrieve per cpu/core lru and falling back to
+-      // default one. This counter should never be anything except 0 in prod.
+-      // We are going to use it for monitoring.
+-      lru_stats->v1 += 1;
+-      DROP_AND_CONTINUE();
+-    }
+ 
+     /* bpf_printk("go to server vip"); */
+     pstate->phase = SERVER_ID_MATCHING;
+@@ -1303,13 +1336,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+                 DROP_AND_CONTINUE();
+               }
+ 
+-              __u32 cpu_num = pstate->cpu_num;
+-              void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-              if (!lru_map) {
+-                // must never happen
+-                DROP_AND_CONTINUE();
+-              }
+-
+               int res = check_and_update_real_index_in_lru(&pstate->pckt, lru_map);
+               if (res == DST_MATCH_IN_LRU) {
+                 quic_packets_stats->dst_match_in_lru += 1;
+@@ -1385,9 +1411,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+             tpr_packets_stats->ch_routed += 1;
+           } else {
+ 
+-            __u32 cpu_num = pstate->cpu_num;
+-            void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-
+             // update this routing decision in the lru_map as well
+             if (lru_map && !(vip_info->flags & F_LRU_BYPASS)) {
+               int res = check_and_update_real_index_in_lru(&pstate->pckt, lru_map);
+@@ -1443,9 +1466,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       pstate->phase = LRU_LOOKUP; // continue with LRU lookup
+       continue;
+     } else {
+-      __u32 cpu_num = pstate->cpu_num;
+-      void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-
+       // update this routing decision in the lru_map as well
+       if (lru_map && !(vip_info->flags & F_LRU_BYPASS)) {
+         int res = check_and_update_real_index_in_lru(&pstate->pckt, lru_map);
+@@ -1482,13 +1502,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       dst_was_not_valid = false;
+     }
+ 
+-    __u32 cpu_num = pstate->cpu_num;
+-    void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-    if (!lru_map) {
+-      bpf_printk("LUR_LOOKUP: lru map not found!!!");
+-      DROP_AND_CONTINUE();
+-    }
+-
+     // Next, try to lookup dst in the lru_cache
+     if (!dst && !(pstate->pckt.flags & F_SYN_SET) &&
+         !(vip_info->flags & F_LRU_BYPASS)) {
+@@ -1536,6 +1549,16 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+   LOAD_BATCH_STATE();
+ 
+   struct lb_stats* data_stats;
++  //
++    const __u32 cpu_num = bpf_get_smp_processor_id();
++#ifdef USE_HTAB_FOR_LRU_MAP
++    void __arena * lru_map = __get_lru_map(cpu_num);
++#else
++    void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
++#endif
++    if (!lru_map) {
++      return 0;
++    }
+ 
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+@@ -1573,13 +1596,6 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+         }
+       }
+ 
+-      __u32 cpu_num = pstate->cpu_num;
+-      void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+-      if (!lru_map) {
+-        /* bpf_printk("failed to get lru_map (2)"); */
+-        DROP_AND_CONTINUE();
+-      }
+-
+       /* bpf_printk("doing hashing"); */
+       if (!get_packet_dst(&dst, &pstate->pckt, vip_info, pstate->is_ipv6, lru_map)) {
+         /* bpf_printk("failed to get packet dst"); */
+-- 
+2.34.1
+
