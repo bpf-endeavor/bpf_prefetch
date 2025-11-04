@@ -19,3 +19,6 @@
 
 # define __nobuiltin(X)      __attribute__((no_builtin(X)))
 
+#ifndef NULL
+#define NULL ((void *)(0))
+#endif

@@ -58,6 +58,10 @@
 #define cast_user(x) 
 #endif
 
+#ifndef offsetot
+#define offsetof(type, m) ((unsigned long)&(((type *)0)->m))
+#endif
+
 #ifndef arena_container_of
 #define arena_container_of(ptr, type, member)                   \
         ({                                                      \
