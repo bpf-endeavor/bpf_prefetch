@@ -1,7 +1,7 @@
-From d0ac2c3a6452990dca8e0556408a9b4c5490af9b Mon Sep 17 00:00:00 2001
+From 31b1f9e6f99964ac8815514094bac4e47fb3cfaa Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sat, 11 Oct 2025 07:58:54 -0600
-Subject: [PATCH 01/10] update grpc client go version
+Subject: [PATCH 01/11] update grpc client go version
 
 ---
  example_grpc/.gitignore                       |  3 ++
