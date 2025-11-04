@@ -1,0 +1,174 @@
+From d7dd5133802f10cd65598cdbd46d35765fca1c12 Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Tue, 4 Nov 2025 12:51:24 -0700
+Subject: [PATCH 12/12] wip: experiment with 2phase lru lookup
+
+---
+ katran/lib/bpf/balancer.bpf.c     | 86 +++++++++++++++++++++++++++++--
+ katran/lib/bpf/balancer_structs.h | 14 +++++
+ 2 files changed, 97 insertions(+), 3 deletions(-)
+
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index e834d6ed..9fc048f4 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -11,6 +11,7 @@
+ #define MY_2PHASE_OPT_LOOKUP
+ #define USE_HTAB_FOR_VIP_MAP
+ #define USE_HTAB_FOR_LRU_MAP
++#define MY_2PHASE_LRU_MAP_LOOKUP
+ #define PREFETCH 1
+ 
+ #include <stdbool.h>
+@@ -223,6 +224,11 @@ void __init(void)
+    server_id_map_base = (__u64)ptr;
+   }
+ #endif
++
++#if defined(MY_2PHASE_LRU_MAP_LOOKUP) && !defined(USE_HTAB_FOR_LRU_MAP)
++  // make sure if 2phase lru lookup is requested the htab is also enabled
++  __builtin_trap();
++#endif
+ }
+ 
+ /* --------------------------------------------------------------- */
+@@ -1517,6 +1523,82 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+   }
+ #endif
+ 
++#ifdef MY_2PHASE_LRU_MAP_LOOKUP
++  // do the first phase of lookup for all the packets
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= count_packets)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != LRU_LOOKUP)
++      continue;
++
++    struct vip_meta* vip_info = &pstate->vip_info;
++
++    struct real_definition* dst = NULL;
++    if (pstate->dst.is_valid) {
++      dst = &pstate->dst.data;
++    }
++
++    // Next, try to lookup dst in the lru_cache
++    if (!dst && !(pstate->pckt.flags & F_SYN_SET) &&
++        !(vip_info->flags & F_LRU_BYPASS)) {
++      htab_lookup_elem_p1(lru_map, &pstate->pckt.flow,
++          &pstate->lru_lookup_partial_state);
++      pstate->phase = LRU_LOOKUP_P2;
++    } else {
++      check_udp_flow_migration(&dst, &pstate->pckt, vip_info, &pstate->vip);
++      pstate->phase = CONSISTENT_HASH;
++    }
++  }
++
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= count_packets)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != LRU_LOOKUP_P2)
++      continue;
++
++    struct real_definition* dst = NULL;
++
++    // connection_table_lookup ------------------------------
++    __u64 cur_time;
++    __u32 key;
++    struct real_pos_lru __arena * dst_lru;
++    struct packet_description* pckt = &pstate->pckt;
++    dst_lru = htab_lookup_elem_p2(lru_map, &pckt->flow,
++        &pstate->lru_lookup_partial_state);
++    if (!dst_lru) {
++      pstate->phase = CONSISTENT_HASH;
++      continue;
++    }
++
++    report_tput();
++    if (pckt->flow.proto == IPPROTO_UDP) {
++      cur_time = bpf_ktime_get_ns();
++      if (cur_time - dst_lru->atime > LRU_UDP_TIMEOUT) {
++        // psuedo connection expired
++        pstate->phase = CONSISTENT_HASH;
++        continue;
++      }
++      dst_lru->atime = cur_time;
++    }
++    key = dst_lru->pos;
++    pckt->real_index = key;
++    dst = bpf_map_lookup_elem(&reals, &key);
++    // ------------------------------------------------
++
++    // NOTE: GLOBAL lookup not implemented
++
++    struct vip_meta* vip_info = &pstate->vip_info;
++    check_udp_flow_migration(&dst, &pstate->pckt, vip_info, &pstate->vip);
++
++    pstate->phase = CONSISTENT_HASH;
++    if (dst != NULL) {
++      pstate->dst.is_valid = true;
++      pstate->dst.data = *dst;
++    }
++  }
++#else
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= count_packets)
+       break;
+@@ -1538,9 +1620,6 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+         !(vip_info->flags & F_LRU_BYPASS)) {
+       connection_table_lookup(&dst, &pstate->pckt, lru_map, /*isGlobalLru=*/false);
+     }
+-    if (dst != NULL) {
+-      /* bpf_printk("found dst before hashing!"); */
+-    }
+ 
+ #ifdef GLOBAL_LRU_LOOKUP
+     if (!dst && !(pstate->pckt.flags & F_SYN_SET) && vip_info->flags & F_GLOBAL_LRU) {
+@@ -1566,6 +1645,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     /* bpf_printk("go to consistent hashing"); */
+     continue;
+   }
++#endif
+ 
+   bpf_tail_call_static(batch, &prog_arr_map, PROG_CONSISTENT_HASHING);
+   bpf_printk("failed tail call");
+diff --git a/katran/lib/bpf/balancer_structs.h b/katran/lib/bpf/balancer_structs.h
+index 9285076d..82a79d0f 100644
+--- a/katran/lib/bpf/balancer_structs.h
++++ b/katran/lib/bpf/balancer_structs.h
+@@ -182,10 +182,20 @@ enum pkt_phase {
+   CONSISTENT_HASH,
+   ENCAP_AND_TX,
+   TCP_HDR_OPT_LOOKUP_2,
++  LRU_LOOKUP_P2,
+ 
+   DONE,
+ };
+ 
++#ifdef MY_2PHASE_LRU_MAP_LOOKUP
++// forward decleration of partial state struct
++// define in arena-ds/htab.h
++struct _partial_lookup_state {
++  void *a;
++  int b;
++};
++#endif
++
+ struct pkt_state {
+   bool is_ipv6;
+   enum pkt_phase phase;
+@@ -208,6 +218,10 @@ struct pkt_state {
+ 
+   __u32 cpu_num;
+   __u32 server_id;
++
++#ifdef MY_2PHASE_LRU_MAP_LOOKUP
++  struct _partial_lookup_state lru_lookup_partial_state;
++#endif
+ };
+ typedef struct pkt_state pkt_state_t;
+ 
+-- 
+2.34.1
+

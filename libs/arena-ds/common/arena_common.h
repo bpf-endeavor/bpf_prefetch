@@ -58,7 +58,7 @@
 #define cast_user(x) 
 #endif
 
-#ifndef offsetot
+#ifndef offsetof
 #define offsetof(type, m) ((unsigned long)&(((type *)0)->m))
 #endif
 

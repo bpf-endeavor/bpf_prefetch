@@ -1,7 +1,7 @@
 From 34c2381e5375323f26e91c485411d23faf269368 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 2 Nov 2025 17:51:10 -0700
-Subject: [PATCH 10/11] wip: use arena_htab instead of lru maps
+Subject: [PATCH 10/12] wip: use arena_htab instead of lru maps
 
 ---
  katran/lib/KatranLb.cpp       |  60 +++++++++++++++--
