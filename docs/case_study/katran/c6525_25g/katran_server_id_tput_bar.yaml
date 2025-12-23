@@ -1,0 +1,27 @@
+figsize: [3.0, 2.1]
+x: ['baseline', "with batching &\nprefetching"]
+y: [ [1800, 0],
+     [0, 2390] ]
+color: ['k', 'tab:red']
+hatch: ['', 'xx']
+bar_width: 0.25
+ylabel: 'Throughput (K Req/s)'
+yticks: [0, 1000, 2000, 3000]
+annotate:
+  - xy: [-0.08, 1900]
+    text: '1800'
+  - xy: [0.92, 2500]
+    text: '2390'
+output: 'katran_server_id_tput.pdf'
+grid: true
+comments: "
+using dpdk-client-server
+command: sudo ./build/client_tcp_timestamp -a $NET_PCI --lcores 0@(2,4) -- --client --ip-local 192.168.1.2 --ip-dest 10.10.0.1 --rate 3000000 --payload 128 --duration 200 --zipf-client-addr 1000000/1000/0
+cpu: AMD EPYC 7302P 16-Core Processor
+  L1d:                       512 KiB (16 instances)
+  L1i:                       512 KiB (16 instances)
+  L2:                        8 MiB (16 instances)
+  L3:                        128 MiB (8 instances)
+machines: c6525-25g cloudlab
+TCP packet with Katran specific TCP option select uniformly from 1M source addresses
+"

@@ -3,7 +3,7 @@ x: ['baseline', "with batching &\nprefetching"]
 y: [ [776,0],
      [0, 900] ]
 color: ['k', 'tab:red']
-htach: ['', 'xx']
+hatch: ['', 'xx']
 bar_width: 0.25
 ylabel: 'Throughput (K Req/s)'
 yticks: [0, 400, 800, 1200]
