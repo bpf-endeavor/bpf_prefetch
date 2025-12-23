@@ -1,0 +1,330 @@
+/* A cache-efficient implementation of CVM algorithm to estimate the number of
+ * different source IP addresses observed.
+ *
+ * How program works: it receives packets in batch.
+ * It extract IP address and performs CVM algorithm.
+ *
+ * One of the thigns CVM algorithm does is a Treap lookup. This implementation
+ * does that in a batch.
+ *
+ * Farbod Shahinfar
+ * December - 2025
+ * */
+#include <stdint.h>
+#include <stdbool.h>
+#include <linux/bpf.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
+#include <linux/if_ether.h>
+#include <linux/ip.h>
+
+#define PREFETCH /* Enable prefetching helpers */
+#include "honey/report_hroughput.h"
+#include "honey/prefetching.h"
+#include "treap.h"
+
+#define MAX(a,b) (a > b ? a : b)
+
+/* Some global variables */
+arena_treap_t *treap = NULL;
+/* ``fp_t'' is a fixed-point floating number (since we can not do floating
+ * point in eBPF) */
+fp_t p;
+
+/* Last timestamp we reported the CVM, we do this on a fixed interval */
+stattic uint64_t last_cvm_report = 0;
+#define CVM_REPORT_INTERVAL 5000000000
+
+uint32_t lookup_finished; /* keep track how many lookups finish */
+
+/* The state we maintain per each packet */
+typedef struct {
+	/* the phase is mandetory */
+	int phase; /* to which stage packet belongs */
+	/* ----------------- */
+	bool valid; /* ?? */
+	arena_treap_node_t *node;
+	arena_treap_link_t *link;
+
+	fp_t rnd_u; /* random number we generated for this packet */
+
+	/* we need following information to adjust the algorithm to the fact
+	 * that we are apply things in batch */
+	fp_t max_remove_prob; // maximum prob deleted after k_i (?)
+	uint8_t count_deleted; // number of nodes delted after k_i
+
+	/* key we have extracted */
+	// struct treap_key key; /* IPv4, key we use to store in the Trep */
+	uint16_t key_off; /* offset of key on the packet header */
+} pkt_state_t;
+
+/* import BAX DSL */
+#include "bax/bax.h"
+
+
+/* Helpers */
+static __always_inline
+uint64_t cvm_estimate(void)
+{
+	return ((uint64_t)treap->used * FP_SCALE) / ((uint64_t)p);
+}
+
+static __always_inline
+void reset(void)
+{
+	treap_reset(treap);
+	p = (1 << 31); // FP_ONE
+	last_cvm_report = 0;
+}
+
+static __always_inline
+void report_cvm_value(void)
+{
+	// report estimate every few seconds
+	uint64_t ts = bpf_ktime_get_coarse_ns();
+	uint64_t dur = ts - last_cvm_report;
+	if (dur > CVM_REPORT_INTERVAL) {
+		if (last_cvm_report == 0) {
+			last_cvm_report = ts;
+		} else {
+			bpf_printk(TAG"Size estimate: %lld", cvm_estimate());
+			reset();
+			last_cvm_report = ts;
+		}
+	}
+}
+/* ------------------------------------------------------ */
+
+/* bbb_ indicates that it is a batch packet processing program */
+int bbb_xdp_main(struct xdp_batch_md *batch)
+{
+	/* check that user-space program has initilized the Treap */
+	if (treap == NULL) {
+		bpf_printk("something is wrong in setting up Treap & Arena");
+		/* Make sure Arena is associated with our program */
+		my_kfunc_reg_arena(&arena);
+		return 0;
+	}
+
+	BAX_INIT_BATCH_STATE();
+
+	BAX_STAGE(FIRST, {
+		struct ethhdr *eth = data;
+		struct iphdr *ip = (struct iphdr *)(eth + 1);
+
+		if ((void *)(ip + 1) > data_end) {
+			/* The packet is smaller than we expect */
+			PASS();
+		}
+
+		if (eth->h_proto != bpf_htons(ETH_P_IP)) {
+			/* We only cound IPv4 packets */
+			PASS();
+		}
+
+		uint16_t off = (uint64_t)(&ip->saddr) - (uint64_t)(eth);
+		pstate->key_off = off;
+		NEXT_STAGE(BATCH_LOOKUP_1);
+	})
+
+	BAX_STAGE(BATCH_LOOKUP_1, {
+		/* this can go under a lookup initialize fine-grained API */
+		pstate->link = &treap->root;
+		pstate->node = treap->root;
+		pstate->valid = false;
+
+		if (treap->root != NULL) {
+			NEXT_STAGE(BATCH_LOOKUP_2)
+		} else {
+			NEXT_STAGE(BATCH_LOOKUP_3);
+		}
+	})
+
+	/* Prefetch the root of the Treap */
+	if (treap->root != NULL)
+		P((void *)treap->root);
+
+	/* We want to run a stage multiple times, walking the Treap down */
+	for (int i = 0; i <  BATCH_SIZE * TREAP_MAX_HEIGHT; i++) {
+		BAX_STAGE(BATCH_LOOKUP_2, {
+			/* Farbod: this should not happen because we change the phase */
+			if (pstate->valid)
+				continue;
+
+			/* All of this can go under a fine-grained API lookup */
+			struct treap_key *key = (void *)(data + pstate->key_off);
+			arena_treap_node_t *ptr = pstate->node;
+			if (ptr == NULL) {
+				/* This key does not exist in the Treap */
+				pstate->link = NULL;
+				pstate->valid = true;
+				lookup_finished++;
+				NEXT_STAGE(BATCH_DELETE_1);
+				// TODO: how to express early termination
+			}
+
+			void __arena *ptr_key = (void __arena *)(&ptr->key);
+			int64_t cmp = treap_key_cmp(key, ptr_key);
+			if (cmp == 0) {
+				/* Found the matching key */
+				pstate->valid = true;
+				lookup_finished++;
+				NEXT_STAGE(BATCH_DELETE_1);
+				// TODO: how to express early termination
+			} else if (cmp < 0) {
+				/* Explore the left sub-graph */
+				pstate->link = &ptr->left;
+				pstate->node = ptr->left;
+				P((void *)(ptr->left));
+			} else {
+				/* Explore the right sub-grph */
+				pstate->link = &ptr->right;
+				pstate->node = ptr->right;
+				P((void *)(ptr->right));
+			}
+		})
+
+		/* We probably do not need to walk all the levels of graph */
+		if (lookup_finished == batch_size)
+			break;
+	}
+
+	// This is to catch which ever packet that was not handled in the
+	// limited number of iterations above
+	/* TODO: we are breaking the abstraction */
+	for (int i = 0; lookup_finished != batch_size && i < batch_size; i++) {
+		ptk_state_t *pstate = &bs->S[i];
+		if (!psatte->valid) {
+			pstate->node = NULL;
+			pstate->link = NULL;
+			pstate->valid = true;
+			lookup_finished++;
+			pstate->phase = BATCH_DELETE_1;
+		}
+	}
+
+	BAX_STAGE(BATCH_DELETE_1, {
+		arena_treap_node_t *n = pstate->node;
+		arena_treap_link_t *link = pstate->link;
+
+		if (n == NULL) {
+			/* key does not exists */
+			NEXT_STAGE(BATCH_DELETE_2);
+		}
+
+		if (n->left == NULL) {
+			*link = n->right;
+		} else {
+			// has left child
+			if (n->right == NULL) {
+				// has one child (the left child)
+				*link = n->left;
+			} else {
+				// NOTE: batch treap: It seems we can not overlap this
+				// because the fixing sub tree becomes a mess
+				// (I don't know how to do it)
+
+				// We need to move the node down, find the immediate
+				// successor (the most left  child of the right sub-tree)
+				arena_treap_link_t *leaf_link = NULL;
+				arena_treap_node_t *leaf = __get_immediate_succesor(n, &leaf_link);
+				if (leaf == NULL) {
+					// failed to do it in a bounded size
+					// NOTE: batch treap: error missed
+					bpf_printk("failed to __get_immediate...");
+					pstate->valid = false;
+					NEXT_STAGE(BATCH_DELETE_2);
+				}
+
+				// swap the node with the leaf and then remove the node
+				// .. we know leaf does not have a left, if it does not
+				// have a right then just remove the node. if it has a
+				// right child then put the right child in place of
+				// leaf.
+				*leaf_link = leaf->right;
+				leaf->right = n->right;
+				leaf->left = n->left;
+				*link = leaf;
+				// node has been removed and everything is almost okay
+				// except that moving leaf to the nodes position may
+				// have disturbed the heap property
+				ret = __fix_sub_tree_heap_property_down(leaf, link);
+				if (ret != 0) {
+					// NOTE: batch treap: error missed
+					bpf_printk("failed to __fix_sub...");
+					pstate->valid = false;
+					NEXT_STAGE(BATCH_DELETE_2);
+				}
+			}
+		}
+		__treap_free_node(treap, n);
+		NEXT_STAGE(BATCH_DELETE_2);
+	})
+
+	BAX_STAGE(BATCH_DELETE_2,) /* Just declare a stage */
+	/* TODO: I wanted to traverse the batch in reverse.
+	 * I have to break the abstraction
+	 * */
+	{
+		pkt_state_t *pstate, *nstate;
+		pstate = GET_PSTATE(batch_size - 1);
+		pstate->max_remove_prob = 0;
+		pstate->count_deleted = 0;
+		pstate->phase = GEN_RANDOM_VAL;
+
+		for (int i = batch_size - 2; i > -1; i--) {
+			int next = i + 1;
+			nstate = GET_PSTATE(next);
+			pstate = GET_PSTATE(i);
+
+			arena_treap_node_t *next_n = nstate->node;
+			fp_t u = next_n == NULL ? 0 : next_n->priority;
+			pstate->max_remove_prob =
+				MAX(nstate->max_remove_prob, u);
+
+			pstate->count_deleted = nstate->count_deleted;
+			/* if we have found a node, we have deleted it */
+			if (next_n != NULL)
+				pstate->count_deleted += 1;
+
+			/* next phase is  */
+			pstate->phase = GEN_RANDOM_VAL;
+		}
+	}
+
+	BAX_STAGE(GEN_RANDOM_VAL, {
+		if (!pstate->valid) {
+			bpf_printk("delete faild. this must not happen");
+			PASS();
+		}
+
+		pstate->rnd_u = fp_random();
+		NEXT_STAGE(BATCH_UPDATE_1);
+	})
+
+	BAX_STAGE(BATCH_UPDATE_1, {
+		int ret;
+		fp_t u = pstate->rnd_u;
+		if (u > p) {
+			PASS();
+		}
+
+		struct treap_key *key = (void *)(data + pstate->key_off);
+		int free_space = TREAP_MAX_HEIGHT - treap->used - pstate->count_deleted;
+		if (free_space > 0) {
+			ret = subprog_treap_insert(key, u);
+			if (ret != 0) {
+				bpf_printk("failed to insert");
+				ret = -1;
+				return 1;
+			}
+			return 0; // continue;
+		}
+	})
+
+	// ----
+	report_tput(batch_size);
+	report_cvm_value();
+}
+
+BAX_END_OF_FILE()
