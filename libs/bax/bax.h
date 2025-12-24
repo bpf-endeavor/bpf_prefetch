@@ -18,10 +18,10 @@ BAX_DECLARE_PKT_STATE_TYPE(pkt_state_t)
 BAX_BEGIN_OF_FILE()
 
 /* Some macros to ease working with a batch */
-#define ACTION(act, index) batch->actions[index] = act
-#define PASS(k) {ACTION(XDP_PASS, k); continue;}
-#define DROP(k) {ACTION(XDP_DROP, k); continue;}
-#define TX(k)   {ACTION(XDP_TX, k); continue;}
+#define ACTION(act) batch->actions[k] = act
+#define PASS() {ACTION(XDP_PASS); continue;}
+#define DROP() {ACTION(XDP_DROP); continue;}
+#define TX()   {ACTION(XDP_TX); continue;}
 
 #define BAX_NEXT_STAGE(stage) {pstate->phase = stage; continue;}
 

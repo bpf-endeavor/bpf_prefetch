@@ -27,8 +27,8 @@ dnl Define all the keyword/variables regardless of if they are used. LLVM will
 dnl remove them if they are not used.
 define(`_in_stage_define_vars', `dnl
 struct xdp_md *pkt = &batch->buffs[k];
-void *data = batch->frames[k].data;
-void *data_end = batch->frames[k].data_end;
+void *data = (void *)(unsigned long long)batch->buffs[k].data;
+void *data_end = (void *)(unsigned long long)batch->buffs[k].data_end;
 ')
 dnl ------------------------------------------
 
@@ -45,7 +45,7 @@ struct {
   __type(key, int);
   __type(value, BAX_batch_state_t);
   __uint(max_entries, 1);
-  __uint(map_flags, NO_FLAGS);
+  __uint(map_flags, 0);
 } BAX_batch_state_map SEC(".maps");
 'dnl
 ')
@@ -72,7 +72,7 @@ define(`BAX_STAGE',`dnl
 _check_pkt_state_type_is_defined()dnl
 `for (uint16_t k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
 	if (k >= batch_size) break;
-	pkt_state_type_name *pstate = &bs->S[k];
+	'pkt_state_type_name` *pstate = &bs->S[k];
 	if (pstate->phase != $1) continue;
 '
 	_in_stage_define_vars()dnl
