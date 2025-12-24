@@ -19,9 +19,17 @@
 #include <linux/ip.h>
 
 #define PREFETCH /* Enable prefetching helpers */
-#include "honey/report_hroughput.h"
+#include "honey/report_throughput.h"
 #include "honey/prefetching.h"
-#include "treap.h"
+
+/* bring Treap data-structure from the library */
+#define TREAP_MAX_SIZE (1 << 14)
+#define TREAP_MAX_HEIGHT 64
+#include "arena-ds/treap.h"
+#include "arena-ds/fixed-point/fp.h"
+
+/* Use this tag when printing */
+#define TAG "BAX CVM:"
 
 #define MAX(a,b) (a > b ? a : b)
 
@@ -32,7 +40,7 @@ arena_treap_t *treap = NULL;
 fp_t p;
 
 /* Last timestamp we reported the CVM, we do this on a fixed interval */
-stattic uint64_t last_cvm_report = 0;
+static uint64_t last_cvm_report = 0;
 #define CVM_REPORT_INTERVAL 5000000000
 
 uint32_t lookup_finished; /* keep track how many lookups finish */

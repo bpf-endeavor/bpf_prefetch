@@ -35,24 +35,27 @@ BPF_CFLAGS += -D __BPF_FEATURE_ADDR_SPACE_CAST
 EXTRA_CFLAGS ?=
 
 # Rules
-.PHONY: all $(build_dir)/cvm.bpf.c
+.PHONY: all clean
 
 all: $(skel_dir) $(out_obj)
 
-$(build_dir)/cvm.bpf.c: cvm.bax
-	/bin/sh ./cbax.sh $< $@
+clean:
+	rm $(build_dir)/cvm.bpf.c $(skel_dir)/cvm.skel.h $(build_dir)/cvm.bpf.ll | true
 
 $(skel_dir):
 	mkdir -p $@
 
-$(build_dir)/%.ll: $(build_dir)/%.c
+$(build_dir)/cvm.bpf.c: cvm.bax
+	/bin/sh ../../libs/bax/cbax.sh $< $@
+
+$(build_dir)/cvm.bpf.ll: $(build_dir)/cvm.bpf.c
 	$(CLANG) $(EXTRA_CFLAGS) $(BPF_CFLAGS) -emit-llvm -c $< -o $@
 
-$(build_dir)/%.o: $(build_dir)/%.ll  $(bpf_headers)
+$(build_dir)/cvm.bpf.o: $(build_dir)/cvm.bpf.ll  $(bpf_headers)
 	$(LLC) -mcpu=probe -march=bpf -filetype=obj -o $@ $<
 	cp $@ $@.keep
 
-$(skel_dir)/%.skel.h: $(build_dir)/%.bpf.o
+$(skel_dir)/cvm.skel.h: $(build_dir)/cvm.bpf.o
 	name=$$(echo $@ | cut -d / -f 3 | cut -d '.' -f 1); \
 		 bpftool gen skeleton $< name $$name > $@
 
