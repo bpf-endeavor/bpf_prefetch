@@ -26,7 +26,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # To fix the `enum BAX_phase' location, pass it through the awk script
-INTERMEDIATE=$(echo "$INTERMEDIATE" | awk -f ./fix_enum_def.awk)
+INTERMEDIATE=$(echo "$INTERMEDIATE" | awk -f "$CURDIR/fix_enum_def.awk")
 
 
 if [ -z "$format" ]; then

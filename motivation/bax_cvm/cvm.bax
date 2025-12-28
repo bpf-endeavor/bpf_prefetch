@@ -36,11 +36,7 @@ struct {
 	__uint(max_entries, ARENA_MAX_PAGES); /* number of pages */
 } arena SEC(".maps");
 
-/* bring Treap data-structure from the library */
-#define TREAP_MAX_SIZE (1 << 14)
-#define TREAP_MAX_HEIGHT 64
-#include "arena-ds/treap.h"
-#include "arena-ds/fixed-point/fp.h"
+#include "treap.h"
 /* ------------------------------------------------------------------------- */
 
 
@@ -124,7 +120,8 @@ void report_cvm_value(void)
 /* ------------------------------------------------------ */
 
 /* bbb_ indicates that it is a batch packet processing program */
-int bbb_xdp_main(struct xdp_batch_md *batch)
+SEC("xdp")
+int bbb_cvm_main(struct xdp_batch_md *batch)
 {
 	/* check that user-space program has initilized the Treap */
 	if (treap == NULL) {
@@ -341,19 +338,20 @@ int bbb_xdp_main(struct xdp_batch_md *batch)
 		struct treap_key *key = (void *)(data + pstate->key_off);
 		int free_space = TREAP_MAX_HEIGHT - treap->used - pstate->count_deleted;
 		if (free_space > 0) {
-			ret = subprog_treap_insert(key, u);
+			ret = treap_insert(treap, key, u);
 			if (ret != 0) {
 				bpf_printk("failed to insert");
 				ret = -1;
 				return 1;
 			}
-			return 0; // continue;
+			PASS();
 		}
 	}')
 
 	// ----
 	report_tput_batch(batch_size);
 	report_cvm_value();
+	return 0;
 }
 
 BAX_END_OF_FILE()
