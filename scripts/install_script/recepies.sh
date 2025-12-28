@@ -45,6 +45,19 @@ get_custom_kernel() {
 	make -j $cores
 }
 
+barrier_make_sure_custom_kernel() {
+	t=$(uname -r | grep -P "^6.15")
+	if [ $? -ne 0 ]; then
+		echo "You are running kernel \"$($uname -r)\"."
+		echo "The scripts thinks that it's not the bpf-prefetching custom kernel."
+		echo "Please install and boot with the custom kernel ..."
+		echo "or increment the stage file (\"$PROGFILE\") to ignore the decision."
+		echo "Run the script again in either case."
+		exit 1
+	fi
+	echo "Kernel version matched."
+}
+
 bring_bmc() {
 	# Print instructions
 	# set -x

@@ -26,6 +26,7 @@ PROCESS=(
 	install_dwarf
 	get_custom_kernel
 	install_kernel_tools
+	barrier_make_sure_custom_kernel
 	bring_bmc
 	bring_arena_kmod
 	bring_katran_p1
