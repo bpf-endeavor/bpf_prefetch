@@ -31,7 +31,7 @@ BPF_CFLAGS += -Wno-address-of-packed-member
 BPF_CFLAGS += -Wno-incompatible-pointer-types
 BPF_CFLAGS += -I ./include/
 BPF_CFLAGS += -I $(REPO_LIB_DIR)
-BPF_CFLAGS += -I $(LIBBPF_HEADER)
+# BPF_CFLAGS += -I $(LIBBPF_HEADER)
 BPF_CFLAGS += -D __KERNEL__ -D __BPF__
 BPF_CFLAGS += -D __BPF_FEATURE_ADDR_SPACE_CAST
 
@@ -43,7 +43,14 @@ EXTRA_CFLAGS ?=
 all: $(skel_dir) $(out_obj) $(loader_obj)
 
 clean:
-	rm $(build_dir)/cvm.bpf.c $(skel_dir)/cvm.skel.h $(build_dir)/cvm.bpf.ll $(loader_obj) | true
+	rm $(build_dir)/*.c \
+		$(build_dir)/*.ll \
+		$(build_dir)/*.o \
+		$(build_dir)/*.o.keep \
+		$(build_dir)/*.tmp \
+		$(skel_dir)/*.h \
+		$(skel_dir)/*.tmp \
+		$(loader_obj) || true
 
 $(skel_dir):
 	mkdir -p $@
@@ -52,7 +59,8 @@ $(build_dir)/cvm.bpf.c: cvm.bax
 	/bin/sh ../../libs/bax/cbax.sh $< $@
 
 $(build_dir)/cvm.bpf.ll: $(build_dir)/cvm.bpf.c
-	$(CLANG) -I ./ $(EXTRA_CFLAGS) $(BPF_CFLAGS) -emit-llvm -c $< -o $@
+	$(CLANG) -I ./ $(EXTRA_CFLAGS) $(BPF_CFLAGS) -emit-llvm -c $< -o $@.tmp
+	mv $@.tmp $@
 
 $(build_dir)/cvm.bpf.o: $(build_dir)/cvm.bpf.ll  $(bpf_headers)
 	$(LLC) -mcpu=probe -march=bpf -filetype=obj -o $@ $<
@@ -60,8 +68,9 @@ $(build_dir)/cvm.bpf.o: $(build_dir)/cvm.bpf.ll  $(bpf_headers)
 
 $(skel_dir)/cvm.skel.h: $(build_dir)/cvm.bpf.o
 	name=$$(echo $@ | cut -d / -f 3 | cut -d '.' -f 1); \
-		 bpftool gen skeleton $< name $$name > $@
+		 bpftool gen skeleton $< name $$name > $@.tmp
+	mv $@.tmp $@
 
-$(loader_obj): loader.c
+$(loader_obj): loader.c $(skel_dir)/cvm.skel.h
 	$(CC) -I $(REPO_LIB_DIR) -I $(skel_dir) \
 		-g -O2 loader.c -o $@ -lbpf -lelf -lz

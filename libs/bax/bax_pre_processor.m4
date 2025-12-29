@@ -26,9 +26,9 @@ ifelse(pkt_state_type_name, `',
 dnl Define all the keyword/variables regardless of if they are used. LLVM will
 dnl remove them if they are not used.
 define(`_in_stage_define_vars', `dnl
-struct xdp_md *pkt = &batch->buffs[k];
-void *data = (void *)(unsigned long long)batch->buffs[k].data;
-void *data_end = (void *)(unsigned long long)batch->buffs[k].data_end;
+struct xdp_md *pkt = &batch->buffs[BAX_k];
+void *data = (void *)(unsigned long long)batch->buffs[BAX_k].data;
+void *data_end = (void *)(unsigned long long)batch->buffs[BAX_k].data_end;
 ')
 dnl ------------------------------------------
 
@@ -59,26 +59,29 @@ bs = bpf_map_lookup_elem(&BAX_batch_state_map, &zero);
 }
 /* This check must never fail */
 if (bs == NULL) return -1;
-for (uint16_t k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
-	if (k >= batch_size) break;
-	pkt_state_type_name *pstate = &bs->S[k];
+for (uint16_t BAX_k = 0; BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
+	if (BAX_k >= batch_size) break;
+	pkt_state_type_name *pstate = &bs->S[BAX_k];
 	__builtin_memset(pstate, 0, sizeof(pkt_state_type_name));
 }
+if (batch_size > XDP_MAX_BATCH_SIZE || batch_size == 0) { return -1; }
 ')
 
 dnl STAGE macro - collects stage name and body
 dnl Syntax: STAGE(name){body}
 define(`BAX_STAGE',`dnl
 _check_pkt_state_type_is_defined()dnl
-`for (uint16_t k = 0; k < XDP_MAX_BATCH_SIZE; k++) {
-	if (k >= batch_size) break;
-	'pkt_state_type_name` *pstate = &bs->S[k];
+`#pragma clang loop unroll(disable)
+for (uint16_t BAX_k = 0; BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
+	if (BAX_k >= batch_size) break;
+	'pkt_state_type_name` *pstate = &bs->S[BAX_k];
 	if (pstate->phase != $1) continue;
 '
 	_in_stage_define_vars()dnl
 `
-	/* stage $1 code */
+	/* begin stage $1 code */
 	$2
+	/* end   stage $1 code */
 }'dnl
 ifelse(stage_count, 0,dnl
 	`define(`stage_names', $1)',dnl

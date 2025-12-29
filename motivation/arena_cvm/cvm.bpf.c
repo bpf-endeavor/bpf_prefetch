@@ -80,7 +80,8 @@ int cvm_main(struct xdp_md *xdp)
 		return XDP_PASS;
 
 	struct treap_key key;
-	*(uint32_t *)key.data = *r;
+	*(uint32_t *)key.data = ip->saddr;
+	/* *(uint32_t *)key.data = *r; */
 	/* bpf_printk("key: %d", *r); */
 
 	// check if the key is in the buffer and delete it

@@ -23,6 +23,8 @@
 #include "honey/report_throughput.h"
 #include "honey/prefetching.h"
 
+#define DEFAULT_ACTION() DROP()
+
 /* ARENA ------------------------------------------------------------------- */
 /* I need this dummy function to register Arena with the XDP while not using
  * any sleepable function (it is from a kernel module that you have to load)
@@ -58,8 +60,8 @@ typedef struct {
 	uint8_t count_deleted; // number of nodes delted after k_i
 
 	/* key we have extracted */
-	// struct treap_key key; /* IPv4, key we use to store in the Trep */
-	uint16_t key_off; /* offset of key on the packet header */
+	struct treap_key key; /* IPv4, key we use to store in the Trep */
+	/* uint16_t key_off; /1* offset of key on the packet header *1/ */
 } pkt_state_t;
 
 /* import BAX DSL */
@@ -83,7 +85,7 @@ BAX_DECLARE_PKT_STATE_TYPE(pkt_state_t)
 BAX_BEGIN_OF_FILE()
 
 /* Some macros to ease working with a batch */
-#define ACTION(act) batch->actions[k] = act
+#define ACTION(act) batch->actions[BAX_k] = act
 #define PASS() {ACTION(XDP_PASS); continue;}
 #define DROP() {ACTION(XDP_DROP); continue;}
 #define TX()   {ACTION(XDP_TX); continue;}
@@ -99,6 +101,7 @@ BAX_BEGIN_OF_FILE()
 #define TAG "BAX CVM:"
 
 #define MAX(a,b) (a > b ? a : b)
+#define BPF_GLOBAL_FUNC int __attribute__((noinline))
 
 /* Some global variables */
 /* user-space program initializes the Treap and sets this pointer */
@@ -148,10 +151,83 @@ void report_cvm_value(void)
 }
 /* ------------------------------------------------------ */
 
+
+/*  insert/delete are wrapped in a global function to be evaluated as a
+ *  separate program and help with passing the complexity limit
+ *  */
+BPF_GLOBAL_FUNC
+subprog_treap_insert(uint32_t k, fp_t u) {
+	return treap_insert(treap, &k, u);
+}
+
+BPF_GLOBAL_FUNC __attribute__((optnone))
+subprog_treap_delete(uint32_t key) {
+	return treap_delete(treap, &key);
+}
+
+struct __batch_lookup_2_inner_ctx {
+	struct xdp_batch_md *batch;
+	BAX_batch_state_t *bs;
+	uint16_t batch_size;
+};
+
+static long __batch_lookup_2_inner(__u32 index, void *_ctx)
+{
+	struct __batch_lookup_2_inner_ctx *ctx = _ctx;
+	struct xdp_batch_md *batch = ctx->batch;
+	BAX_batch_state_t *bs = ctx->bs;
+	uint16_t batch_size = ctx->batch_size;
+
+	BAX_STAGE(BATCH_LOOKUP_2, `{
+		/* Farbod: this should not happen because we change the phase */
+		/* if (pstate->valid) */
+		/* 	continue; */
+
+		/* All of this can go under a fine-grained API lookup */
+		arena_treap_node_t *ptr = pstate->node;
+		if (ptr == NULL) {
+			/* This key does not exist in the Treap */
+			pstate->link = NULL;
+			pstate->valid = true;
+			lookup_finished++;
+			BAX_NEXT_STAGE(BATCH_DELETE_1);
+			// TODO: how to express early termination
+		}
+
+		struct treap_key *key = &pstate->key;
+		void __arena *ptr_key = (void __arena *)(&ptr->key);
+		int64_t cmp = treap_key_cmp(key, (void *)ptr_key);
+		if (cmp == 0) {
+			/* Found the matching key */
+			pstate->valid = true;
+			lookup_finished++;
+			BAX_NEXT_STAGE(BATCH_DELETE_1);
+			// TODO: how to express early termination
+		} else if (cmp < 0) {
+			/* Explore the left sub-graph */
+			pstate->link = &ptr->left;
+			pstate->node = ptr->left;
+			P((void *)(ptr->left));
+		} else {
+			/* Explore the right sub-grph */
+			pstate->link = &ptr->right;
+			pstate->node = ptr->right;
+			P((void *)(ptr->right));
+		}
+	}')
+
+	/* We probably do not need to walk all the levels of graph */
+	if (lookup_finished == batch_size)
+		return 1;
+	/* Explore the next level of trie */
+	return 0;
+}
+
 /* bbb_ indicates that it is a batch packet processing program */
 SEC("xdp")
 int bbb_cvm_main(struct xdp_batch_md *batch)
 {
+	bool abort = false;
 	/* check that user-space program has initilized the Treap */
 	if (treap == NULL) {
 		bpf_printk("something is wrong in setting up Treap & Arena");
@@ -160,6 +236,7 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		return 0;
 	}
 
+	lookup_finished = 0;
 	BAX_INIT_BATCH_STATE();
 
 	BAX_STAGE(FIRST, `{
@@ -176,8 +253,9 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 			PASS();
 		}
 
-		uint16_t off = (uint64_t)(&ip->saddr) - (uint64_t)(eth);
-		pstate->key_off = off;
+		/* uint16_t off = (uint64_t)(&ip->saddr) - (uint64_t)(eth); */
+		/* pstate->key_off = off; */
+		*(uint32_t *)pstate->key.data = ip->saddr;
 		BAX_NEXT_STAGE(BATCH_LOOKUP_1);
 	}')
 
@@ -199,55 +277,70 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		P((void *)treap->root);
 
 	/* We want to run a stage multiple times, walking the Treap down */
-	for (int i = 0; i <  batch_size * TREAP_MAX_HEIGHT; i++) {
-		BAX_STAGE(BATCH_LOOKUP_2, `{
-			/* Farbod: this should not happen because we change the phase */
-			if (pstate->valid)
-				continue;
+	{
+		// TODO: Abstract bpf_loop
+		struct __batch_lookup_2_inner_ctx ctx = {};
+		ctx.batch = batch;
+		ctx.bs = bs;
+		ctx.batch_size = batch_size;
+		bpf_loop(batch_size * TREAP_MAX_HEIGHT, __batch_lookup_2_inner, &ctx, 0);
 
-			/* All of this can go under a fine-grained API lookup */
-			struct treap_key *key = (void *)(data + pstate->key_off);
-			arena_treap_node_t *ptr = pstate->node;
-			if (ptr == NULL) {
-				/* This key does not exist in the Treap */
-				pstate->link = NULL;
-				pstate->valid = true;
-				lookup_finished++;
-				BAX_NEXT_STAGE(BATCH_DELETE_1);
-				// TODO: how to express early termination
-			}
+		/* TODO: C comment is not m4 commets, so the preprocessor continues
+		 * processing following lines
+		 * */
+		dnl /* int i; */
+		dnl /* TODO: I failed to compile things with bpf_for. It is weird! */
+		dnl /* bpf_for (i, 0, batch_size * TREAP_MAX_HEIGHT) { */
+		dnl /* 	BAX_STAGE(BATCH_LOOKUP_2, `{ */
+		dnl /* 		/1* Farbod: this should not happen because we change the phase *1/ */
+		dnl /* 		if (pstate->valid) */
+		dnl /* 			continue; */
 
-			void __arena *ptr_key = (void __arena *)(&ptr->key);
-			int64_t cmp = treap_key_cmp(key, (void *)ptr_key);
-			if (cmp == 0) {
-				/* Found the matching key */
-				pstate->valid = true;
-				lookup_finished++;
-				BAX_NEXT_STAGE(BATCH_DELETE_1);
-				// TODO: how to express early termination
-			} else if (cmp < 0) {
-				/* Explore the left sub-graph */
-				pstate->link = &ptr->left;
-				pstate->node = ptr->left;
-				P((void *)(ptr->left));
-			} else {
-				/* Explore the right sub-grph */
-				pstate->link = &ptr->right;
-				pstate->node = ptr->right;
-				P((void *)(ptr->right));
-			}
-		}')
+		dnl /* 		/1* All of this can go under a fine-grained API lookup *1/ */
+		dnl /* 		struct treap_key *key = (void *)(data + pstate->key_off); */
+		dnl /* 		arena_treap_node_t *ptr = pstate->node; */
+		dnl /* 		if (ptr == NULL) { */
+		dnl /* 			/1* This key does not exist in the Treap *1/ */
+		dnl /* 			pstate->link = NULL; */
+		dnl /* 			pstate->valid = true; */
+		dnl /* 			lookup_finished++; */
+		dnl /* 			BAX_NEXT_STAGE(BATCH_DELETE_1); */
+		dnl /* 			// TODO: how to express early termination */
+		dnl /* 		} */
 
-		/* We probably do not need to walk all the levels of graph */
-		if (lookup_finished == batch_size)
-			break;
+		dnl /* 		void __arena *ptr_key = (void __arena *)(&ptr->key); */
+		dnl /* 		int64_t cmp = treap_key_cmp(key, (void *)ptr_key); */
+		dnl /* 		if (cmp == 0) { */
+		dnl /* 			/1* Found the matching key *1/ */
+		dnl /* 			pstate->valid = true; */
+		dnl /* 			lookup_finished++; */
+		dnl /* 			BAX_NEXT_STAGE(BATCH_DELETE_1); */
+		dnl /* 			// TODO: how to express early termination */
+		dnl /* 		} else if (cmp < 0) { */
+		dnl /* 			/1* Explore the left sub-graph *1/ */
+		dnl /* 			pstate->link = &ptr->left; */
+		dnl /* 			pstate->node = ptr->left; */
+		dnl /* 			P((void *)(ptr->left)); */
+		dnl /* 		} else { */
+		dnl /* 			/1* Explore the right sub-grph *1/ */
+		dnl /* 			pstate->link = &ptr->right; */
+		dnl /* 			pstate->node = ptr->right; */
+		dnl /* 			P((void *)(ptr->right)); */
+		dnl /* 		} */
+		dnl /* 	}') */
+
+		dnl /* 	/1* We probably do not need to walk all the levels of graph *1/ */
+		dnl /* 	if (lookup_finished == batch_size) */
+		dnl /* 		break; */
+		dnl /* } */
 	}
 
 	BAX_STAGE(BATCH_LOOKUP_3,`') /* Just declare a stage */
 	// This is to catch which ever packet that was not handled in the
 	// limited number of iterations above
-	/* TODO: we are breaking the abstraction */
-	for (int i = 0; lookup_finished != batch_size && i < batch_size; i++) {
+	/* TODO: we are breaking the abstraction because we can not check for early
+	 * termination of an stage. */
+	for (int i = 0; lookup_finished != batch_size && i < batch_size && i < XDP_MAX_BATCH_SIZE; i++) {
 		pkt_state_t *pstate = GET_PSTATE(i);
 		if (!pstate->valid) {
 			pstate->node = NULL;
@@ -277,7 +370,9 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 			} else {
 				// NOTE: batch treap: It seems we can not overlap this
 				// because the fixing sub tree becomes a mess
-				// (I dont know how to do it) // BAX failed to parse the apostrophy for contraction of "do not"
+				// (I dont know how to do it)
+				// TODO: BAX failed to parse the apostrophy for contraction of
+				// "do not". It is a weird limitation
 
 				// We need to move the node down, find the immediate
 				// successor (the most left  child of the right sub-tree)
@@ -325,13 +420,20 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		pstate = GET_PSTATE(batch_size - 1);
 		pstate->max_remove_prob = 0;
 		pstate->count_deleted = 0;
-		pstate->phase = GEN_RANDOM_VAL;
+		if (pstate->phase == BATCH_DELETE_2)
+			pstate->phase = GEN_RANDOM_VAL;
+
+		// next packet in the batch that belongs to this phase (or the last
+		// packet)
+		int next = batch_size - 1;
 
 		for (int i = batch_size - 2; i > -1; i--) {
-			int next = i + 1;
-			nstate = GET_PSTATE(next);
+			/* Skip packets that are not for this phase */
 			pstate = GET_PSTATE(i);
+			if (pstate->phase != BATCH_DELETE_2)
+				continue;
 
+			nstate = GET_PSTATE(next);
 			arena_treap_node_t *next_n = nstate->node;
 			fp_t u = next_n == NULL ? 0 : next_n->priority;
 			pstate->max_remove_prob =
@@ -344,12 +446,14 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 			/* next phase is  */
 			pstate->phase = GEN_RANDOM_VAL;
+			next = i;
 		}
 	}
 
 	BAX_STAGE(GEN_RANDOM_VAL, `{
 		if (!pstate->valid) {
 			bpf_printk("delete faild. this must not happen");
+			abort = true;
 			PASS();
 		}
 
@@ -361,21 +465,65 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		int ret;
 		fp_t u = pstate->rnd_u;
 		if (u > p) {
-			PASS();
+			DEFAULT_ACTION();
 		}
 
-		struct treap_key *key = (void *)(data + pstate->key_off);
 		int free_space = TREAP_MAX_HEIGHT - treap->used - pstate->count_deleted;
 		if (free_space > 0) {
-			ret = treap_insert(treap, key, u);
+			ret = subprog_treap_insert(*(uint32_t *)pstate->key.data, u);
 			if (ret != 0) {
 				bpf_printk("failed to insert");
-				ret = -1;
-				return 1;
+				/* TODO: abort processing the batch ? Early termination not supported yet */
+				abort = true;
+				DEFAULT_ACTION(); /* NOTE: we failed to process packet but let it go */
 			}
-			PASS();
+			DEFAULT_ACTION();
 		}
+
+		// u < p and |B| = s
+		arena_treap_node_t *top = treap_top(treap);
+		// Assume we have not deleted the elements after k_i. Would we have a
+		// different max probability?
+		fp_t max_probability = top->priority;
+		fp_t max_removed = pstate->max_remove_prob;
+		bool root_already_removed = false;
+		if (max_probability < max_removed) {
+			root_already_removed = true;
+			max_probability = max_removed;
+		}
+
+		if (u > max_probability) {
+			p = u;
+			DEFAULT_ACTION(); // continue;
+		} else {
+			p = max_probability;
+
+			// we might have already removed the root
+			if (!root_already_removed) {
+				ret = subprog_treap_delete(*(uint32_t *)top->key.data);
+				if (ret != 0) {
+					bpf_printk(TAG"failed to replace the node (delete): %d", ret);
+					/* TODO: abort the batch */
+					abort = true;
+					DEFAULT_ACTION();
+				}
+			}
+
+			ret = subprog_treap_insert(*(uint32_t *)pstate->key.data, u);
+			if (ret != 0) {
+				bpf_printk(TAG"failed to replace the node (insert): %d", ret);
+				/* TODO: abort batch */
+				abort = true;
+				DEFAULT_ACTION();
+			}
+		}
+		DEFAULT_ACTION();
 	}')
+
+	if (abort) {
+		reset();
+		return 0;
+	}
 
 	// ----
 	report_tput_batch(batch_size);
@@ -383,4 +531,8 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 	return 0;
 }
 
+
+char _license[] SEC("license") = "GPL";
+
 BAX_END_OF_FILE()
+/* vim: set filetype=c: */
