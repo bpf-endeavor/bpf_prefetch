@@ -11,6 +11,10 @@
  * December - 2025
  * */
 
+#ifndef __bpf__
+#define __bpf__
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <linux/bpf.h>
@@ -18,6 +22,8 @@
 #include <bpf/bpf_endian.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
+#include <linux/udp.h>
+#include <linux/in.h>
 
 #define PREFETCH /* Enable prefetching helpers */
 #include "honey/report_throughput.h"
@@ -66,6 +72,7 @@ typedef struct {
 
 /* import BAX DSL */
 #include "bax/bax.h"
+BAX_DECLARE_INIT_STAGE_NAME(FIRST);
 /* ------------------------------------------------------------------------- */
 
 /* Use this tag when printing */
@@ -87,16 +94,14 @@ fp_t p;
 static uint64_t last_cvm_report = 0;
 #define CVM_REPORT_INTERVAL 5000000000
 
-uint32_t lookup_finished; /* keep track how many lookups finish */
-
 /* Helpers */
-static __always_inline
+static inline __attribute__((always_inline))
 uint64_t cvm_estimate(void)
 {
 	return ((uint64_t)treap->used * FP_SCALE) / ((uint64_t)p);
 }
 
-static __always_inline
+static inline __attribute__((always_inline))
 void reset(void)
 {
 	treap_reset(treap);
@@ -104,7 +109,7 @@ void reset(void)
 	last_cvm_report = 0;
 }
 
-static __always_inline
+static inline __attribute__((always_inline))
 void report_cvm_value(void)
 {
 	// report estimate every few seconds
@@ -122,6 +127,32 @@ void report_cvm_value(void)
 }
 /* ------------------------------------------------------ */
 
+/* Break program into multiple parts */
+/* TODO: abstract this with BAX syntax */
+enum {
+	PROG_MAIN,
+	PROG_2,
+	COUNT_PROGS,
+};
+
+int bbb_cvm_main(struct xdp_batch_md *batch);
+int bbb_cvm_prog2(struct xdp_batch_md *batch);
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, int);
+	__type(value, int);
+	__uint(max_entries, COUNT_PROGS);
+	__uint(map_flags, 0);
+	__array(values, int (void *));
+} prog_arr_map SEC(".maps")= {
+	.values = {
+		[PROG_MAIN] = (void *)&bbb_cvm_main,
+		[PROG_2] = (void *)&bbb_cvm_prog2,
+	},
+};
+/* ----------------------------------------------- */
+
 
 /*  insert/delete are wrapped in a global function to be evaluated as a
  *  separate program and help with passing the complexity limit
@@ -131,7 +162,7 @@ subprog_treap_insert(uint32_t k, fp_t u) {
 	return treap_insert(treap, &k, u);
 }
 
-BPF_GLOBAL_FUNC __attribute__((optnone))
+BPF_GLOBAL_FUNC
 subprog_treap_delete(uint32_t key) {
 	return treap_delete(treap, &key);
 }
@@ -140,6 +171,7 @@ struct __batch_lookup_2_inner_ctx {
 	struct xdp_batch_md *batch;
 	BAX_batch_state_t *bs;
 	uint16_t batch_size;
+	uint32_t lookup_finished;
 };
 
 static long __batch_lookup_2_inner(__u32 index, void *_ctx)
@@ -160,7 +192,7 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 			/* This key does not exist in the Treap */
 			pstate->link = NULL;
 			pstate->valid = true;
-			lookup_finished++;
+			ctx->lookup_finished++;
 			BAX_NEXT_STAGE(BATCH_DELETE_1);
 			// TODO: how to express early termination
 		}
@@ -171,7 +203,7 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 		if (cmp == 0) {
 			/* Found the matching key */
 			pstate->valid = true;
-			lookup_finished++;
+			ctx->lookup_finished++;
 			BAX_NEXT_STAGE(BATCH_DELETE_1);
 			// TODO: how to express early termination
 		} else if (cmp < 0) {
@@ -188,7 +220,7 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 	}')
 
 	/* We probably do not need to walk all the levels of graph */
-	if (lookup_finished == batch_size)
+	if (ctx->lookup_finished == batch_size)
 		return 1;
 	/* Explore the next level of trie */
 	return 0;
@@ -198,7 +230,6 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 SEC("xdp")
 int bbb_cvm_main(struct xdp_batch_md *batch)
 {
-	bool abort = false;
 	/* check that user-space program has initilized the Treap */
 	if (treap == NULL) {
 		bpf_printk("something is wrong in setting up Treap & Arena");
@@ -207,20 +238,34 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		return 0;
 	}
 
-	lookup_finished = 0;
+	BAX_PROG_BEGIN();
 	BAX_INIT_BATCH_STATE();
+
+	/* bpf_printk("batch size: %d", batch_size); */
 
 	BAX_STAGE(FIRST, `{
 		struct ethhdr *eth = data;
 		struct iphdr *ip = (struct iphdr *)(eth + 1);
+		struct udphdr *udp = (struct udphdr *)(ip + 1);
 
-		if ((void *)(ip + 1) > data_end) {
+		if ((void *)(udp + 1) > data_end) {
 			/* The packet is smaller than we expect */
 			PASS();
 		}
 
 		if (eth->h_proto != bpf_htons(ETH_P_IP)) {
 			/* We only cound IPv4 packets */
+			bpf_printk("non ip packet!");
+			PASS();
+		}
+
+		if (ip->protocol != IPPROTO_UDP) {
+			PASS();
+		}
+
+		uint16_t tmp_port = bpf_htons(udp->dest);
+		if (!(tmp_port >= 8000 && tmp_port < 8128)) {
+			/* It is not for our application */
 			PASS();
 		}
 
@@ -235,26 +280,48 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		pstate->link = &treap->root;
 		pstate->node = treap->root;
 		pstate->valid = false;
-
-		if (treap->root != NULL) {
-			BAX_NEXT_STAGE(BATCH_LOOKUP_2);
-		} else {
-			BAX_NEXT_STAGE(BATCH_LOOKUP_3);
-		}
+		BAX_NEXT_STAGE(BATCH_LOOKUP_2);
 	}')
 
+	/* NOTE: this is a logic that does not belong to any stage */
 	/* Prefetch the root of the Treap */
 	if (treap->root != NULL)
 		P((void *)treap->root);
 
+	// TODO: skip if no packet belongs to the phase 
 	/* We want to run a stage multiple times, walking the Treap down */
 	{
+		uint32_t lookup_finished = 0;
+		// TODO: add a components that iterate over all packets and is not a
+		// control flow stage
+		// NOTE: I have broken the abstracation!
+		for (int i = 0; i < batch_size && i < XDP_MAX_BATCH_SIZE; i++) {
+			pkt_state_t *pstate = BAX_GET_PSTATE(i);
+			if (pstate->phase != BATCH_LOOKUP_2)
+				lookup_finished++;
+		}
+
 		// TODO: Abstract bpf_loop
 		struct __batch_lookup_2_inner_ctx ctx = {};
 		ctx.batch = batch;
 		ctx.bs = bs;
 		ctx.batch_size = batch_size;
+		ctx.lookup_finished = lookup_finished;
 		bpf_loop(batch_size * TREAP_MAX_HEIGHT, __batch_lookup_2_inner, &ctx, 0);
+		lookup_finished = ctx.lookup_finished;
+
+		if (lookup_finished != batch_size) {
+			/* The constant upper bound of loop was not enough */
+			for (int BAX_k = 0;
+					BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++)
+			{
+				pkt_state_t *pstate = BAX_GET_PSTATE(BAX_k);
+				if (pstate->phase != BAX_DONE)
+					DROP();
+			}
+			reset();
+			return 0;
+		}
 
 		/* TODO: C comment is not m4 commets, so the preprocessor continues
 		 * processing following lines
@@ -306,21 +373,24 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		dnl /* } */
 	}
 
-	BAX_STAGE(BATCH_LOOKUP_3,`') /* Just declare a stage */
-	// This is to catch which ever packet that was not handled in the
-	// limited number of iterations above
-	/* TODO: we are breaking the abstraction because we can not check for early
-	 * termination of an stage. */
-	for (int i = 0; lookup_finished != batch_size && i < batch_size && i < XDP_MAX_BATCH_SIZE; i++) {
-		pkt_state_t *pstate = GET_PSTATE(i);
-		if (!pstate->valid) {
-			pstate->node = NULL;
-			pstate->link = NULL;
-			pstate->valid = true;
-			lookup_finished++;
-			pstate->phase = BATCH_DELETE_1;
-		}
+	/* NOTE: Splitted the program into to subprograms for comlexity reasons */
+	bpf_tail_call_static(batch, &prog_arr_map, PROG_2);
+
+	/* we must never reach here */
+	return -1;
+}
+
+// SPLIT_TO_TAIL_PROG() ------
+SEC("xdp")
+int bbb_cvm_prog2(struct xdp_batch_md *batch)
+{
+	bool abort = false;
+	/* check that user-space program has initilized the Treap */
+	if (treap == NULL) {
+		my_kfunc_reg_arena(&arena);
+		return 0;
 	}
+	BAX_PROG_BEGIN();
 
 	BAX_STAGE(BATCH_DELETE_1, `{
 		arena_treap_node_t *n = pstate->node;
@@ -388,7 +458,7 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 	 * */
 	{
 		pkt_state_t *pstate, *nstate;
-		pstate = GET_PSTATE(batch_size - 1);
+		pstate = BAX_GET_PSTATE(batch_size - 1);
 		pstate->max_remove_prob = 0;
 		pstate->count_deleted = 0;
 		if (pstate->phase == BATCH_DELETE_2)
@@ -400,11 +470,11 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 		for (int i = batch_size - 2; i > -1; i--) {
 			/* Skip packets that are not for this phase */
-			pstate = GET_PSTATE(i);
+			pstate = BAX_GET_PSTATE(i);
 			if (pstate->phase != BATCH_DELETE_2)
 				continue;
 
-			nstate = GET_PSTATE(next);
+			nstate = BAX_GET_PSTATE(next);
 			arena_treap_node_t *next_n = nstate->node;
 			fp_t u = next_n == NULL ? 0 : next_n->priority;
 			pstate->max_remove_prob =
@@ -501,7 +571,6 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 	report_cvm_value();
 	return 0;
 }
-
 
 char _license[] SEC("license") = "GPL";
 

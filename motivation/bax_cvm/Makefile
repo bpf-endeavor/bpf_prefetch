@@ -21,6 +21,7 @@ REPO_LIB_DIR = ../../libs/
 # $(info $(bpf_headers))
 
 BPF_CFLAGS ?=
+BPF_CFLAGS += -target bpf 
 BPF_CFLAGS += -O2 -g
 BPF_CFLAGS += -std=gnu17
 BPF_CFLAGS += -Werror
@@ -29,11 +30,11 @@ BPF_CFLAGS += -Wno-pointer-sign
 BPF_CFLAGS += -Wno-compare-distinct-pointer-types
 BPF_CFLAGS += -Wno-address-of-packed-member
 BPF_CFLAGS += -Wno-incompatible-pointer-types
-BPF_CFLAGS += -I ./include/
-BPF_CFLAGS += -I $(REPO_LIB_DIR)
-# BPF_CFLAGS += -I $(LIBBPF_HEADER)
-BPF_CFLAGS += -D __KERNEL__ -D __BPF__
+BPF_CFLAGS += -D __KERNEL__ -D __BPF__ -D __bpf__
 BPF_CFLAGS += -D __BPF_FEATURE_ADDR_SPACE_CAST
+BPF_CFLAGS += -I ./include/ -I ./
+BPF_CFLAGS += -I $(REPO_LIB_DIR)
+BPF_CFLAGS += -I $(LIBBPF_HEADER)
 
 EXTRA_CFLAGS ?=
 
@@ -59,7 +60,7 @@ $(build_dir)/cvm.bpf.c: cvm.bax
 	/bin/sh ../../libs/bax/cbax.sh $< $@
 
 $(build_dir)/cvm.bpf.ll: $(build_dir)/cvm.bpf.c
-	$(CLANG) -I ./ $(EXTRA_CFLAGS) $(BPF_CFLAGS) -emit-llvm -c $< -o $@.tmp
+	$(CLANG) $(EXTRA_CFLAGS) $(BPF_CFLAGS) -emit-llvm -c $< -o $@.tmp
 	mv $@.tmp $@
 
 $(build_dir)/cvm.bpf.o: $(build_dir)/cvm.bpf.ll  $(bpf_headers)

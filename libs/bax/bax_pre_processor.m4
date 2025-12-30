@@ -8,9 +8,10 @@ dnl define(`forloop', `pushdef(`$1', `$2')_forloop($@)popdef(`$1')')
 dnl define(`_forloop', `$4`'ifelse($1, `$3', `', `define(`$1', incr($1))$0($@)')')
 
 dnl Initialize counters and storage
-define(`stage_count', 0)
-define(`stage_names', `')
-define(`pkt_state_type_name', `')_
+define(`stage_count', 1)
+define(`stage_names', `BAX_DONE')
+define(`pkt_state_type_name', `')
+define(`init_stage_name', `')
 
 dnl Helpers ----------------------------------
 
@@ -22,6 +23,12 @@ ifelse(pkt_state_type_name, `',
 	`')
 'dnl
 )
+
+define(`_check_init_stage_name', `dnl
+ifelse(init_stage_name, `',
+	`errprint(`User has not defined the name of initial stage.')m4exit(1)',
+	`')
+')
 
 dnl Define all the keyword/variables regardless of if they are used. LLVM will
 dnl remove them if they are not used.
@@ -38,7 +45,7 @@ define(`BAX_DECLARE_PKT_STATE_TYPE',`dnl
 define(`pkt_state_type_name', $1)dnl
 `/* Define the MAP that stores the per-packet information across stages */
 typedef struct {
-  $1 S[XDP_MAX_BATCH_SIZE];
+  $1 S[XDP_MAX_BATCH_SIZE + 1];
 } BAX_batch_state_t;
 struct {
   __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -50,30 +57,39 @@ struct {
 'dnl
 ')
 
-define(`BAX_INIT_BATCH_STATE',`dnl
-const uint16_t batch_size = batch->size;
-BAX_batch_state_t *bs = NULL;
-{
-int zero = 0;
-bs = bpf_map_lookup_elem(&BAX_batch_state_map, &zero);
-}
+dnl User should define what is the name of first stage
+define(`BAX_DECLARE_INIT_STAGE_NAME', `define(`init_stage_name', $1)')
+
+define(`BAX_PROG_BEGIN',`dnl
+int BAX__zero = 0;
+const unsigned short batch_size = batch->size;
+BAX_batch_state_t * const bs = bpf_map_lookup_elem(&BAX_batch_state_map, &BAX__zero);
 /* This check must never fail */
-if (bs == NULL) return -1;
-for (uint16_t BAX_k = 0; BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
-	if (BAX_k >= batch_size) break;
-	pkt_state_type_name *pstate = &bs->S[BAX_k];
-	__builtin_memset(pstate, 0, sizeof(pkt_state_type_name));
-}
+if (bs == NULL) { return -1; }
 if (batch_size > XDP_MAX_BATCH_SIZE || batch_size == 0) { return -1; }
 ')
+
+define(`BAX_INIT_BATCH_STATE', `dnl
+_check_init_stage_name()
+`BAX_memset(bs, 0, sizeof(BAX_batch_state_t));
+for (int i = 0; i < batch_size && i < XDP_MAX_BATCH_SIZE; i++) {
+	bs->S[i].phase = 'init_stage_name`;
+}'dnl
+')
+
+dnl dnl Some macros to ease working with a batch
+dnl define(`BAX_NEXT_STAGE', `{pstate->phase = $1; continue;}')
+dnl define(`BAX_GET_PSTATE', `&bs->S[$1]')
+dnl define(`BAX_ACTION', `{batch->actions[BAX_k] = $1; BAX_NEXT_STAGE(BAX_DONE);}')
+dnl define(`PASS', `BAX_ACTION(XDP_PASS)')
+dnl define(`DROP', `BAX_ACTION(XDP_DROP)')
+dnl define(`TX',   `BAX_ACTION(XDP_TX)')
 
 dnl STAGE macro - collects stage name and body
 dnl Syntax: STAGE(name){body}
 define(`BAX_STAGE',`dnl
 _check_pkt_state_type_is_defined()dnl
-`#pragma clang loop unroll(disable)
-for (uint16_t BAX_k = 0; BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
-	if (BAX_k >= batch_size) break;
+`for (unsigned short BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
 	'pkt_state_type_name` *pstate = &bs->S[BAX_k];
 	if (pstate->phase != $1) continue;
 '
@@ -83,17 +99,21 @@ for (uint16_t BAX_k = 0; BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
 	$2
 	/* end   stage $1 code */
 }'dnl
-ifelse(stage_count, 0,dnl
-	`define(`stage_names', $1)',dnl
-	`define(`stage_names', stage_names`|'$1)'dnl
-	)dnl
-define(`stage_count', incr(stage_count))dnl
+ifelse(index(stage_names, $1), `-1', `dnl
+	define(`stage_names', stage_names`|'$1)dnl
+	define(`stage_count', incr(stage_count))',
+	`')dnl
 ')
 
 dnl Generate the enum
 define(`BAX_BEGIN_OF_FILE',`dnl
 /* TODO: remove the forward declaration and replace the actual enum definition at the end of the file */
 enum BAX_phase; /* forward declaration */
+
+static inline __attribute__((always_inline))
+void BAX_memset(char *dst, unsigned char v1, unsigned short sz) {
+	for (int i = 0; i < sz && i < 128; i++) { dst[i] = v1; }
+}
 ')
 
 define(`BAX_END_OF_FILE', `dnl

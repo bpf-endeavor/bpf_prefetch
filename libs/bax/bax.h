@@ -17,14 +17,15 @@ include(`bax_pre_processor.m4')
 BAX_DECLARE_PKT_STATE_TYPE(pkt_state_t)
 BAX_BEGIN_OF_FILE()
 
-/* Some macros to ease working with a batch */
-#define ACTION(act) batch->actions[BAX_k] = act
-#define PASS() {ACTION(XDP_PASS); continue;}
-#define DROP() {ACTION(XDP_DROP); continue;}
-#define TX()   {ACTION(XDP_TX); continue;}
-
 #define BAX_NEXT_STAGE(stage) {pstate->phase = stage; continue;}
+#define BAX_GET_PSTATE(k) &bs->S[k]
 
-#define GET_PSTATE(k) &bs->S[k]
+/* Some macros to ease working with a batch */
+#define ACTION(act) {batch->actions[BAX_k] = act; BAX_NEXT_STAGE(BAX_DONE);}
+#define PASS() ACTION(XDP_PASS)
+#define DROP() ACTION(XDP_DROP)
+#define TX()   ACTION(XDP_TX)
+
+#define BAX_INIT_BATCH_STATE() BAX_memset(bs, 0, sizeof(BAX_batch_state_t));
 
 #endif /* BAX_H */
