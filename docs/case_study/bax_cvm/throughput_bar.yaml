@@ -12,5 +12,16 @@ annotate:
     text: '2.3'
   - xy: [0.9, 3.7]
     text: '3.3'
+  # Arrow label
+  - xy: [0.5, 2.5]
+    text: '39%'
+arrow:
+  - x: 0.4
+    y: 2.365
+    dx: 0
+    dy: 0.933
+    length_includes_head: true
+    head_width: 0.05
+    head_length: 0.25
 output: 'cvm_tput.pdf'
 
