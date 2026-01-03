@@ -1,5 +1,5 @@
-figsize: [3.5, 2.1]
-x: ['baseline', "with batching &\nprefetching"]
+figsize: [2.5, 2.1]
+x: ['BMC', "BMC on\nBeeswax"]
 y: [ [776,0],
      [0, 900] ]
 color: ['k', 'tab:red']
@@ -7,11 +7,23 @@ hatch: ['', 'xx']
 bar_width: 0.25
 ylabel: 'Throughput (K Req/s)'
 yticks: [0, 400, 800, 1200]
+arrow:
+  - x: 0.45
+    y: 776
+    dx: 0
+    dy: 124
+    length_includes_head: true
+    head_width: 0.05
+    head_length: 60
+    facecolor: black
 annotate:
   - xy: [-0.08, 850]
     text: '776'
   - xy: [0.92, 1000]
     text: '900'
+  # Arrow label
+  - xy: [0.50, 800]
+    text: '16%'
 output: 'bmc_tput.pdf'
 grid: true
 comments: "
