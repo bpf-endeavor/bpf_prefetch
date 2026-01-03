@@ -45,6 +45,7 @@ struct {
 } arena SEC(".maps");
 
 #include "treap.h"
+#include "hist.h"
 /* ------------------------------------------------------------------------- */
 
 
@@ -114,6 +115,7 @@ BAX_DECLARE_INIT_STAGE_NAME(FIRST);
 /* Some global variables */
 /* user-space program initializes the Treap and sets this pointer */
 arena_treap_t *treap = NULL;
+arena_hist_t *hist = NULL;
 
 /* ``fp_t'' is a fixed-point floating number (since we can not do floating
  * point in eBPF)
@@ -150,6 +152,9 @@ void report_cvm_value(void)
 			last_cvm_report = ts;
 		} else {
 			bpf_printk(TAG"Size estimate: %lld", cvm_estimate());
+			/* report histogram of active packets when doing lookup */
+			hist_report(hist);
+			hist_reset(hist);
 			reset();
 			last_cvm_report = ts;
 		}
@@ -211,10 +216,15 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 	BAX_batch_state_t *bs = ctx->bs;
 	uint16_t batch_size = ctx->batch_size;
 
+	uint32_t cntr = 0;
+
 	BAX_STAGE(BATCH_LOOKUP_2, `{
 		/* Farbod: this should not happen because we change the phase */
 		/* if (pstate->valid) */
 		/* 	continue; */
+
+		/* keep track of number of active packets in the batch */
+		cntr++;
 
 		/* All of this can go under a fine-grained API lookup */
 		arena_treap_node_t *ptr = pstate->node;
@@ -249,6 +259,12 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 		}
 	}')
 
+	/* NOTE: track number of active packets (from a full batch size) in different iterations */
+	/* bpf_printk("active batch: %d", cntr); */
+	// hist_record(hist, cntr);
+	unsigned int b = (cntr - HIST_START_NUMBER) / HIST_BUCKET_WIDTH;
+	hist->buckets[b]++;
+
 	/* We probably do not need to walk all the levels of graph */
 	if (ctx->lookup_finished == batch_size)
 		return 1;
@@ -261,7 +277,7 @@ SEC("xdp")
 int bbb_cvm_main(struct xdp_batch_md *batch)
 {
 	/* check that user-space program has initilized the Treap */
-	if (treap == NULL) {
+	if (treap == NULL || hist == NULL) {
 		bpf_printk("something is wrong in setting up Treap & Arena");
 		/* Make sure Arena is associated with our program */
 		my_kfunc_reg_arena(&arena);
@@ -352,55 +368,6 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 			reset();
 			return 0;
 		}
-
-		/* TODO: C comment is not m4 commets, so the preprocessor continues
-		 * processing following lines
-		 * */
-		dnl /* int i; */
-		dnl /* TODO: I failed to compile things with bpf_for. It is weird! */
-		dnl /* bpf_for (i, 0, batch_size * TREAP_MAX_HEIGHT) { */
-		dnl /* 	BAX_STAGE(BATCH_LOOKUP_2, `{ */
-		dnl /* 		/1* Farbod: this should not happen because we change the phase *1/ */
-		dnl /* 		if (pstate->valid) */
-		dnl /* 			continue; */
-
-		dnl /* 		/1* All of this can go under a fine-grained API lookup *1/ */
-		dnl /* 		struct treap_key *key = (void *)(data + pstate->key_off); */
-		dnl /* 		arena_treap_node_t *ptr = pstate->node; */
-		dnl /* 		if (ptr == NULL) { */
-		dnl /* 			/1* This key does not exist in the Treap *1/ */
-		dnl /* 			pstate->link = NULL; */
-		dnl /* 			pstate->valid = true; */
-		dnl /* 			lookup_finished++; */
-		dnl /* 			BAX_NEXT_STAGE(BATCH_DELETE_1); */
-		dnl /* 			// TODO: how to express early termination */
-		dnl /* 		} */
-
-		dnl /* 		void __arena *ptr_key = (void __arena *)(&ptr->key); */
-		dnl /* 		int64_t cmp = treap_key_cmp(key, (void *)ptr_key); */
-		dnl /* 		if (cmp == 0) { */
-		dnl /* 			/1* Found the matching key *1/ */
-		dnl /* 			pstate->valid = true; */
-		dnl /* 			lookup_finished++; */
-		dnl /* 			BAX_NEXT_STAGE(BATCH_DELETE_1); */
-		dnl /* 			// TODO: how to express early termination */
-		dnl /* 		} else if (cmp < 0) { */
-		dnl /* 			/1* Explore the left sub-graph *1/ */
-		dnl /* 			pstate->link = &ptr->left; */
-		dnl /* 			pstate->node = ptr->left; */
-		dnl /* 			P((void *)(ptr->left)); */
-		dnl /* 		} else { */
-		dnl /* 			/1* Explore the right sub-grph *1/ */
-		dnl /* 			pstate->link = &ptr->right; */
-		dnl /* 			pstate->node = ptr->right; */
-		dnl /* 			P((void *)(ptr->right)); */
-		dnl /* 		} */
-		dnl /* 	}') */
-
-		dnl /* 	/1* We probably do not need to walk all the levels of graph *1/ */
-		dnl /* 	if (lookup_finished == batch_size) */
-		dnl /* 		break; */
-		dnl /* } */
 	}
 
 	/* NOTE: Splitted the program into to subprograms for comlexity reasons */
@@ -416,7 +383,7 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 {
 	bool abort = false;
 	/* check that user-space program has initilized the Treap */
-	if (treap == NULL) {
+	if (treap == NULL || hist == NULL) {
 		my_kfunc_reg_arena(&arena);
 		return 0;
 	}

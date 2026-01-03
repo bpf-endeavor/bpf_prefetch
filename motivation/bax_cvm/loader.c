@@ -13,6 +13,7 @@
 
 // data-structures
 #include "treap.h"
+#include "hist.h"
 // sekeleton objects
 #include "cvm.skel.h"
 
@@ -48,26 +49,45 @@ static int launch_baseline(void)
     size_t area_sz = 0;
     void *area = NULL;
     arena_treap_t *treap = NULL;
+    arena_hist_t *hist = NULL;
     uint32_t num_pages = 0;
 
     /* Get the begining of the mmapped address */
     area = bpf_map__initial_value(skel->maps.arena, &area_sz);
     printf("key size is: %ld\n", sizeof(my_key_t));
 
-    arena_treap_alloc_t arg = {
-        .area = area,
-        .area_size = 0, // TODO: get the max size of area and pass it here
-        .key_size = sizeof(my_key_t),
-        .max_entries = TREAP_MAX_SIZE,
-        .max_height = TREAP_MAX_HEIGHT,
-        .treap_out = &treap,
-        .allocated_pages = &num_pages,
-    };
-    if (userspace_arena_treap_alloc(&arg) != 0) {
-        return -1;
+    {
+        arena_treap_alloc_t arg = {
+            .area = area,
+            .area_size = 0, // TODO: get the max size of area and pass it here
+            .key_size = sizeof(my_key_t),
+            .max_entries = TREAP_MAX_SIZE,
+            .max_height = TREAP_MAX_HEIGHT,
+            .treap_out = &treap,
+            .allocated_pages = &num_pages,
+        };
+        if (userspace_arena_treap_alloc(&arg) != 0) {
+            fprintf(stderr, "failed to allocate Treap on Arena\n");
+            return -1;
+        }
+    }
+
+    {
+        uint32_t tmp;
+        arena_hist_alloc_t arg = {
+            .area = area + (num_pages * 4096), // skip the memory pages allocated for Treap
+            .area_size = 0, // TODO: ...
+            .out = &hist,
+            .allocated_area = &tmp,
+        };
+        if (userspace_arena_hist_alloc(&arg) != 0) {
+            fprintf(stderr, "failed to allocate Hist on Arena\n");
+            return -1;
+        }
     }
 
     skel->bss->treap = treap;
+    skel->bss->hist = hist;
     skel->bss->p = (1 << 31); // FP_ONE
     {
         /* Attach XDP */
