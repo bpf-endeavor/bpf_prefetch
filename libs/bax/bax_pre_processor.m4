@@ -90,7 +90,8 @@ dnl STAGE macro - collects stage name and body
 dnl Syntax: STAGE(name){body}
 define(`BAX_STAGE',`dnl
 _check_pkt_state_type_is_defined()dnl
-`for (unsigned short BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
+ifelse($1, , `',`dnl
+for (unsigned short BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
 	'pkt_state_type_name` *pstate = &bs->S[BAX_k];
 	if (pstate->phase != $1) continue;
 '
@@ -100,6 +101,7 @@ _check_pkt_state_type_is_defined()dnl
 	$2
 	/* end   stage $1 code */
 }'dnl
+)
 ifelse(index(stage_names, $1), `-1', `dnl
 	define(`stage_names', stage_names`|'$1)dnl
 	define(`stage_count', incr(stage_count))',

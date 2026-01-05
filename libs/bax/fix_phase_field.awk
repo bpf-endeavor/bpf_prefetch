@@ -4,7 +4,8 @@
 
 # This special field has been moved internally
 /pstate->phase/ {
-	gsub(/pstate->phase/, "bs->phases[BAX_k]"); print
+	gsub(/pstate->phase/, "bs->phases[BAX_k]"); print ;
+	next
 }
 
 # Do not change the rest of the file
