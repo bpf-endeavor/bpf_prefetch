@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 IN=$1
 OUT=$2
 
@@ -26,8 +26,12 @@ if [ $? -ne 0 ]; then
 fi
 
 # To fix the `enum BAX_phase' location, pass it through the awk script
-INTERMEDIATE=$(echo "$INTERMEDIATE" | awk -f "$CURDIR/fix_enum_def.awk")
-
+# To fix ...
+FIXING_PASSES=( "$CURDIR/fix_enum_def.awk" "$CURDIR/fix_phase_field.awk" )
+for AWK_FILE in ${FIXING_PASSES[@]}; do
+	echo "Applying $(basename $AWK_FILE) ..."
+	INTERMEDIATE=$(echo "$INTERMEDIATE" | awk -f "$AWK_FILE")
+done
 
 if [ -z "$format" ]; then
 	echo "$INTERMEDIATE" > "$OUT"

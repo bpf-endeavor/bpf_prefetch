@@ -53,7 +53,7 @@ struct {
 /* The state we maintain per each packet */
 typedef struct {
 	/* the phase is mandetory */
-	int phase; /* to which stage packet belongs */ /* NOTE: BAX moves this out of struct */
+	int phase[0]; /* to which stage packet belongs */ /* NOTE: BAX moves this out of struct */
 	/* ----------------- */
 	bool valid; /* ?? */
 	arena_treap_node_t *node;
@@ -451,8 +451,8 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 		pstate = BAX_GET_PSTATE(batch_size - 1);
 		pstate->max_remove_prob = 0;
 		pstate->count_deleted = 0;
-		if (pstate->phase == BATCH_DELETE_2)
-			pstate->phase = GEN_RANDOM_VAL;
+		if (bs->phases[batch_size - 1] == BATCH_DELETE_2)
+			bs->phases[batch_size - 1] = GEN_RANDOM_VAL;
 
 		// next packet in the batch that belongs to this phase (or the last
 		// packet)

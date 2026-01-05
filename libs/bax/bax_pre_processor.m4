@@ -45,7 +45,8 @@ define(`BAX_DECLARE_PKT_STATE_TYPE',`dnl
 define(`pkt_state_type_name', $1)dnl
 `/* Define the MAP that stores the per-packet information across stages */
 typedef struct {
-  $1 S[XDP_MAX_BATCH_SIZE + 1];
+  int phases[XDP_MAX_BATCH_SIZE];
+  $1 S[XDP_MAX_BATCH_SIZE];
 } BAX_batch_state_t;
 struct {
   __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -72,8 +73,8 @@ if (batch_size > XDP_MAX_BATCH_SIZE || batch_size == 0) { return -1; }
 define(`BAX_INIT_BATCH_STATE', `dnl
 _check_init_stage_name()
 `BAX_memset(bs, 0, sizeof(BAX_batch_state_t));
-for (int i = 0; i < batch_size && i < XDP_MAX_BATCH_SIZE; i++) {
-	bs->S[i].phase = 'init_stage_name`;
+for (int BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
+	bs->phases[BAX_k] = 'init_stage_name`;
 }'dnl
 ')
 
@@ -105,6 +106,21 @@ ifelse(index(stage_names, $1), `-1', `dnl
 	`')dnl
 ')
 
+dnl A helper for running a block of code for all packets irrespective of their
+dnl phase.
+define(`BAX_FOR_ALL', `dnl
+_check_pkt_state_type_is_defined()
+`for (unsigned short BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
+	'pkt_state_type_name` *pstate = &bs->S[BAX_k];
+'
+	_in_stage_define_vars()dnl
+`
+	/* begin block of code */
+	$1
+	/* end block of code */
+}'dnl
+')
+
 dnl Generate the enum
 define(`BAX_BEGIN_OF_FILE',`dnl
 /* TODO: remove the forward declaration and replace the actual enum definition at the end of the file */
@@ -112,7 +128,10 @@ enum BAX_phase; /* forward declaration */
 
 static inline __attribute__((always_inline))
 void BAX_memset(char *dst, unsigned char v1, unsigned short sz) {
-	for (int i = 0; i < sz && i < 128; i++) { dst[i] = v1; }
+	int i = 0;
+	uint64_t v8 = (uint64_t)v1 | (uint64_t)v1 << 8 | (uint64_t)v1 << 16 | (uint64_t)v1 << 24 | (uint64_t)v1 << 32 | (uint64_t)v1 << 40 | (uint64_t)v1 << 48 | (uint64_t)v1 << 56;
+	for (; i + 7 < sz && i < 128; i += 8) { *(uint64_t *)(dst) = v8; }
+	for (; i < sz && i < 128; i++) { dst[i] = v1; }
 }
 ')
 

@@ -310,19 +310,13 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 	/* bpf_printk("batch size: %d", batch_size); */
 
-	/* NOTE: do we need to do this? */
-	P((void *)treap);
-
 	BAX_PROG_BEGIN();
 	BAX_INIT_BATCH_STATE();
 
-	/* NOTE: this is a logic that does not belong to any stage */
-	if (treap->root != NULL) {
-		/* Prefetch the root of the Treap */
-		P((void *)treap->root);
-	}
-
 	uint32_t lookup_finished = 0;
+
+	/* NOTE: do we need to do this? */
+	P((void *)treap);
 
 	BAX_STAGE(FIRST, `{
 		struct ethhdr *eth = data;
@@ -366,13 +360,19 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		// pstate->valid = false; /* valid is set to false during init */
 
 		if (treap->root == NULL) {
-					pstate->valid = true;
-					lookup_finished++;
-					BAX_NEXT_STAGE(GEN_RANDOM_VAL);
+			pstate->valid = true;
+			lookup_finished++;
+			BAX_NEXT_STAGE(GEN_RANDOM_VAL);
 		}
 
 		BAX_NEXT_STAGE(BATCH_LOOKUP_2);
 	}')
+
+	/* NOTE: this is a logic that does not belong to any stage */
+	if (treap->root != NULL) {
+		/* Prefetch the root of the Treap */
+		P((void *)treap->root);
+	}
 
 	// TODO: skip if no packet belongs to the phase
 	/* We want to run a stage multiple times, walking the Treap down */
