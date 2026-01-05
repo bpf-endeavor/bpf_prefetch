@@ -57,7 +57,7 @@ $(skel_dir):
 	mkdir -p $@
 
 $(build_dir)/cvm.bpf.c: cvm.bax
-	/bin/sh ../../libs/bax/cbax.sh $< $@
+	/bin/bash ../../libs/bax/cbax.sh $< $@
 
 $(build_dir)/cvm.bpf.ll: $(build_dir)/cvm.bpf.c
 	$(CLANG) $(EXTRA_CFLAGS) $(BPF_CFLAGS) -emit-llvm -c $< -o $@.tmp

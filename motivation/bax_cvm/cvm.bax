@@ -53,7 +53,7 @@ struct {
 /* The state we maintain per each packet */
 typedef struct {
 	/* the phase is mandetory */
-	int phase; /* to which stage packet belongs */
+	int phase; /* to which stage packet belongs */ /* NOTE: BAX moves this out of struct */
 	/* ----------------- */
 	bool valid; /* ?? */
 	arena_treap_node_t *node;
@@ -96,6 +96,11 @@ fp_t p;
 static uint64_t last_cvm_report = 0;
 #define CVM_REPORT_INTERVAL 5000000000
 
+/* NOTE: enable this flag to report histogram of number of packet active during
+ * Treap lookup
+ * */
+/* #define REPORT_ACTIVE_BATCH_SIZE_DURING_LOOKUP */
+
 /* Helpers */
 static inline __attribute__((always_inline))
 uint64_t cvm_estimate(void)
@@ -122,9 +127,11 @@ void report_cvm_value(void)
 			last_cvm_report = ts;
 		} else {
 			bpf_printk(TAG"Size estimate: %lld", cvm_estimate());
+#ifdef REPORT_ACTIVE_BATCH_SIZE_DURING_LOOKUP
 			/* report histogram of active packets when doing lookup */
 			hist_report(hist);
 			hist_reset(hist);
+#endif
 			reset();
 			last_cvm_report = ts;
 		}
@@ -203,7 +210,10 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 			pstate->link = NULL;
 			pstate->valid = true;
 			ctx->lookup_finished++;
-			BAX_NEXT_STAGE(BATCH_DELETE_1);
+			/* NOTE: BATCH_DELETE_1 removes the node we find, we can skip that
+			 * stage since there is nothing.
+			 * */
+			BAX_NEXT_STAGE(BATCH_DELETE_2);
 			// TODO: how to express early termination
 		}
 
@@ -229,11 +239,13 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 		}
 	}')
 
+#ifdef REPORT_ACTIVE_BATCH_SIZE_DURING_LOOKUP
 	/* NOTE: track number of active packets (from a full batch size) in different iterations */
 	/* bpf_printk("active batch: %d", cntr); */
 	// hist_record(hist, cntr);
 	unsigned int b = (cntr - HIST_START_NUMBER) / HIST_BUCKET_WIDTH;
 	hist->buckets[b]++;
+#endif
 
 	/* We probably do not need to walk all the levels of graph */
 	if (ctx->lookup_finished == batch_size)
@@ -241,6 +253,18 @@ static long __batch_lookup_2_inner(__u32 index, void *_ctx)
 	/* Explore the next level of trie */
 	return 0;
 }
+
+static inline __attribute__((always_inline))
+void __abort(struct xdp_batch_md *batch, BAX_batch_state_t *bs)
+{
+	const unsigned short batch_size = batch->size;
+	BAX_FOR_ALL(`{
+		if (pstate->phase != BAX_DONE)
+			DROP();
+	}')
+	reset();
+}
+
 
 /* bbb_ indicates that it is a batch packet processing program */
 SEC("xdp")
@@ -254,10 +278,15 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		return 0;
 	}
 
+	/* bpf_printk("batch size: %d", batch_size); */
+
 	BAX_PROG_BEGIN();
 	BAX_INIT_BATCH_STATE();
 
-	/* bpf_printk("batch size: %d", batch_size); */
+	uint32_t lookup_finished = 0;
+
+	/* NOTE: do we need to do this? */
+	P((void *)treap);
 
 	BAX_STAGE(FIRST, `{
 		struct ethhdr *eth = data;
@@ -265,22 +294,25 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		struct udphdr *udp = (struct udphdr *)(ip + 1);
 
 		if ((void *)(udp + 1) > data_end) {
+			lookup_finished++;
 			/* The packet is smaller than we expect */
 			PASS();
 		}
 
 		if (eth->h_proto != bpf_htons(ETH_P_IP)) {
+			lookup_finished++;
 			/* We only cound IPv4 packets */
-			bpf_printk("non ip packet!");
 			PASS();
 		}
 
 		if (ip->protocol != IPPROTO_UDP) {
+			lookup_finished++;
 			PASS();
 		}
 
 		uint16_t tmp_port = bpf_htons(udp->dest);
 		if (!(tmp_port >= 8000 && tmp_port < 8128)) {
+			lookup_finished++;
 			/* It is not for our application */
 			PASS();
 		}
@@ -288,35 +320,33 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		/* uint16_t off = (uint64_t)(&ip->saddr) - (uint64_t)(eth); */
 		/* pstate->key_off = off; */
 		*(uint32_t *)pstate->key.data = ip->saddr;
-		BAX_NEXT_STAGE(BATCH_LOOKUP_1);
-	}')
 
-	BAX_STAGE(BATCH_LOOKUP_1, `{
+		/* Merge LOOKUP_1 with this stage */
+		/* BAX_NEXT_STAGE(BATCH_LOOKUP_1); */
+
 		/* this can go under a lookup initialize fine-grained API */
 		pstate->link = &treap->root;
 		pstate->node = treap->root;
-		pstate->valid = false;
+		// pstate->valid = false; /* valid is set to false during init */
+
+		if (treap->root == NULL) {
+			pstate->valid = true;
+			lookup_finished++;
+			BAX_NEXT_STAGE(GEN_RANDOM_VAL);
+		}
+
 		BAX_NEXT_STAGE(BATCH_LOOKUP_2);
 	}')
 
 	/* NOTE: this is a logic that does not belong to any stage */
-	/* Prefetch the root of the Treap */
-	if (treap->root != NULL)
+	if (treap->root != NULL) {
+		/* Prefetch the root of the Treap */
 		P((void *)treap->root);
+	}
 
-	// TODO: skip if no packet belongs to the phase 
+	// TODO: skip if no packet belongs to the phase
 	/* We want to run a stage multiple times, walking the Treap down */
 	{
-		uint32_t lookup_finished = 0;
-		// TODO: add a components that iterate over all packets and is not a
-		// control flow stage
-		// NOTE: I have broken the abstracation!
-		for (int i = 0; i < batch_size && i < XDP_MAX_BATCH_SIZE; i++) {
-			pkt_state_t *pstate = BAX_GET_PSTATE(i);
-			if (pstate->phase != BATCH_LOOKUP_2)
-				lookup_finished++;
-		}
-
 		// TODO: Abstract bpf_loop
 		struct __batch_lookup_2_inner_ctx ctx = {};
 		ctx.batch = batch;
@@ -328,15 +358,8 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 		if (lookup_finished != batch_size) {
 			/* The constant upper bound of loop was not enough */
-			for (int BAX_k = 0;
-					BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++)
-			{
-				pkt_state_t *pstate = BAX_GET_PSTATE(BAX_k);
-				if (pstate->phase != BAX_DONE)
-					DROP();
-			}
-			reset();
-			return 0;
+			__abort(batch, bs);
+			return -1;
 		}
 	}
 
@@ -351,7 +374,6 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 SEC("xdp")
 int bbb_cvm_prog2(struct xdp_batch_md *batch)
 {
-	bool abort = false;
 	/* check that user-space program has initilized the Treap */
 	if (treap == NULL || hist == NULL) {
 		my_kfunc_reg_arena(&arena);
@@ -363,6 +385,7 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 		arena_treap_node_t *n = pstate->node;
 		arena_treap_link_t *link = pstate->link;
 
+		/* NOTE: This should not happen */
 		if (n == NULL) {
 			/* key does not exists */
 			BAX_NEXT_STAGE(BATCH_DELETE_2);
@@ -391,7 +414,7 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 					// NOTE: batch treap: error missed
 					bpf_printk("failed to __get_immediate...");
 					pstate->valid = false;
-					BAX_NEXT_STAGE(BATCH_DELETE_2);
+					BAX_NEXT_STAGE(GEN_RANDOM_VAL);
 				}
 
 				// swap the node with the leaf and then remove the node
@@ -411,7 +434,7 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 					// NOTE: batch treap: error missed
 					bpf_printk("failed to __fix_sub...");
 					pstate->valid = false;
-					BAX_NEXT_STAGE(BATCH_DELETE_2);
+					BAX_NEXT_STAGE(GEN_RANDOM_VAL);
 				}
 			}
 		}
@@ -435,9 +458,9 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 		// packet)
 		int next = batch_size - 1;
 
-		for (int i = batch_size - 2; i > -1; i--) {
+		for (int BAX_k = batch_size - 2; BAX_k > -1; BAX_k--) {
 			/* Skip packets that are not for this phase */
-			pstate = BAX_GET_PSTATE(i);
+			pstate = BAX_GET_PSTATE(BAX_k);
 			if (pstate->phase != BATCH_DELETE_2)
 				continue;
 
@@ -454,15 +477,15 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 
 			/* next phase is  */
 			pstate->phase = GEN_RANDOM_VAL;
-			next = i;
+			next = BAX_k;
 		}
 	}
 
 	BAX_STAGE(GEN_RANDOM_VAL, `{
 		if (!pstate->valid) {
 			bpf_printk("delete faild. this must not happen");
-			abort = true;
-			PASS();
+			__abort(batch, bs);
+			return -1;
 		}
 
 		pstate->rnd_u = fp_random();
@@ -476,14 +499,14 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 			DEFAULT_ACTION();
 		}
 
-		int free_space = TREAP_MAX_HEIGHT - treap->used - pstate->count_deleted;
+		int free_space = TREAP_MAX_SIZE - treap->used - pstate->count_deleted;
 		if (free_space > 0) {
 			ret = subprog_treap_insert(*(uint32_t *)pstate->key.data, u);
 			if (ret != 0) {
 				bpf_printk("failed to insert");
 				/* TODO: abort processing the batch ? Early termination not supported yet */
-				abort = true;
-				DEFAULT_ACTION(); /* NOTE: we failed to process packet but let it go */
+				__abort(batch, bs);
+				return -1;
 			}
 			DEFAULT_ACTION();
 		}
@@ -512,8 +535,8 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 				if (ret != 0) {
 					bpf_printk(TAG"failed to replace the node (delete): %d", ret);
 					/* TODO: abort the batch */
-					abort = true;
-					DEFAULT_ACTION();
+					__abort(batch, bs);
+					return -1;
 				}
 			}
 
@@ -521,17 +544,12 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 			if (ret != 0) {
 				bpf_printk(TAG"failed to replace the node (insert): %d", ret);
 				/* TODO: abort batch */
-				abort = true;
-				DEFAULT_ACTION();
+				__abort(batch, bs);
+				return -1;
 			}
 		}
 		DEFAULT_ACTION();
 	}')
-
-	if (abort) {
-		reset();
-		return 0;
-	}
 
 	// ----
 	report_tput_batch(batch_size);
