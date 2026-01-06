@@ -27,7 +27,11 @@ fi
 
 # To fix the `enum BAX_phase' location, pass it through the awk script
 # To fix ...
-FIXING_PASSES=( "$CURDIR/fix_enum_def.awk" "$CURDIR/fix_phase_field.awk" )
+FIXING_PASSES=( "$CURDIR/fix_enum_def.awk" \
+	"$CURDIR/fix_subprog_enum.awk" \
+	"$CURDIR/fix_subprog_frwd_decl.awk" \
+	"$CURDIR/fix_prog_map_val.awk" \
+	"$CURDIR/fix_phase_field.awk" )
 for AWK_FILE in ${FIXING_PASSES[@]}; do
 	echo "Applying $(basename $AWK_FILE) ..."
 	INTERMEDIATE=$(echo "$INTERMEDIATE" | awk -f "$AWK_FILE")

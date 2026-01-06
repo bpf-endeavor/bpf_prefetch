@@ -9,7 +9,7 @@ BEGIN {
     body = ""
 }
 
-/^enum[[:space:]]+BAX_phase[[:space:]]*\{/ {
+/^enum[[:space:]]+BAX_subprogs[[:space:]]*\{/ {
     in_enum = 1
     enum = $0 ORS
     next
@@ -21,7 +21,7 @@ in_enum {
     next
 }
 
-/^enum BAX_phase;/ {
+/^enum BAX_subprogs;/ {
     found_target = 1
     # print
     next

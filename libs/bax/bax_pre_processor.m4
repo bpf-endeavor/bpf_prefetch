@@ -13,7 +13,24 @@ define(`stage_names', `BAX_DONE')
 define(`pkt_state_type_name', `')
 define(`init_stage_name', `')
 
+define(`subprog_count', 1)
+
 dnl Helpers ----------------------------------
+
+dnl Generate subprog names in the enum
+define(`_BAX_POPULATE_SUBPROG_ENUM', `dnl
+ifelse(`$1', 1, `BAX_COUNT_PROGS', `BAX_PROG_`'$1,
+_BAX_POPULATE_SUBPROG_ENUM(decr($1)) ') ')
+
+define(`_BAX_POPULATE_SUBPROGS_FORWARD_DECL', `dnl
+ifelse($1, 1, `', `dnl
+int bbb_BAX_subprog_`'$1`'(struct xdp_batch_md *batch);
+_BAX_POPULATE_SUBPROGS_FORWARD_DECL(decr($1)) ') ')
+
+define(`_BAX_POPULATE_PROG_ARR_VALUES', `dnl
+ifelse($1, 1, `', `dnl
+[BAX_PROG_`'$1] = (void *)&bbb_BAX_subprog_`'$1,
+_BAX_POPULATE_PROG_ARR_VALUES(decr($1)) ') ')
 
 dnl Make sure the pkt_state_type is declared
 define(`_check_pkt_state_type_is_defined',`dnl
@@ -90,23 +107,19 @@ dnl STAGE macro - collects stage name and body
 dnl Syntax: STAGE(name){body}
 define(`BAX_STAGE',`dnl
 _check_pkt_state_type_is_defined()dnl
-ifelse($1, , `',`dnl
-for (unsigned short BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
-	'pkt_state_type_name` *pstate = &bs->S[BAX_k];
+ifelse(`$2', `', `', dnl
+`for (unsigned short BAX_k = 0; BAX_k < batch_size && BAX_k < XDP_MAX_BATCH_SIZE; BAX_k++) {
+	'pkt_state_type_name() `*pstate = &bs->S[BAX_k];
 	if (pstate->phase != $1) continue;
-'
-	_in_stage_define_vars()dnl
-`
+	'_in_stage_define_vars()`
 	/* begin stage $1 code */
 	$2
 	/* end   stage $1 code */
-}'dnl
+}')dnl
+ifelse(index(stage_names, $1), `-1',
+`define(`stage_names', stage_names`|'$1)
+define(`stage_count', incr(stage_count))', `')'dnl
 )
-ifelse(index(stage_names, $1), `-1', `dnl
-	define(`stage_names', stage_names`|'$1)dnl
-	define(`stage_count', incr(stage_count))',
-	`')dnl
-')
 
 dnl A helper for running a block of code for all packets irrespective of their
 dnl phase.
@@ -123,11 +136,47 @@ _check_pkt_state_type_is_defined()
 }'dnl
 ')
 
+define(`BAX_BREAK_TAIL_CALL', `dnl
+define(`subprog_count', incr(subprog_count))
+/* NOTE: Splitted the program into to subprograms for comlexity reasons */
+bpf_tail_call_static(batch, &BAX_prog_arr_map, BAX_PROG_`'subprog_count());
+return -1;
+} /* close the program */
+
+/* start the other part */
+SEC("xdp")
+int bbb_BAX_subprog_`'subprog_count()(struct xdp_batch_md *batch)
+{
+	BAX_PROG_BEGIN()
+
+')
+
+define(`_BAX_DEFINE_PROG_ARR', `dnl
+enum BAX_subprogs;
+
+/* PROGRAM FORWARD DECLARE ----------- */
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, int);
+	__type(value, int);
+	__uint(max_entries, BAX_COUNT_PROGS);
+	__uint(map_flags, 0);
+	__array(values, int (void *));
+} BAX_prog_arr_map SEC(".maps")= {
+	.values = {
+		/* BAX_PROG_ARR_VALUES; */
+	},
+};
+')
+
 dnl Generate the enum
 define(`BAX_BEGIN_OF_FILE',`dnl
 /* TODO: remove the forward declaration and replace the actual enum definition at the end of the file */
 enum BAX_phase; /* forward declaration */
 
+_BAX_DEFINE_PROG_ARR()
+
+/* A helper function for initializing the packet state */
 static inline __attribute__((always_inline))
 void BAX_memset(char *dst, unsigned char v1, unsigned short sz) {
 	int i = 0;
@@ -135,13 +184,26 @@ void BAX_memset(char *dst, unsigned char v1, unsigned short sz) {
 	for (; i + 7 < sz && i < 128; i += 8) { *(uint64_t *)(dst) = v8; }
 	for (; i < sz && i < 128; i++) { dst[i] = v1; }
 }
-')
+'
+)
 
 define(`BAX_END_OF_FILE', `dnl
 dnl Generate the phase enum
 `enum BAX_phase {'
 translit(stage_names,`|', `, ')
 `};'dnl
+
+enum BAX_subprogs {
+	_BAX_POPULATE_SUBPROG_ENUM(subprog_count)
+};
+
+/* BAX Subprogs Forward Declarations */
+_BAX_POPULATE_SUBPROGS_FORWARD_DECL(subprog_count)
+/* END BAX Subprogs Forward Declarations */
+
+/* BAX_PROG_ARR_VALUES */
+_BAX_POPULATE_PROG_ARR_VALUES(subprog_count)
+/* END BAX_PROG_ARR_VALUES */
 ')
 
 divert(0)dnl

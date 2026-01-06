@@ -14,6 +14,9 @@
 #ifndef __bpf__
 #define __bpf__
 #endif
+#ifndef __BPF__
+#define __BPF__
+#endif
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -28,8 +31,6 @@
 #define PREFETCH /* Enable prefetching helpers */
 #include "honey/report_throughput.h"
 #include "honey/prefetching.h"
-
-#define DEFAULT_ACTION() DROP()
 
 /* ARENA ------------------------------------------------------------------- */
 /* I need this dummy function to register Arena with the XDP while not using
@@ -73,9 +74,10 @@ BAX_DECLARE_INIT_STAGE_NAME(FIRST);
 
 /* Use this tag when printing */
 #define TAG "BAX CVM:"
+#define BPF_GLOBAL_FUNC int __attribute__((noinline))
 
 #define MAX(a,b) (a > b ? a : b)
-#define BPF_GLOBAL_FUNC int __attribute__((noinline))
+#define DEFAULT_ACTION() DROP()
 
 /* Some global variables */
 /* user-space program initializes the Treap and sets this pointer */
@@ -132,37 +134,10 @@ void report_cvm_value(void)
 		}
 	}
 }
-/* ------------------------------------------------------ */
-
-/* Break program into multiple parts */
-/* TODO: abstract this with BAX syntax */
-enum {
-	PROG_MAIN,
-	PROG_2,
-	COUNT_PROGS,
-};
-
-int bbb_cvm_main(struct xdp_batch_md *batch);
-int bbb_cvm_prog2(struct xdp_batch_md *batch);
-
-struct {
-	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
-	__type(key, int);
-	__type(value, int);
-	__uint(max_entries, COUNT_PROGS);
-	__uint(map_flags, 0);
-	__array(values, int (void *));
-} prog_arr_map SEC(".maps")= {
-	.values = {
-		[PROG_MAIN] = (void *)&bbb_cvm_main,
-		[PROG_2] = (void *)&bbb_cvm_prog2,
-	},
-};
 /* ----------------------------------------------- */
 
-
-/*  insert/delete are wrapped in a global function to be evaluated as a
- *  separate program and help with passing the complexity limit
+/*  Data-structure access operations are Wrapped in a global function to be
+ *  evaluated as a separate program to pass the complexity limit of eBPF
  *  */
 BPF_GLOBAL_FUNC
 subprog_treap_insert(uint32_t k, fp_t u) {
@@ -176,6 +151,8 @@ subprog_treap_delete(uint32_t key) {
 
 BPF_GLOBAL_FUNC
 subprog_treap_batch_lookup_p2(uint32_t BAX_k) {
+	if (BAX_k >= XDP_MAX_BATCH_SIZE)
+		return -2;
 	int zero = 0;
 	BAX_batch_state_t *bs = bpf_map_lookup_elem(&BAX_batch_state_map, &zero);
 	pkt_state_t *pstate = BAX_GET_PSTATE(BAX_k);
@@ -185,6 +162,8 @@ subprog_treap_batch_lookup_p2(uint32_t BAX_k) {
 
 BPF_GLOBAL_FUNC
 subprog_treap_batch_lookup_p1(uint32_t BAX_k, uint32_t key) {
+	if (BAX_k >= XDP_MAX_BATCH_SIZE)
+		return -2;
 	int zero = 0;
 	BAX_batch_state_t *bs = bpf_map_lookup_elem(&BAX_batch_state_map, &zero);
 	pkt_state_t *pstate = BAX_GET_PSTATE(BAX_k);
@@ -204,24 +183,30 @@ void __abort(struct xdp_batch_md *batch, BAX_batch_state_t *bs)
 	reset();
 }
 
+#define __associate_arena() \
+{ \
+	/* check that user-space program has initilized the Treap */ \
+	if (treap == NULL || hist == NULL) { \
+		bpf_printk(TAG"Arena initialization issue ..."); \
+		/* Make sure Arena is associated with our program */ \
+		my_kfunc_reg_arena(&arena); \
+		return 0; \
+	} \
+}
+
+static uint32_t lookup_finished = 0;
+
 /* bbb_ indicates that it is a batch packet processing program */
 SEC("xdp")
 int bbb_cvm_main(struct xdp_batch_md *batch)
 {
-	/* check that user-space program has initilized the Treap */
-	if (treap == NULL || hist == NULL) {
-		bpf_printk("something is wrong in setting up Treap & Arena");
-		/* Make sure Arena is associated with our program */
-		my_kfunc_reg_arena(&arena);
-		return 0;
-	}
-
+	__associate_arena();
 	/* bpf_printk("batch size: %d", batch_size); */
 
 	BAX_PROG_BEGIN();
 	BAX_INIT_BATCH_STATE();
 
-	uint32_t lookup_finished = 0;
+	lookup_finished = 0;
 
 	BAX_STAGE(FIRST, `{
 		struct ethhdr *eth = data;
@@ -253,7 +238,9 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		}
 
 		/* this can go under a lookup initialize fine-grained API */
-		int ret = subprog_treap_batch_lookup_p1(BAX_k, ip->saddr);
+		/* int ret = subprog_treap_batch_lookup_p1(BAX_k, ip->saddr); */
+		int ret = treap_batch_lookup_p1(treap, (struct treap_key *)&ip->saddr,
+				&pstate->lookup_state);
 		if (ret) {
 			/* Treap is empty, do not continue lookup */
 			pstate->lookup_state.valid = true;
@@ -264,6 +251,10 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		BAX_NEXT_STAGE(BATCH_LOOKUP_2);
 	}')
 
+	BAX_BREAK_TAIL_CALL()
+	/* NOTE: the subprogram should also be associated with arena */
+	__associate_arena();
+
 	/* NOTE: this is a logic that does not belong to any stage */
 	if (treap->root != NULL) {
 		/* Prefetch the root of the Treap */
@@ -272,29 +263,30 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 	// TODO: skip if no packet belongs to the phase
 	/* We want to run a stage multiple times, walking the Treap down */
+	dnl // BAX_STAGE(BATCH_LOOKUP_2, `') // just decllare the stage
 	{
-		BAX_STAGE(BATCH_LOOKUP_2, `') // just decllare the stage
 #pragma clang loop unroll(disable)
-		for(int k = 0; k < 1024; k++) {
-/* (XDP_MAX_BATCH_SIZE * TREAP_MAX_HEIGHT) */
+		for(int k = 0; k < TREAP_MAX_HEIGHT; k++) {
 			/* We probably do not need to walk all the levels of graph */
 			if (lookup_finished == batch_size)
 				break;
 
-			uint16_t BAX_k = k % batch_size;
-			if (BAX_k >= XDP_MAX_BATCH_SIZE)
-				return -1;
-
-			pkt_state_t *pstate = BAX_GET_PSTATE(BAX_k);
-			if (pstate->phase != BATCH_LOOKUP_2)
-				continue;
-
-			int ret = subprog_treap_batch_lookup_p2(BAX_k);
-			if (ret) {
-				lookup_finished++;
-				BAX_NEXT_STAGE(BATCH_DELETE_1);
-				// TODO: how to express early termination
-			}
+			uint32_t cntr = 0;
+			BAX_STAGE(BATCH_LOOKUP_2, `{
+				cntr++;
+				/* int ret = subprog_treap_batch_lookup_p2(BAX_k); */
+				int ret = treap_batch_lookup_p2(treap, NULL, &pstate->lookup_state);
+				if (ret) {
+					lookup_finished++;
+					BAX_NEXT_STAGE(BATCH_DELETE_1);
+					// check for early termination of stage
+					if (lookup_finished == batch_size)
+						break;
+				}
+			}')
+#ifdef REPORT_ACTIVE_BATCH_SIZE_DURING_LOOKUP
+			hist_record(hist, cntr);
+#endif
 		}
 
 		if (lookup_finished != batch_size) {
@@ -304,23 +296,9 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 		}
 	}
 
-	/* NOTE: Splitted the program into to subprograms for comlexity reasons */
-	bpf_tail_call_static(batch, &prog_arr_map, PROG_2);
-
-	/* we must never reach here */
-	return -1;
-}
-
-// SPLIT_TO_TAIL_PROG() ------
-SEC("xdp")
-int bbb_cvm_prog2(struct xdp_batch_md *batch)
-{
-	/* check that user-space program has initilized the Treap */
-	if (treap == NULL || hist == NULL) {
-		my_kfunc_reg_arena(&arena);
-		return 0;
-	}
-	BAX_PROG_BEGIN();
+	BAX_BREAK_TAIL_CALL()
+	/* NOTE: the subprogram should also be associated with arena */
+	__associate_arena();
 
 	BAX_STAGE(BATCH_DELETE_1, `{
 		int ret = treap_delete_node_after_lookup(treap, &pstate->lookup_state);
@@ -443,7 +421,6 @@ int bbb_cvm_prog2(struct xdp_batch_md *batch)
 		DEFAULT_ACTION();
 	}')
 
-	// ----
 	report_tput_batch(batch_size);
 	report_cvm_value();
 	return 0;
