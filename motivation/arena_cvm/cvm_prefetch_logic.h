@@ -302,7 +302,7 @@ static long __update_inner_loop(__u32 _index, void *_ctx)
 		return 0; // continue;
 
 	// Assume we haven't deleted the elements after k_i, would we have free space?
-	int free_space = TREAP_MAX_HEIGHT - treap->used - state->deleted[i];
+	int free_space = TREAP_MAX_SIZE - treap->used - state->deleted[i];
 	if (free_space > 0) {
 		ret = subprog_treap_insert(&batch->keys[i], u);
 		if (ret != 0) {

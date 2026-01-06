@@ -208,6 +208,8 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 	lookup_finished = 0;
 
+	cast_kern(treap);
+
 	BAX_STAGE(FIRST, `{
 		struct ethhdr *eth = data;
 		struct iphdr *ip = (struct iphdr *)(eth + 1);

@@ -238,6 +238,8 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 
 	lookup_finished = 0;
 
+	cast_kern(treap);
+
 	BAX_STAGE(FIRST, `{
 		struct ethhdr *eth = data;
 		struct iphdr *ip = (struct iphdr *)(eth + 1);
@@ -301,7 +303,9 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 			if (lookup_finished == batch_size)
 				break;
 
+			uint32_t cntr = 0;
 			BAX_STAGE(BATCH_LOOKUP_2, `{
+				cntr++;
 				/* int ret = subprog_treap_batch_lookup_p2(BAX_k); */
 				int ret = treap_batch_lookup_p2(treap, NULL, &pstate->lookup_state);
 				if (ret) {
@@ -312,6 +316,9 @@ int bbb_cvm_main(struct xdp_batch_md *batch)
 						break;
 				}
 			}')
+#ifdef REPORT_ACTIVE_BATCH_SIZE_DURING_LOOKUP
+			hist_record(hist, cntr);
+#endif
 		}
 
 		if (lookup_finished != batch_size) {

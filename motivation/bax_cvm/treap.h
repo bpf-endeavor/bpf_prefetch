@@ -9,7 +9,8 @@ typedef struct ipv4_lpm_key {
 /* bring Treap data-structure from the library */
 // #define TREAP_KEY_SIZE sizeof(my_key_t) // default key-size is 4; if
 // defining this also should provide comparison functions
-#define TREAP_MAX_SIZE (1 << 14)
+// #define TREAP_MAX_SIZE (1 << 14)
+#define TREAP_MAX_SIZE 128
 #define TREAP_MAX_HEIGHT 64
 #include "arena-ds/treap.h"
 #include "arena-ds/fixed-point/fp.h"
