@@ -106,7 +106,7 @@ uint64_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
 	uint32_t key_index = 0;
 	int lpm_bits = -1;
 	uint64_t lpm = 0;
-	for (uint32_t i = 0; i < key_size; i++) {
+	for (uint32_t i = 0; i < key_size && key_index < DAT_KEY_SIZE_BYTE; i++) {
 		const uint8_t bit = ((key[key_index] & mask) != 0);
 		mask = mask >> 1;
 		if (mask == 0) {

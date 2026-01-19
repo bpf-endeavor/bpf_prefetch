@@ -175,7 +175,8 @@ static void __lpm_setup(void)
 
 		k->prefixlen = args.prefixlen;
 		k->data = i;
-		*v = 1;
+		/* *v = 1; */
+		*v = i;
 	}
 }
 

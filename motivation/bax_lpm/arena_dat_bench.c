@@ -22,6 +22,10 @@
 
 char _license[] SEC("license") = "GPL";
 
+/* I need this dummy function to register arena with the XDP while not using
+ * any sleepable function (it is from a kernel module that you have to load) */
+long my_kfunc_reg_arena(void *p__map) __ksym;
+
 #define ARENA_MAX_PAGES (1 << 20)
 struct {
 	__uint(type, BPF_MAP_TYPE_ARENA);
@@ -49,9 +53,15 @@ static void gen_random_key(__u32 *key)
 static int lookup(__u32 index, __u32 *unused)
 {
 	__u32 key;
-
 	gen_random_key(&key);
-	dat_lookup(dat, (uint8_t *)&key, prefixlen);
+
+	/* NOTE: very important, since dut_lookup is not a helper function call
+	 * unlike the original benchmark, the compiler will remove it if I do
+	 * not use its return value ... */
+	void __arena*v = dat_lookup(dat, (uint8_t *)&key, prefixlen);
+	if (v == NULL || *(uint32_t __arena*)v != key)
+		bpf_printk("something is wrong with dat lookup");
+
 	return 0;
 }
 
@@ -97,6 +107,11 @@ static __u32 deleted_entries;
 SEC("xdp")
 int BPF_PROG(run_bench)
 {
+	if (dat == NULL) {
+		bpf_printk("the userspace program has not configured the arena-dat");
+		my_kfunc_reg_arena(&arena);
+		return -2;
+	}
 	bool need_refill = false;
 	__u64 start, delta;
 	int loops;

@@ -127,8 +127,8 @@ struct trie_key {
 	__u32 data;
 };
 
-struct trie_key *keys;
-__u32 *vals;
+static struct trie_key *keys;
+static __u32 *vals;
 
 static void fill_map(int map_fd)
 {
