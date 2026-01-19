@@ -284,9 +284,11 @@ static const struct argp_option opts[] = {
 };
 
 extern struct argp bench_lpm_trie_map_argp;
+extern struct argp bench_arena_dat_argp;
 
 static const struct argp_child bench_parsers[] = {
 	{ &bench_lpm_trie_map_argp, 0, "LPM trie map benchmark", 0 },
+	{ &bench_arena_dat_argp, 0, "DAT benchmark", 0 },
 	{},
 };
 
@@ -483,11 +485,16 @@ extern const struct bench bench_lpm_trie_update;
 extern const struct bench bench_lpm_trie_delete;
 extern const struct bench bench_lpm_trie_free;
 
+extern const struct bench bench_dat_lookup;
+
 static const struct bench *benchs[] = {
+	// LPM map
 	&bench_lpm_trie_lookup,
 	&bench_lpm_trie_update,
 	&bench_lpm_trie_delete,
 	&bench_lpm_trie_free,
+	// Arena DAT
+	&bench_dat_lookup
 };
 
 static void find_benchmark(void)

@@ -6,14 +6,14 @@
  * Date: 18-Jan-2026
  * */
 
-#define __BPF__
 
 #include <argp.h>
 #include <linux/if_ether.h>
-/* TODO: include BPF program skeleton */
-#include "arena_dat_bench.skel.h"
 #include "bench.h"
 #include "dat.h"
+#include "arena_dat_bench.skel.h"
+
+#define MAX_ENTRIES (100L * 1000L * 1000L + 1)
 
 /* Parameters used to convert the timespec values: */
 #define MSEC_PER_SEC	1000L
@@ -28,7 +28,7 @@
 #define __always_unused __attribute__((__unused__))
 
 static struct ctx {
-	struct lpm_trie_bench *bench;
+	struct arena_dat_bench *bench;
 } ctx;
 
 static struct {
@@ -125,17 +125,23 @@ struct trie_key {
 	__u32 data;
 };
 
-struct trie_key *keys;
-__u32 *vals;
+static struct trie_key *keys;
+static __u32 *vals;
 
 static void fill_map(arena_dat_t *dat)
 {
-	int err;
+	if (dat == NULL) {
+		printf("BUG, calling fill map with NULL pointer to DAT\n");
+		exit(1);
+	}
 
+	int err;
 	for (size_t i = 0; i < args.nr_entries; i++) {
-		err = dat_insert(dat, &keys[i].data, prefixlen, vals[i]);
+		err = dat_insert(dat, (uint8_t *)&keys[i].data,
+				args.prefixlen, (uint8_t *)&vals[i]);
 		if (err != 0) {
-			fprintf(stderr, "failed to insert key %d\n", i);
+			fprintf(stderr, "failed to insert key %lu (err: %d)\n",
+					i, err);
 			exit(1);
 		}
 	}
@@ -146,7 +152,7 @@ static void __lpm_setup(void)
 	int i;
 
 	/* TODO: load benchmark program */
-	ctx.bench = lpm_trie_bench__open_and_load();
+	ctx.bench = arena_dat_bench__open_and_load();
 	if (!ctx.bench) {
 		fprintf(stderr, "failed to open skeleton\n");
 		exit(1);
@@ -155,7 +161,7 @@ static void __lpm_setup(void)
 	ctx.bench->bss->nr_entries = args.nr_entries;
 	ctx.bench->bss->prefixlen = args.prefixlen;
 
-	if (lpm_trie_bench__attach(ctx.bench)) {
+	if (arena_dat_bench__attach(ctx.bench)) {
 		fprintf(stderr, "failed to attach skeleton\n");
 		exit(1);
 	}
@@ -179,25 +185,25 @@ static void lpm_setup(void)
 
 	__lpm_setup();
 
-	size_t allocated_area = 0;
+	uint32_t allocated_area = 0;
 	size_t area_size = 0;
 	void *area = NULL;
-	arena_dat_alloc_t *dat = NULL;
-	area = bpf_map__initial_value(ctx.bench->maps.arena, &area_sz);
+	arena_dat_t *dat = NULL;
+	area = bpf_map__initial_value(ctx.bench->maps.arena, &area_size);
 	arena_dat_alloc_t arg = {
-		.area = area;
-		.area_size = area_size;
-		.max_entries = MAX_ENTRIES;
-		.out = &dat;
-		.allocated_area =  &allocated_area;
+		.area = area,
+		.area_size = area_size,
+		.max_entries = MAX_ENTRIES,
+		.out = &dat,
+		.allocated_area =  &allocated_area,
 	};
 	err = userspace_arena_dat_alloc(&arg);
-	if (err != 0) {
+	if (err != 0 || dat == NULL) {
 		fprintf(stderr, "Failed to initialize arena & dat!\n");
 		exit(1);
 	}
-	fill_map(ctx.bench->bss.dat);
-	ctx.bench->bss.dat = dat;
+	fill_map(dat);
+	ctx.bench->bss->dat = dat;
 }
 
 static void lpm_lookup_setup(void)
@@ -258,7 +264,7 @@ static void *lpm_producer(void *unused __always_unused)
 
 		if (ctx.bench->bss->op == OP_DELETE && opts.retval == 1) {
 			/* trie_map needs to be refilled */
-			arena_dat_t *dat = ctx.bench->bss.dat;
+			arena_dat_t *dat = ctx.bench->bss->dat;
 			fill_map(dat);
 		}
 	}
@@ -336,7 +342,7 @@ static void *lpm_producer(void *unused __always_unused)
 /* 	       latency / lat_divisor / env.producer_cnt, unit); */
 /* } */
 
-const struct bench bench_lpm_trie_lookup = {
+const struct bench bench_dat_lookup = {
 	.name = "arena-dat-lookup",
 	.argp = &bench_arena_dat_argp,
 	.validate = __lpm_validate,

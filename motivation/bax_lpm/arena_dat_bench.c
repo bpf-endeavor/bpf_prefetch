@@ -6,6 +6,8 @@
  * Date: 18-Jan-2026
  * */
 
+#define __BPF__ 1
+
 // #include <vmlinux.h>
 #include <linux/bpf.h>
 #include <bpf/bpf_tracing.h>
@@ -20,7 +22,7 @@
 
 char _license[] SEC("license") = "GPL";
 
-#define ARENA_MAX_PAGES 200000
+#define ARENA_MAX_PAGES (1 << 20)
 struct {
 	__uint(type, BPF_MAP_TYPE_ARENA);
 	__uint(map_flags, BPF_F_MMAPABLE);
@@ -49,7 +51,7 @@ static int lookup(__u32 index, __u32 *unused)
 	__u32 key;
 
 	gen_random_key(&key);
-	dat_lookup(dat, key, prefixlen);
+	dat_lookup(dat, (uint8_t *)&key, prefixlen);
 	return 0;
 }
 
@@ -96,7 +98,7 @@ SEC("xdp")
 int BPF_PROG(run_bench)
 {
 	bool need_refill = false;
-	u64 start, delta;
+	__u64 start, delta;
 	int loops;
 
 	start = bpf_ktime_get_ns();

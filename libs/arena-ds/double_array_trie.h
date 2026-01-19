@@ -13,19 +13,28 @@
 #include "./common/arena_common.h"
 #include "./common/arena_mm.h"
 
-/* Number of bits in the key */
+
+/* Trie structure config */
+#ifndef DAT_KEY_SIZE_BYTE
 #define DAT_KEY_SIZE_BYTE 16 /* assume IPv6 address */
+#endif
+
+#ifndef DAT_VAL_SIZE_BYTE
 #define DAT_VAL_SIZE_BYTE 4  /* assume an integer */
 #endif
+/* ------------------- */
 
 #define DAT_KEY_SIZE_BIT (DAT_KEY_SIZE_BYTE * 8)
 
 #ifdef __BPF__
 #define memcpy(x,y,z) __builtin_memcpy(x,y,z)
+#define printf(...) ;
 #else
-#include <stdout.h>
+#include <stdio.h>
 #include <string.h>
 #endif
+
+#define member_size(type, member) (sizeof( ((type *)0)->member ))
 
 const static uint64_t alphabet_size = 2; /* binary trie */
 const static uint64_t root_index = 0;
@@ -33,7 +42,7 @@ const static uint64_t EMPTY = (uint64_t)(-1);
 
 struct dat_node {
 	uint64_t next;
-	bool termial;
+	bool terminal;
 	uint8_t value[DAT_VAL_SIZE_BYTE];
 };
 typedef struct dat_node __arena arena_dat_node_t;
@@ -47,14 +56,49 @@ struct dat {
 	arena_dat_node_t *base;
 	arena_dat_check_info_t *check;
 	uint64_t max_entries;
+	/* a stack tracking free blocks */
+	uint64_t stk_size;
+	uint64_t stk_ptr;
+	uint64_t *free_stk;
 };
 typedef struct dat __arena arena_dat_t;
+
+
+static __always_inline
+uint64_t __get_free_block(arena_dat_t *dat, uint64_t owner)
+{
+	if (dat->stk_ptr >= dat->stk_size) {
+		/* No free block available */
+		return EMPTY;
+	}
+	const uint64_t index = dat->free_stk[dat->stk_ptr++];
+	if (dat->check[index].owner != EMPTY ||
+			dat->check[index + 1].owner != EMPTY)
+	{
+		/* something is wrong */
+		return -EINVAL;
+	}
+	dat->check[index].owner = owner;
+	dat->check[index + 1].owner = owner;
+	return index;
+}
+
+static __always_inline
+int __put_used_block(arena_dat_t *dat, uint64_t index)
+{
+	if (index % 2 != 0) {
+		/* not aligned, something is wrong */
+		return -1;
+	}
+	/* TODO: implment this ... */
+	return -1;
+}
 
 /* Walk the trie and find the longest match with the key. report how many bits
  * was matched
  * */
 static __always_inline
-uint64_t __find_leaf(arena_dat_t *dat, const uint8_t const *key,
+uint64_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size, int *_bits)
 {
 	uint64_t node = root_index;
@@ -87,12 +131,12 @@ uint64_t __find_leaf(arena_dat_t *dat, const uint8_t const *key,
 }
 
 static __always_inline
-void __arena * dat_lookup(arena_dat_t *dat, const uint8_t const *key,
+void __arena * dat_lookup(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size)
 {
 	int bits = 0;
 	uint64_t node = __find_leaf(dat, key, key_size, &bits);
-	if (bits >= 0 && dat->base[node].termial == true) {
+	if (bits >= 0 && dat->base[node].terminal == true) {
 		/* we have found a LPM */
 		return (void __arena *)&dat->base[node].value[0];
 	}
@@ -102,14 +146,14 @@ void __arena * dat_lookup(arena_dat_t *dat, const uint8_t const *key,
 /* Insert a key into the Trie, the key_size is the prefix length
  * */
 static __always_inline
-int dat_insert(arena_dat_t *dat, const uint8_t const *key,
-		const uint32_t key_size, const uint8_t const *val)
+int dat_insert(arena_dat_t *dat, const uint8_t * const key,
+		const uint32_t key_size, const uint8_t * const val)
 {
-	uint32_t bits = 0;
+	int bits = 0;
 	uint64_t leaf_node = __find_leaf(dat, key, key_size, &bits);
 	if (bits == key_size) {
 		/* the key already exists, just update the value */
-		memcyp(dat->base[leaf_node].value, val, DAT_VAL_SIZE_BYTE);
+		memcpy(dat->base[leaf_node].value, val, DAT_VAL_SIZE_BYTE);
 		return 0;
 	}
 
@@ -128,21 +172,16 @@ int dat_insert(arena_dat_t *dat, const uint8_t const *key,
 			key_index += 1;
 		}
 		const uint64_t next_index = dat->base[node].next + bit;
-		if (check_index[next_index].owner != EMPTY) {
-			/* node is not available, backtrack and relocate... */
-			return -1;
-		}
-		check_index[next_index].owner = node;
-		const uint64_t free_node = __get_free_block(dat); /* get a left & right child node */
+		const uint64_t free_node = __get_free_block(dat, next_index); /* get a left & right child node */
 		if (free_node > dat->max_entries) {
 			/* failed to allocate node */
 			/* TODO: also need to potentially clean up previous allocation */
-			return -1;
+			return -ENOMEM;
 		}
 		dat->base[next_index].next = free_node;
 		node = next_index;
 	}
-	dat->base[node].termial = true;
+	dat->base[node].terminal = true;
 	memcpy(dat->base[node].value, val, DAT_VAL_SIZE_BYTE);
 	return 0;
 }
@@ -160,12 +199,20 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	if (arg->area == NULL)
 		return -EINVAL;
 
+	if  (arg->max_entries % 2 != 1) {
+		/* number of entries must be multiple of odd. we are allocating two
+		 * nodes at a time and start from one root node allocated. */
+		return -EINVAL;
+	}
+
 	uint64_t size = arg->max_entries;
+	uint64_t stack_entries = size / 2;
 	uint64_t required_size = sizeof(arena_dat_t) +
 							 (size * sizeof(arena_dat_node_t)) +
-							 (size * sizeof(arena_dat_check_info_t));
+							 (size * sizeof(arena_dat_check_info_t)) +
+							 (stack_entries * member_size(arena_dat_t, free_stk));
 	uint64_t num_pages = COUNT_OBJ(required_size, PAGE_SIZE);
-	printf("DAT requires %d memory pages\n", num_pages);
+	printf("DAT requires %lu memory pages\n", num_pages);
 
 	/* TODO: the area_size is not being passed in my tests */
 	/* if (arg->area_size < required_size) */
@@ -174,19 +221,29 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	userspace_alloc_pages(arg->area, num_pages);
 
 	arena_dat_t *dat = arg->area;
+	memset(dat, -1, required_size); /* initialize */
+
 	dat->max_entries = arg->max_entries;
 	dat->base = arg->area + sizeof(arena_dat_t);
-	dat->check = arg->area + sizeof(arena_dat_t) +
-		(size * sizeof(arena_dat_node_t));
-	memset(dat, -1, required_size);
+	dat->check = (void *)(dat->base) + (size * sizeof(arena_dat_node_t));
+	dat->free_stk = (void *)(dat->check) +
+		(size * sizeof(arena_dat_check_info_t));
+
+	/* initialize free stack */
+	for (int i = 0; i < stack_entries; i++) {
+		dat->free_stk[i] = (i * alphabet_size) + 1;
+	}
+	dat->stk_ptr = 0;
+	dat->stk_size = stack_entries;
+	printf("stack size: %lu\n", stack_entries);
 
 	/* initialize root */
-	uint64_t next_node == __get_free_block(dat);
+	uint64_t next_node = __get_free_block(dat, root_index);
 	if (next_node > dat->max_entries) {
 		/* failed to get free nodes, must never happen here */
 		return -1;
 	}
-	dat->base[root_index] = next_node;
+	dat->base[root_index].next = next_node;
 
 	if (arg->allocated_area != NULL)
 		*arg->allocated_area = required_size;
