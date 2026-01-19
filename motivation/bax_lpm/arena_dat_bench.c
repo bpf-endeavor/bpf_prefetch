@@ -59,8 +59,17 @@ static int lookup(__u32 index, __u32 *unused)
 	 * unlike the original benchmark, the compiler will remove it if I do
 	 * not use its return value ... */
 	void __arena*v = dat_lookup(dat, (uint8_t *)&key, prefixlen);
-	if (v == NULL || *(uint32_t __arena*)v != key)
-		bpf_printk("something is wrong with dat lookup");
+
+	if (v == NULL) {
+		bpf_printk("something is wrong with dat lookup: NULL (%d)", key);
+		return 0;
+	}
+
+	uint32_t val = *(uint32_t __arena *)v;
+	if (val != key) {
+		bpf_printk("something is wrong with dat lookup: %d != %d", val, key);
+		return 0;
+	}
 
 	return 0;
 }

@@ -144,6 +144,7 @@ static void fill_map(arena_dat_t *dat)
 					i, err);
 			exit(1);
 		}
+		// printf("%d: %d\n", keys[i].data, vals[i]);
 	}
 }
 
