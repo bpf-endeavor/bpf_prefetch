@@ -95,7 +95,12 @@ static int lookup(__u32 index, __u32 *unused)
 	struct trie_key key;
 
 	gen_random_key(&key);
-	bpf_map_lookup_elem(&trie_map, &key);
+	void *v = bpf_map_lookup_elem(&trie_map, &key);
+	if (v == NULL) {
+		bpf_printk("something is wrong with dat lookup: NULL (%d)",
+				key.data);
+		return 0;
+	}
 	return 0;
 }
 

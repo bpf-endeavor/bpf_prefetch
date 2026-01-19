@@ -16,8 +16,7 @@
 // #include "bpf_misc.h"
 
 #define BPF_OBJ_NAME_LEN 16U
-#define MAX_ENTRIES 100000000
-#define NR_LOOPS 10000
+#define NR_LOOPS 100000
 
 
 char _license[] SEC("license") = "GPL";
@@ -45,15 +44,11 @@ __u32 nr_entries;
 __u32 prefixlen;
 __u8 op;
 
-static void gen_random_key(__u32 *key)
-{
-	*key = bpf_get_prandom_u32() % nr_entries;
-}
+static uint32_t tmp =0 ;
 
 static int lookup(__u32 index, __u32 *unused)
 {
-	__u32 key;
-	gen_random_key(&key);
+	__u32 key = bpf_get_prandom_u32() % nr_entries;
 
 	/* NOTE: very important, since dut_lookup is not a helper function call
 	 * unlike the original benchmark, the compiler will remove it if I do
@@ -61,7 +56,8 @@ static int lookup(__u32 index, __u32 *unused)
 	void __arena*v = dat_lookup(dat, (uint8_t *)&key, prefixlen);
 
 	if (v == NULL) {
-		bpf_printk("something is wrong with dat lookup: NULL (%d)", key);
+		/* bpf_printk("something is wrong with dat lookup: NULL (%d)", key); */
+		tmp++;
 		return 0;
 	}
 

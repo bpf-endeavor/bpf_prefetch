@@ -13,7 +13,7 @@
 #include "dat.h"
 #include "arena_dat_bench.skel.h"
 
-#define MAX_ENTRIES (100L * 1000L * 1000L + 1)
+#define MAX_ENTRIES (100L * 1000L * 1000L)
 
 /* Parameters used to convert the timespec values: */
 #define MSEC_PER_SEC	1000L
