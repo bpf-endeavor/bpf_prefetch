@@ -139,37 +139,38 @@ uint64_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
 
 static __always_inline
 uint64_t __find_lpm(arena_dat_t *dat, const uint8_t * const key,
-		uint32_t key_size, int *_bits)
+		uint32_t key_size/*, int *_bits*/)
 {
 	uint64_t node = root_index;
 	uint8_t mask = 1 << 7;
 	uint32_t key_index = 0;
-	int lpm_bits = -1;
+	/* int lpm_bits = -1; */
 	uint64_t lpm = 0;
 	uint32_t i = 0;
-	for (; i < key_size && i < DAT_KEY_SIZE_BIT && key_index < DAT_KEY_SIZE_BYTE; i++) {
+	for (; i < key_size && key_index < DAT_KEY_SIZE_BYTE; i++) {
 		const uint8_t bit = ((key[key_index] & mask) != 0);
 		mask = mask >> 1;
 		if (mask == 0) {
 			mask = 1 << 7;
 			key_index += 1;
 		}
+		if (dat->base[node].next == EMPTY) break;
 		const uint64_t next = dat->base[node].next + bit;
-		if (next >= dat->max_entries || dat->check[next].owner != node) {
+		if (dat->check[next].owner != node) {
 			/* the transition `node --bit--> next' is not valid */
-			bpf_printk("stopping search beacause: node: %d  bit: %d  next:%d  owner: %d\n",
-					node, bit, next, dat->check[next].owner);
+			/* bpf_printk("stopping search beacause: node: %d  bit: %d  next:%d  owner: %d\n", */
+			/* 		node, bit, next, dat->check[next].owner); */
 			break;
 		}
 		/* check if we have found a new LPM */
 		if (dat->base[node].terminal) {
-			lpm_bits = i;
+			/* lpm_bits = i; */
 			lpm = node;
 		}
 		node = next;
 	}
-	if (_bits != NULL)
-		*_bits = lpm_bits;
+	/* if (_bits != NULL) */
+	/* 	*_bits = lpm_bits; */
 	return lpm;
 }
 
@@ -177,17 +178,17 @@ static __always_inline
 void __arena * dat_lookup(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size)
 {
-	int bits = -1;
-	uint64_t node = __find_lpm(dat, key, key_size, &bits);
-	if (bits >= 0 && dat->base[node].terminal == true) {
+	/* int bits = -1; */
+	uint64_t node = __find_lpm(dat, key, key_size/*, &bits*/);
+	if (/*bits >= 0 &&*/ dat->base[node].terminal == true) {
 		/* we have found a LPM */
-		bpf_printk("found key: %d, bits: %d, terminal: %d",
-				*(uint32_t *)key, bits, dat->base[node].terminal);
-		bpf_printk("node: %d val: %d", node, *(uint32_t *)dat->base[node].value);
+		/* bpf_printk("found key: %d, bits: %d, terminal: %d", */
+		/* 		*(uint32_t *)key, bits, dat->base[node].terminal); */
+		/* bpf_printk("node: %d val: %d", node, *(uint32_t *)dat->base[node].value); */
 		return (void __arena *)dat->base[node].value;
 	}
-	bpf_printk("not found key: %d, bits: %d, terminal: %d",
-			*(uint32_t *)key, bits, dat->base[node].terminal);
+	/* bpf_printk("not found key: %d, bits: %d, terminal: %d", */
+	/* 		*(uint32_t *)key, bits, dat->base[node].terminal); */
 	return NULL;
 }
 

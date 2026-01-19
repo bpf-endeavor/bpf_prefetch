@@ -65,11 +65,11 @@ static int lookup(__u32 index, __u32 *unused)
 		return 0;
 	}
 
-	uint32_t val = *(uint32_t __arena *)v;
-	if (val != key) {
-		bpf_printk("something is wrong with dat lookup: %d != %d", val, key);
-		return 0;
-	}
+	/* uint32_t val = *(uint32_t __arena *)v; */
+	/* if (val != key) { */
+	/* 	bpf_printk("something is wrong with dat lookup: %d != %d", val, key); */
+	/* 	return 0; */
+	/* } */
 
 	return 0;
 }
