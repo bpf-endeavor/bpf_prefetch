@@ -155,18 +155,6 @@ define(`_BAX_DEFINE_PROG_ARR', `dnl
 enum BAX_subprogs;
 
 /* PROGRAM FORWARD DECLARE ----------- */
-struct {
-	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
-	__type(key, int);
-	__type(value, int);
-	__uint(max_entries, BAX_COUNT_PROGS);
-	__uint(map_flags, 0);
-	__array(values, int (void *));
-} BAX_prog_arr_map SEC(".maps")= {
-	.values = {
-		/* BAX_PROG_ARR_VALUES; */
-	},
-};
 ')
 
 dnl Generate the enum
@@ -190,20 +178,31 @@ void BAX_memset(char *dst, unsigned char v1, unsigned short sz) {
 define(`BAX_END_OF_FILE', `dnl
 dnl Generate the phase enum
 `enum BAX_phase {'
-translit(stage_names,`|', `, ')
-`};'dnl
+	translit(stage_names,`|', `, ')
+`};'
 
-enum BAX_subprogs {
+`enum BAX_subprogs {'
 	_BAX_POPULATE_SUBPROG_ENUM(subprog_count)
-};
+`};'
 
-/* BAX Subprogs Forward Declarations */
+`/* BAX Subprogs Forward Declarations */'
 _BAX_POPULATE_SUBPROGS_FORWARD_DECL(subprog_count)
-/* END BAX Subprogs Forward Declarations */
 
-/* BAX_PROG_ARR_VALUES */
-_BAX_POPULATE_PROG_ARR_VALUES(subprog_count)
-/* END BAX_PROG_ARR_VALUES */
+ifelse(subprog_count, 1, `', `dnl
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, int);
+	__type(value, int);
+	__uint(max_entries, BAX_COUNT_PROGS);
+	__uint(map_flags, 0);
+	__array(values, int (void *));
+} BAX_prog_arr_map SEC(".maps")= {
+	.values = {
+		_BAX_POPULATE_PROG_ARR_VALUES(subprog_count)
+	},
+};
+')
+`/* END BAX Subprogs Forward Declarations */'
 ')
 
 divert(0)dnl
