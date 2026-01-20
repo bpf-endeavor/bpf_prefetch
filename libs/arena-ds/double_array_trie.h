@@ -25,73 +25,78 @@
 
 #define DAT_KEY_SIZE_BIT (DAT_KEY_SIZE_BYTE * 8)
 
-// #define __DEBUG 1
+#define __DEBUG 1
 
 #ifdef __BPF__
 #define memcpy(x,y,z) __builtin_memcpy(x,y,z)
 	#ifdef __DEBUG
-		#define printf(...) bpf_printk(__VA_ARGS__)
+		#define log(...) bpf_printk(__VA_ARGS__)
 	#else
-		#define bpf_printk(...) ;
-		#define printf(...) ;
+		#define log(...) ;
 	#endif
 #else
 #include <stdio.h>
 #include <string.h>
 	#ifdef __DEBUG
-		#define bpf_printk(...) printf(__VA_ARGS__)
+		#define log(...) printf(__VA_ARGS__)
 	#else
-		#define bpf_printk(...) ;
-		#define printf(...) ;
+		#define log(...) ;
 	#endif
 #endif
 
 #define member_size(type, member) (sizeof( ((type *)0)->member ))
 #define get_bit(key, i) (!!(key[i / 8] & (1 << (7 - (i % 8))) ))
 
-const static uint64_t alphabet_size = 2; /* binary trie */
-const static uint64_t root_index = 1;
-// const static uint64_t EMPTY = (uint64_t)(-1);
-const static uint64_t EMPTY = (uint64_t)(0);
+const static uint32_t alphabet_size = 2; /* binary trie */
+const static uint32_t root_index = 1;
+const static uint32_t EMPTY = (uint64_t)(0);
+
+#define TERMINAL_MASK (1 << 31)
+#define IS_TERMINAL(flag) (!!(flag & TERMINAL_MASK))
+#define EXTRACT_VALUE_INDEX(flag) (flag & (~TERMINAL_MASK))
 
 struct dat_node {
-	uint64_t next;
-	bool terminal;
-};
+	uint32_t next;
+	uint32_t value_flag;
+} __packed;
 typedef struct dat_node __arena arena_dat_node_t;
 
 struct dat_check_info {
-	uint64_t owner;
-};
+	uint32_t owner;
+} __packed;
 typedef struct dat_check_info __arena arena_dat_check_info_t;
 
 struct dat_value {
 	uint8_t value[DAT_VAL_SIZE_BYTE];
-};
+} __packed;
 typedef struct dat_value __arena arena_dat_value_t;
 
 struct dat {
 	arena_dat_node_t *base;
 	arena_dat_check_info_t *check;
 	arena_dat_value_t *values;
-	uint64_t max_entries;
+	uint32_t __arena *free_stk;
+	uint32_t __arena *value_free_stk;
+	uint32_t node_count;
+	/* a stack tracking free value blocks */
+	uint32_t value_count;
+	uint32_t value_stk_ptr;
 	/* a stack tracking free blocks */
-	uint64_t stk_size;
-	uint64_t stk_ptr;
-	uint64_t __arena *free_stk;
-};
+	uint32_t stk_size;
+	uint32_t stk_ptr;
+} __attribute__((aligned(8)));
 typedef struct dat __arena arena_dat_t;
 
 static __always_inline
-uint64_t __get_free_block(arena_dat_t *dat, uint64_t owner)
+uint32_t __get_free_block(arena_dat_t *dat, uint32_t owner)
 {
 	if (dat->stk_ptr >= dat->stk_size) {
 		/* No free block available */
 		return -ENOSPC;
 	}
 
-	const uint64_t index = dat->free_stk[dat->stk_ptr++];
-	if (index + 1 > dat->max_entries) {
+	const uint32_t index = dat->free_stk[dat->stk_ptr++];
+	if (index + 1 > dat->node_count) {
 		/* wrong nodes inserted into the stack */
 		return -EINVAL;
 	}
@@ -109,7 +114,7 @@ uint64_t __get_free_block(arena_dat_t *dat, uint64_t owner)
 }
 
 static __always_inline
-int __put_used_block(arena_dat_t *dat, uint64_t index)
+int __put_used_block(arena_dat_t *dat, uint32_t index)
 {
 	if (index % 2 != 0) {
 		/* not aligned, something is wrong */
@@ -119,32 +124,37 @@ int __put_used_block(arena_dat_t *dat, uint64_t index)
 	return -1;
 }
 
+static __always_inline
+int __get_value(arena_dat_t *dat) {
+	if (dat->value_stk_ptr > dat->value_count) {
+		return -ENOSPC;
+	}
+	int index = dat->value_free_stk[dat->value_stk_ptr++];
+	if (index > dat->value_count) {
+		/* something wrong internally */
+		return -EINVAL;
+	}
+	return index;
+}
+
+// TODO: implement the function freeing values... useful when deleting nodes
+
 /* Walk the trie and find the longest match with the key. report how many bits
  * was matched
  * */
 static __always_inline
-uint64_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
+uint32_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size, int *_bits)
 {
-	uint64_t node = root_index;
-	uint8_t mask = 1 << 7;
-	uint32_t key_index = 0;
+	uint32_t node = root_index;
 	uint32_t i = 0;
-	for (; i < key_size && i < DAT_KEY_SIZE_BIT && key_index < DAT_KEY_SIZE_BYTE; i++) {
-		const uint8_t bit = ((key[key_index] & mask) != 0);
-		mask = mask >> 1;
-		if (mask == 0) {
-			mask = 1 << 7;
-			key_index += 1;
-		}
-		const uint64_t next = dat->base[node].next + bit;
-		if (next >= dat->max_entries) {
-			break;
-		}
+	for (; i < key_size && i < DAT_KEY_SIZE_BIT; i++) {
+		const uint32_t bit = get_bit(key, i);
+		const uint32_t next = dat->base[node].next + bit;
  		if (dat->check[next].owner != node) {
 			/* the transition `node --bit--> next' is not valid */
-			bpf_printk("stopping search beacause: node: %d  bit: %d  next:%d  owner: %d\n",
-					node, bit, next, dat->check[next].owner);
+			/* log("stopping search beacause: node: %d  bit: %d  next:%d  owner: %d\n", */
+			/* 		node, bit, next, dat->check[next].owner); */
 			break;
 		}
 		node = next;
@@ -155,17 +165,17 @@ uint64_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
 }
 
 static __always_inline
-uint64_t __find_lpm(arena_dat_t *dat, const uint8_t * const key,
+uint32_t __find_lpm(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size)
 {
-	uint64_t node = root_index, lpm = EMPTY;
+	uint32_t node = root_index, lpm = EMPTY;
 	for (uint16_t i = 0; i < key_size && i < DAT_KEY_SIZE_BIT; i++) {
-		const uint64_t bit = get_bit(key, i);
-		uint64_t next = dat->base[node].next + bit;
+		const uint16_t bit = get_bit(key, i);
+		uint32_t next = dat->base[node].next + bit;
 		if (dat->check[next].owner != node)
 			break;
 		/* check if we have found a new LPM */
-		if (dat->base[node].terminal)
+		if (IS_TERMINAL(dat->base[node].value_flag))
 			lpm = node;
 		node = next;
 	}
@@ -176,9 +186,10 @@ static __always_inline
 void __arena * dat_lookup(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size)
 {
-	const uint64_t node = __find_lpm(dat, key, key_size);
+	const uint32_t node = __find_lpm(dat, key, key_size);
 	if (node != EMPTY) {
-		return (void __arena *)dat->values[node].value;
+		uint32_t index = EXTRACT_VALUE_INDEX(dat->base[node].value_flag);
+		return (void __arena *)dat->values[index].value;
 	}
 	return NULL;
 }
@@ -190,43 +201,48 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 		const uint32_t key_size, const uint8_t * const val)
 {
 	int bits = -1;
-	uint64_t leaf_node = __find_leaf(dat, key, key_size, &bits);
-	bits++; /* the __find_leaf matched until (including) this bit in the key */
+	uint32_t leaf_node = __find_leaf(dat, key, key_size, &bits);
 	if (bits == key_size) {
 		/* the key already exists, just update the value */
-		/* bpf_printk("updating an existing node\n"); */
-		memcpy(dat->values[leaf_node].value, val, DAT_VAL_SIZE_BYTE);
+		/* log("updating an existing node\n"); */
+		uint32_t val_index = 0;
+		if (IS_TERMINAL(dat->base[leaf_node].value_flag)) {
+			// it has a value associated with it
+			val_index = EXTRACT_VALUE_INDEX(dat->base[leaf_node].value_flag);
+		} else {
+			val_index = __get_value(dat);
+			if (val_index > dat->value_count) {
+				// failed to allocate
+				return -2;
+			}
+			dat->base[leaf_node].value_flag = (val_index | TERMINAL_MASK);
+		}
+		void *v = (void *)dat->values[val_index].value;
+		memcpy(v, val, DAT_VAL_SIZE_BYTE);
 		return 0;
 	} else if (bits > key_size) {
-		bpf_printk("what is happening?");
+		log("what is happening? %d > %d\n", bits, key_size);
 		return -1;
 	} else if (bits < 0 ) {
-		printf("insert: something is wrong\n");
+		log("insert: something is wrong\n");
 		return -1;
 	}
+	bits++; /* the __find_leaf matched until (including) this bit in the key */
 
 	/* up to some bits has been match, let's insert rest of the key into the
 	 * tree
 	 * */
 
-	/* uint32_t key_index = bits / 8; */
-	/* uint8_t mask = 1 << (7 - (bits % 8)); */
-	uint64_t node = leaf_node;
-	uint64_t last_node = -1;
-	for (uint32_t i = bits; i < DAT_KEY_SIZE_BIT && i < key_size; i++) {
-		/* const uint8_t bit = ((key[key_index] & mask) != 0); */
-		const uint8_t bit = get_bit(key, i);
-		/* mask = mask >> 1; */
-		/* if (mask == 0) { */
-		/* 	mask = 1 << 7; */
-		/* 	key_index += 1; */
-		/* } */
+	uint32_t node = leaf_node;
+	uint32_t last_node = -1;
+	for (uint16_t i = bits; i < DAT_KEY_SIZE_BIT && i < key_size; i++) {
+		const uint16_t bit = get_bit(key, i);
 		if (dat->base[node].next != EMPTY) {
-			printf("inserting, next node is already linked!!\n");
+			log("inserting, next node is already linked!!\n");
 			return -EINVAL;
 		}
 		const uint64_t free_node = __get_free_block(dat, node); /* get a left & right child node */
-		if (free_node > dat->max_entries) {
+		if (free_node > dat->node_count) {
 			/* failed to allocate node */
 			/* TODO: also need to potentially clean up previous allocation */
 			return -ENOMEM;
@@ -237,9 +253,14 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 		node = next_node;
 	}
 
-	dat->base[last_node].terminal = true;
-	memcpy(dat->values[last_node].value, val, DAT_VAL_SIZE_BYTE);
-	// printf("store: %d: %d\n", node, *(uint32_t *)val);
+	int val_index = __get_value(dat);
+	if (val_index > dat->value_count) {
+		log("no free value block");
+		return -ENOSPC;
+	}
+	dat->base[last_node].value_flag = val_index | TERMINAL_MASK;
+	memcpy(dat->values[val_index].value, val, DAT_VAL_SIZE_BYTE);
+	// log("store: %d: %d\n", node, *(uint32_t *)val);
 	return 0;
 }
 
@@ -248,6 +269,7 @@ typedef struct {
 	void *area; /* pointer to the Arena memory region */
 	uint32_t area_size;
 	uint32_t max_entries; /* maximum number of nodes */
+	uint32_t max_nodes;
 	arena_dat_t **out; /* out: pointer to the allocated hist */
 	uint32_t *allocated_area;
 } arena_dat_alloc_t;
@@ -262,15 +284,17 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 		return -EINVAL;
 	}
 
-	const uint64_t size = arg->max_entries;
+	const uint64_t size = arg->max_nodes;
+	const uint64_t value_count = arg->max_entries;
 	const uint64_t stack_entries = (size / alphabet_size) - 1;
 	const uint64_t required_size = sizeof(arena_dat_t) +
 						(size * sizeof(arena_dat_node_t)) +
 						(size * sizeof(arena_dat_check_info_t)) +
-						(size * sizeof(arena_dat_value_t)) +
-						(stack_entries * sizeof(uint64_t));
+						(value_count * sizeof(arena_dat_value_t)) +
+						(stack_entries * sizeof(uint32_t)) +
+						(value_count * sizeof(uint32_t));
 	const uint64_t num_pages = COUNT_OBJ(required_size, PAGE_SIZE);
-	bpf_printk("DAT requires %lu memory pages\n", num_pages);
+	log("DAT requires %lu memory pages\n", num_pages);
 
 	/* TODO: the area_size is not being passed in my tests */
 	/* if (arg->area_size < required_size) */
@@ -281,17 +305,26 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	arena_dat_t *dat = arg->area;
 	memset(dat, 0, required_size);
 
-	dat->max_entries = arg->max_entries;
+	dat->node_count = arg->max_nodes; // maximum number of nodes we have
+
 	dat->base = (void *)(dat + 1);
 	dat->check = (void *)(dat->base) + (size * sizeof(arena_dat_node_t));
 	dat->values = (void *)(dat->check) + (size * sizeof(arena_dat_check_info_t));
-	dat->free_stk = (void *)(dat->values) + (size * sizeof(arena_dat_value_t));
+	dat->free_stk = (void *)(dat->values) + (value_count * sizeof(arena_dat_value_t));
+	dat->value_free_stk = (void *)(dat->free_stk) + (stack_entries * sizeof(uint32_t));
 
 	 /* initialize connections */
 	for (int i = 0; i < size; i++) {
 		dat->base[i].next = EMPTY;
-		dat->base[i].terminal = false;
+		dat->base[i].value_flag = 0;
 		dat->check[i].owner = EMPTY;
+	}
+
+	/* initialize value stack */
+	dat->value_stk_ptr = 0;
+	dat->value_count = value_count; // maximum number of values we can store
+	for (int i = 0; i < value_count; i++) {
+		dat->value_free_stk[i] = i;
 	}
 
 	/* initialize free stack */
@@ -300,11 +333,10 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	}
 	dat->stk_ptr = 0;
 	dat->stk_size = stack_entries;
-	printf("stack size: %lu\n", stack_entries);
 
 	/* initialize root */
 	const uint64_t next_node = __get_free_block(dat, root_index);
-	if (next_node > dat->max_entries) {
+	if (next_node > dat->node_count) {
 		/* failed to get free nodes, must never happen here */
 		return -1;
 	}

@@ -196,6 +196,7 @@ static void lpm_setup(void)
 		.area = area,
 		.area_size = area_size,
 		.max_entries = MAX_ENTRIES,
+		.max_nodes = MAX_ENTRIES,
 		.out = &dat,
 		.allocated_area =  &allocated_area,
 	};
