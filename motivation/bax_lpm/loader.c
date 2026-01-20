@@ -17,6 +17,8 @@
 
 // sekeleton objects
 #include "lpm_test.skel.h"
+#include "include/dat.h"
+#include "dat_test.skel.h"
 
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 
@@ -144,7 +146,7 @@ static int load_routing_dataset2(my_key_t **out)
     return MAX_ENTRIES;
 }
 
-int launch_baseline(void)
+static int launch_baseline(void)
 {
     int ret;
     struct lpm_test *skel = lpm_test__open_and_load();
@@ -167,7 +169,7 @@ int launch_baseline(void)
         ret = bpf_map__update_elem(skel->maps.ipv4_lpm_map, k, sizeof(k), &v,
                 sizeof(v), 0);
         if (ret != 0) {
-            fprintf(stderr, "Failed to update hash map (%d)\n", ret);
+            fprintf(stderr, "Failed to update LPM TRIE map (%d)\n", ret);
             assert(0);
         }
         if(i % 1024 == 0) {
@@ -205,6 +207,100 @@ int launch_baseline(void)
     return 0;
 }
 
+static void __prepare_dat(struct bpf_map *arena, arena_dat_t **_dat)
+{
+    int err;
+    uint32_t allocated_area = 0;
+    size_t area_size = 0;
+    void *area = NULL;
+    area = bpf_map__initial_value(arena, &area_size);
+    if (area == NULL) {
+        fprintf(stderr, "Failed to initialize Arena\n");
+        exit(1);
+    }
+
+    *_dat = NULL;
+    arena_dat_alloc_t arg = {
+        .area = area,
+        .area_size = area_size,
+        .max_entries = MAX_ENTRIES, 
+        .max_nodes = 200L * 1000L * 1000L,
+        .out = _dat,
+        .allocated_area =  &allocated_area,
+    };
+    err = userspace_arena_dat_alloc(&arg);
+    if (err != 0 || *_dat == NULL) {
+        fprintf(stderr, "Failed to initialize DAT!\n");
+        exit(1);
+    }
+}
+
+static int launch_arena_dat(void)
+{
+    int ret;
+    struct dat_test *skel = dat_test__open_and_load();
+    if (!skel) {
+        fprintf(stderr, "Failed to open and load skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    __prepare_dat(skel->maps.arena, &skel->bss->dat);
+
+    /* load entries into map */
+    printf("Updating the routing table. Please wait...\n");
+    my_key_t *keys = NULL;
+    int number_of_items = load_routing_dataset(&keys);
+    number_of_items = MIN(number_of_items, MAX_ENTRIES);
+    for (int i = 0; i < number_of_items; i++) {
+        my_key_t *k = &keys[i];
+        /* printf("%x/%d\n", k->data, k->prefixlen); */
+        my_value_t v;
+        memset(&v, 0, sizeof(v));
+        sprintf(v.msg, "hello %d\n", i);
+        /* const uint32_t ipv4_addr = htonl(k->data); */
+        const uint8_t *ipv4_addr = &k->data;
+        // printf("%d.%d.%d.%d\n", ipv4_addr[0], ipv4_addr[1], ipv4_addr[2], ipv4_addr[3]);
+        ret = dat_insert(skel->bss->dat,
+                ipv4_addr, k->prefixlen, (uint8_t *)&v);
+        if (ret != 0) {
+            fprintf(stderr, "Failed to update Arena DAT (err: %d): key: %d/%d\n", ipv4_addr, k->prefixlen);
+            assert(0);
+        }
+        if(i % 1024 == 0) {
+            printf("                                           \r");
+            printf("%d/%d", i, number_of_items);
+            printf("\r");
+            fflush(stdout);
+        }
+    }
+    printf("\n");
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(skel->progs.dat_test_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            dat_test__destroy(skel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Ready!\n");
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    dat_test__destroy(skel);
+    printf("Done!\n");
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     usage();
@@ -218,11 +314,15 @@ int main(int argc, char *argv[])
     xdp_flags = 0;
     selected_prog = BASELINE;
 
-    if (argc > 1) {
-        if (strncmp(argv[1], "--dat", 5) == 0) {
+    for (int i = 1; i < argc; i++) {
+        char *arg = argv[i];
+        if (strncmp(arg, "--dat", 5) == 0) {
             selected_prog = ARENA_DAT;
-        } else if (strncmp(argv[1], "--dat-bax", 9) == 0) {
+        } else if (strncmp(arg, "--dat-bax", 9) == 0) {
             selected_prog = ARENA_DAT_BAX;
+        } else if (strncmp(arg, "--help", 6) == 0 ||
+                strncmp(arg, "-h", 2) == 0) {
+            return 0;
         }
     }
 
@@ -238,7 +338,8 @@ int main(int argc, char *argv[])
             return launch_baseline();
             break;
         case ARENA_DAT:
-            exit(1);
+            printf("Scenario: baseline ARENA Double Array Trie\n");
+            return launch_arena_dat();
             break;
         case ARENA_DAT_BAX:
             exit(1);

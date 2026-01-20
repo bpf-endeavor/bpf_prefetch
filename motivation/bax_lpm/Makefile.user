@@ -7,10 +7,11 @@ skeleton_dir = ./build/skel/
 CC = clang
 CFLAGS = -O3 -g -Wall $(shell pkg-config --cflags libbpf)
 CFLAGS += -I $(skeleton_dir)
+CFLAGS += -I ../../libs/
 LDFLAGS = $(shell pkg-config --libs libbpf)
 
 # Skeleton header files that loader relies on
-bpf_names = lpm_test
+bpf_names = lpm_test dat_test
 skeletons = $(addprefix $(skeleton_dir), $(addsuffix .skel.h, $(bpf_names)))
 $(info $(skeletons))
 

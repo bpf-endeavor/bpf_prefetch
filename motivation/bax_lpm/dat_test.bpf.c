@@ -12,19 +12,33 @@
 #include "include/shared_struct.h"
 #include "include/xdp_helpers.h"
 
-#define TAG "LPM baseline: "
+#define ARENA_MAX_PAGES (1 << 20)
 
 struct {
-    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
-    __type(key, my_key_t);
-    __type(value, my_value_t);
-    __uint(map_flags, BPF_F_NO_PREALLOC);
-    __uint(max_entries, MAX_ENTRIES);
-} ipv4_lpm_map SEC(".maps");
+	__uint(type, BPF_MAP_TYPE_ARENA);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__uint(max_entries, ARENA_MAX_PAGES); /* number of pages */
+} arena SEC(".maps");
+
+/* I need this dummy function to register arena with the XDP while not using
+ * any sleepable function (it is from a kernel module that you have to load) */
+long my_kfunc_reg_arena(void *p__map) __ksym;
+
+#include "include/dat.h"
+
+#define TAG "DAT baseline: "
+
+arena_dat_t *dat = NULL;
 
 SEC("xdp")
-int lpm_test_main(struct xdp_md *xdp)
+int dat_test_main(struct xdp_md *xdp)
 {
+    if (dat == NULL) {
+        bpf_printk("something is wrong! arena was not initialized");
+        my_kfunc_reg_arena(&arena);
+        return XDP_PASS;
+    }
+
     void *data = (void *)(__u64)(xdp->data);
     void *data_end = (void *)(__u64)(xdp->data_end);
     struct ethhdr *eth = data;
@@ -38,13 +52,10 @@ int lpm_test_main(struct xdp_md *xdp)
     if (!(tmp_port >= 8000 && tmp_port < 8128))
         return XDP_PASS;
 
-    my_key_t k = {
-        .prefixlen = 32,
-        .data = *r,
-    };
-    my_value_t *v = bpf_map_lookup_elem(&ipv4_lpm_map, &k);
+    __u8 *tmp = (void *)r;
+    my_value_t __arena *v = dat_lookup(dat, tmp, 32 /* key size bits*/);
     if (v == NULL) {
-        bpf_printk(TAG"did not found! id=%d!", k.data);
+        bpf_printk(TAG"did not found! ip=%d.%d.%d.%d!", tmp[0], tmp[1], tmp[2], tmp[3]);
         return XDP_DROP;
     }
 
@@ -70,7 +81,7 @@ int lpm_test_main(struct xdp_md *xdp)
         return XDP_DROP;
     }
 
-    __builtin_memcpy(payload, v, sizeof(my_value_t));
+    __builtin_memcpy(payload, (void *)v, sizeof(my_value_t));
     payload += sizeof(my_value_t);
 
     // send reply back to netcat!

@@ -147,16 +147,12 @@ uint32_t __find_leaf(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size, int *_bits)
 {
 	uint32_t node = root_index;
-	uint32_t i = 0;
+	uint16_t i = 0;
 	for (; i < key_size && i < DAT_KEY_SIZE_BIT; i++) {
-		const uint32_t bit = get_bit(key, i);
-		const uint32_t next = dat->base[node].next + bit;
- 		if (dat->check[next].owner != node) {
-			/* the transition `node --bit--> next' is not valid */
-			/* log("stopping search beacause: node: %d  bit: %d  next:%d  owner: %d\n", */
-			/* 		node, bit, next, dat->check[next].owner); */
+ 		if (dat->base[node].next == EMPTY)
 			break;
-		}
+		const uint16_t bit = get_bit(key, i);
+		const uint32_t next = dat->base[node].next + bit;
 		node = next;
 	}
 	if (_bits != NULL)
@@ -170,13 +166,16 @@ uint32_t __find_lpm(arena_dat_t *dat, const uint8_t * const key,
 {
 	uint32_t node = root_index, lpm = EMPTY;
 	for (uint16_t i = 0; i < key_size && i < DAT_KEY_SIZE_BIT; i++) {
-		const uint16_t bit = get_bit(key, i);
-		uint32_t next = dat->base[node].next + bit;
-		if (dat->check[next].owner != node)
-			break;
 		/* check if we have found a new LPM */
 		if (IS_TERMINAL(dat->base[node].value_flag))
 			lpm = node;
+
+		/* check if it is a leaf */
+		if (dat->base[node].next == EMPTY)
+			break;
+
+		const uint16_t bit = get_bit(key, i);
+		const uint32_t next = dat->base[node].next + bit;
 		node = next;
 	}
 	return lpm;
@@ -217,8 +216,7 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 			}
 			dat->base[leaf_node].value_flag = (val_index | TERMINAL_MASK);
 		}
-		void *v = (void *)dat->values[val_index].value;
-		memcpy(v, val, DAT_VAL_SIZE_BYTE);
+		memcpy(dat->values[val_index].value, val, DAT_VAL_SIZE_BYTE);
 		return 0;
 	} else if (bits > key_size) {
 		log("what is happening? %d > %d\n", bits, key_size);
@@ -227,38 +225,40 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 		log("insert: something is wrong\n");
 		return -1;
 	}
-	bits++; /* the __find_leaf matched until (including) this bit in the key */
 
 	/* up to some bits has been match, let's insert rest of the key into the
 	 * tree
 	 * */
-
 	uint32_t node = leaf_node;
-	uint32_t last_node = -1;
+	/* uint32_t last_node = -1; */
 	for (uint16_t i = bits; i < DAT_KEY_SIZE_BIT && i < key_size; i++) {
 		const uint16_t bit = get_bit(key, i);
 		if (dat->base[node].next != EMPTY) {
 			log("inserting, next node is already linked!!\n");
 			return -EINVAL;
 		}
-		const uint64_t free_node = __get_free_block(dat, node); /* get a left & right child node */
+		const uint32_t free_node = __get_free_block(dat, node); /* get a left & right child node */
 		if (free_node > dat->node_count) {
 			/* failed to allocate node */
 			/* TODO: also need to potentially clean up previous allocation */
 			return -ENOMEM;
 		}
 		dat->base[node].next = free_node;
-		const uint64_t next_node = free_node + bit;
-		last_node = node;
+		const uint32_t next_node = free_node + bit;
+		/* last_node = node; */
 		node = next_node;
 	}
+
+	/* if (last_node > dat->node_count) { */
+	/* 	log("something is wrong with last node\n"); */
+	/* } */
 
 	int val_index = __get_value(dat);
 	if (val_index > dat->value_count) {
 		log("no free value block");
 		return -ENOSPC;
 	}
-	dat->base[last_node].value_flag = val_index | TERMINAL_MASK;
+	dat->base[node].value_flag = val_index | TERMINAL_MASK;
 	memcpy(dat->values[val_index].value, val, DAT_VAL_SIZE_BYTE);
 	// log("store: %d: %d\n", node, *(uint32_t *)val);
 	return 0;
