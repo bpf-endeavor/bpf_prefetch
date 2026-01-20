@@ -219,8 +219,8 @@ void __arena *dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
 		uint32_t key_size, struct dat_partial_lookup_state *s)
 {
 	/* prevent from calling this after the search is finished */
-	if (s->done)
-		return NULL;
+	/* if (s->done) */
+	/* 	return NULL; */
 
 	const uint16_t i = s->offset;
 	const uint32_t node = s->node;

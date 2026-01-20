@@ -62,11 +62,6 @@ static uint32_t finished = 0;
     } \
 }
 
-struct loop_ctx {
-    BAX_batch_state_t * bs;
-    struct xdp_batch_md *batch;
-};
-
 SEC("xdp")
 int bbb_dat_test_main(struct xdp_batch_md *batch)
 {
@@ -120,6 +115,9 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
             }
         }')
     }
+
+    // NOTE: it must never happen that a lookup is not finished in the limited
+    // iteration of above loop
 
     /* bpf_printk("%d/%d", finished, batch_size); */
 
