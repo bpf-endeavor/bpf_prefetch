@@ -17,7 +17,8 @@ INTERMEDIATE=$(cat "$IN" | \
 	 sed -e "/$FIND/r $BAX_HEADER" | \
 	 sed -e "/$FIND/d" | \
 	 sed -e "s/\(bax_pre_processor\.m4\)/$ESCAPED_BAX_DIR\/\1/1" | \
-	 tee de.txt | m4 -E)
+	 m4 -E)
+# tee de.txt |
 
 if [ $? -ne 0 ]; then
 	echo "BAX: Pre-processing failed!"

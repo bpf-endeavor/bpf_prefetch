@@ -13,6 +13,8 @@
 #include "./common/arena_common.h"
 #include "./common/arena_mm.h"
 
+#include "honey/prefetching.h"
+
 /* Trie structure config */
 #ifndef DAT_KEY_SIZE_BYTE
 #define DAT_KEY_SIZE_BYTE 16 /* assume IPv6 address */
@@ -25,7 +27,7 @@
 
 #define DAT_KEY_SIZE_BIT (DAT_KEY_SIZE_BYTE * 8)
 
-#define __DEBUG 1
+/* #define __DEBUG 1 */
 
 #ifdef __BPF__
 #define memcpy(x,y,z) __builtin_memcpy(x,y,z)
@@ -73,7 +75,7 @@ typedef struct dat_value __arena arena_dat_value_t;
 
 struct dat {
 	arena_dat_node_t *base;
-	arena_dat_check_info_t *check;
+	/* arena_dat_check_info_t *check; */
 	arena_dat_value_t *values;
 	uint32_t __arena *free_stk;
 	uint32_t __arena *value_free_stk;
@@ -101,15 +103,15 @@ uint32_t __get_free_block(arena_dat_t *dat, uint32_t owner)
 		return -EINVAL;
 	}
 
-	if (dat->check[index].owner != EMPTY ||
-			dat->check[index + 1].owner != EMPTY)
-	{
-		/* something is wrong, trying to use non-free nodes */
-		return -EINVAL;
-	}
+	/* if (dat->check[index].owner != EMPTY || */
+	/* 		dat->check[index + 1].owner != EMPTY) */
+	/* { */
+	/* 	/1* something is wrong, trying to use non-free nodes *1/ */
+	/* 	return -EINVAL; */
+	/* } */
 
-	dat->check[index].owner = owner;
-	dat->check[index + 1].owner = owner;
+	/* dat->check[index].owner = owner; */
+	/* dat->check[index + 1].owner = owner; */
 	return index;
 }
 
@@ -192,6 +194,70 @@ void __arena * dat_lookup(arena_dat_t *dat, const uint8_t * const key,
 	}
 	return NULL;
 }
+
+
+/* Implement a fine-grained API for DAT lookup */
+struct dat_partial_lookup_state {
+	uint16_t offset;
+	uint32_t node;
+	uint32_t lpm;
+	bool done;
+};
+
+static __always_inline
+void dat_lookup_partial_init(arena_dat_t *dat,
+		struct dat_partial_lookup_state *s)
+{
+	s->offset = 0;
+	s->node = root_index;
+	s->lpm = EMPTY;
+	s->done = false;
+}
+
+static __always_inline
+void __arena *dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
+		uint32_t key_size, struct dat_partial_lookup_state *s)
+{
+	/* prevent from calling this after the search is finished */
+	if (s->done)
+		return NULL;
+
+	const uint16_t i = s->offset;
+	const uint32_t node = s->node;
+
+	/* check the loop condition */
+	if (!(i < key_size && i < DAT_KEY_SIZE_BIT)) {
+		goto ret_resp;
+	}
+
+	/* check if we have found a new LPM */
+	if (IS_TERMINAL(dat->base[node].value_flag))
+		s->lpm = node;
+
+	/* check if it is a leaf */
+	if (dat->base[node].next == EMPTY)
+		goto ret_resp;
+
+	const uint16_t bit = get_bit(key, i);
+	const uint32_t next = dat->base[node].next + bit;
+	s->node = next;
+
+	/* prefetch next node */
+	P((void *)&dat->base[next]);
+
+	s->offset++;
+
+	return NULL;
+
+ret_resp:
+		s->done = true;
+		if (s->lpm == EMPTY)
+			return NULL;
+		const uint32_t lpm = s->lpm;
+		uint32_t index = EXTRACT_VALUE_INDEX(dat->base[lpm].value_flag);
+		return (void __arena *)dat->values[index].value;
+}
+/* ----------------------------------------------- */
 
 /* Insert a key into the Trie, the key_size is the prefix length
  * */
@@ -308,8 +374,9 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	dat->node_count = arg->max_nodes; // maximum number of nodes we have
 
 	dat->base = (void *)(dat + 1);
-	dat->check = (void *)(dat->base) + (size * sizeof(arena_dat_node_t));
-	dat->values = (void *)(dat->check) + (size * sizeof(arena_dat_check_info_t));
+	/* dat->check = (void *)(dat->base) + (size * sizeof(arena_dat_node_t)); */
+	/* dat->values = (void *)(dat->check) + (size * sizeof(arena_dat_check_info_t)); */
+	dat->values = (void *)(dat->base) + (size * sizeof(arena_dat_node_t));
 	dat->free_stk = (void *)(dat->values) + (value_count * sizeof(arena_dat_value_t));
 	dat->value_free_stk = (void *)(dat->free_stk) + (stack_entries * sizeof(uint32_t));
 
@@ -317,7 +384,7 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	for (int i = 0; i < size; i++) {
 		dat->base[i].next = EMPTY;
 		dat->base[i].value_flag = 0;
-		dat->check[i].owner = EMPTY;
+		/* dat->check[i].owner = EMPTY; */
 	}
 
 	/* initialize value stack */

@@ -2,6 +2,7 @@
 build_dir = build
 
 default: $(build_dir)
+	$(MAKE) -f Makefile.bax
 	# Make eBPF program skeleton object
 	$(MAKE) -f Makefile.bpf
 	# Make the userspace loader program

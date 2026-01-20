@@ -1,0 +1,170 @@
+// vim: et ts=4 sw=4 filetype=c:
+#include <linux/bpf.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
+
+#include <linux/ip.h>
+#include <linux/udp.h>
+#include <linux/tcp.h>
+#include <linux/in.h>
+#include <linux/if_ether.h>
+
+#include "include/shared_struct.h"
+#include "include/xdp_helpers.h"
+
+#define PREFETCH /* Enable prefetching helpers */
+#include "honey/prefetching.h"
+
+#define ARENA_MAX_PAGES (1 << 20)
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARENA);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __uint(max_entries, ARENA_MAX_PAGES); /* number of pages */
+} arena SEC(".maps");
+
+/* I need this dummy function to register arena with the XDP while not using
+ * any sleepable function (it is from a kernel module that you have to load) */
+long my_kfunc_reg_arena(void *p__map) __ksym;
+
+#include "include/dat.h"
+
+/* Import BAX Framework ---------------------------------------------------- */
+
+/* The state we maintain per each packet */
+typedef struct {
+    int phase[0]; /* the phase is mandetory */
+    int key;
+    struct dat_partial_lookup_state partial_state; /* dat parital lookup state */
+    my_value_t __arena *val;
+} pkt_state_t;
+
+/* import BAX DSL */
+#include "bax/bax.h"
+BAX_DECLARE_INIT_STAGE_NAME(FIRST);
+/* ------------------------------------------------------------------------- */
+
+#define TAG "DAT baseline: "
+#define BPF_GLOBAL_FUNC int __attribute__((noinline))
+
+arena_dat_t *dat = NULL;
+
+// number of packets from the batch whose lookup is finished
+static uint32_t finished = 0;
+
+#define __associate_arena() \
+{ \
+    if (dat == NULL) { \
+        /* this must never happen */ \
+        bpf_printk("something is wrong! arena was not initialized"); \
+        my_kfunc_reg_arena(&arena); \
+        return XDP_PASS; \
+    } \
+}
+
+struct loop_ctx {
+    BAX_batch_state_t * bs;
+    struct xdp_batch_md *batch;
+};
+
+SEC("xdp")
+int bbb_dat_test_main(struct xdp_batch_md *batch)
+{
+    __associate_arena();
+    BAX_PROG_BEGIN();
+    BAX_INIT_BATCH_STATE();
+    finished = 0;
+
+    /* bpf_printk("batch size: %d", batch_size); */
+
+    BAX_STAGE(FIRST, `{
+        struct ethhdr *eth = data;
+        struct iphdr *ip = (void *)(eth+1);
+        struct udphdr *udp = (void *)(ip + 1);
+        /* query is inside the UDP payload */
+        __u32 *r = (__u32 *)(udp + 1);
+        if ((void *)(r + 1) > data_end) {
+            finished++;
+            PASS();
+        }
+        __u16 tmp_port = bpf_ntohs(udp->dest);
+        if (!(tmp_port >= 8000 && tmp_port < 8128)) {
+            finished++;
+            PASS();
+        }
+
+        pstate->key = *r;
+
+        dat_lookup_partial_init(dat, &pstate->partial_state);
+        BAX_NEXT_STAGE(DO_LOOKUP);
+    }')
+
+    P((void *)&dat->base[1]);
+
+#pragma clang loop unroll(disable)
+    for (int ii = 0; ii < DAT_KEY_SIZE_BIT; ii++) {
+        if (finished >= batch_size)
+            break;
+
+        BAX_STAGE(DO_LOOKUP, `{
+            __u8 *tmp = (void *)&pstate->key;
+            my_value_t __arena *v = dat_lookup_partial(dat, tmp,
+                    32 /* key size bits*/, &pstate->partial_state);
+
+            /* do we need more iterations ? */
+            if (pstate->partial_state.done) {
+                finished++;
+                pstate->val = v;
+                /* bpf_printk("- %d", BAX_k); */
+                BAX_NEXT_STAGE(REPLY);
+            }
+        }')
+    }
+
+    /* bpf_printk("%d/%d", finished, batch_size); */
+
+    BAX_STAGE(REPLY, `{
+        if (pstate->val == NULL) {
+            __u8 *tmp = (void *)&pstate->key;
+            bpf_printk(TAG"did not found! ip=%d.%d.%d.%d!",
+                    tmp[0], tmp[1], tmp[2], tmp[3]);
+            DROP();
+        }
+        /* bpf_printk("* %d", BAX_k); */
+
+        __u16 target_size = sizeof(my_value_t);
+        char *payload = (char *)(data + 42);
+        {
+            // check if we need to change the payload size to match our reply
+            __u16 payload_len = (__u64)data_end - (__u64)payload;
+            short delta = target_size - payload_len;
+            if (delta != 0) {
+                if (bpf_xdp_adjust_tail(pkt, delta) != 0) {
+                    bpf_printk(TAG"failed to resize the packet (%d)", delta);
+                    DROP();
+                }
+                data = (void *)(__u64)pkt->data;
+                data_end = (void *)(__u64)pkt->data_end;
+                payload = data + 42;
+            }
+        }
+
+        if ((void *)(payload + sizeof(my_value_t)) > data_end) {
+            bpf_printk(TAG"not enough space after adjusting the packet size");
+            DROP();
+        }
+
+        __builtin_memcpy(payload, (void *)pstate->val, sizeof(my_value_t));
+        payload += sizeof(my_value_t);
+
+        // send reply back to netcat!
+        __prepare_headers_before_send(pkt);
+        TX();
+    }')
+
+    return 0;
+}
+
+BAX_END_OF_FILE()
+
+char _license[] SEC("license") = "GPL";
