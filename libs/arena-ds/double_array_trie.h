@@ -13,6 +13,9 @@
 #include "./common/arena_common.h"
 #include "./common/arena_mm.h"
 
+
+/* NOTE: let the using program determine if prefetching should be enabled or
+ * not! That's why PREFETCH is not defined in this header */
 #include "honey/prefetching.h"
 
 /* Trie structure config */
@@ -47,6 +50,7 @@
 #endif
 
 #define member_size(type, member) (sizeof( ((type *)0)->member ))
+
 #define get_bit(key, i) (!!(key[i / 8] & (1 << (7 - (i % 8))) ))
 
 const static uint32_t alphabet_size = 2; /* binary trie */
@@ -60,17 +64,17 @@ const static uint32_t EMPTY = (uint64_t)(0);
 struct dat_node {
 	uint32_t next;
 	uint32_t value_flag;
-} __packed;
+};
 typedef struct dat_node __arena arena_dat_node_t;
 
 struct dat_check_info {
 	uint32_t owner;
-} __packed;
+};
 typedef struct dat_check_info __arena arena_dat_check_info_t;
 
 struct dat_value {
 	uint8_t value[DAT_VAL_SIZE_BYTE];
-} __packed;
+};
 typedef struct dat_value __arena arena_dat_value_t;
 
 struct dat {
@@ -86,7 +90,7 @@ struct dat {
 	/* a stack tracking free blocks */
 	uint32_t stk_size;
 	uint32_t stk_ptr;
-} __attribute__((aligned(8)));
+} __attribute__((aligned(64)));
 typedef struct dat __arena arena_dat_t;
 
 static __always_inline
@@ -103,15 +107,6 @@ uint32_t __get_free_block(arena_dat_t *dat, uint32_t owner)
 		return -EINVAL;
 	}
 
-	/* if (dat->check[index].owner != EMPTY || */
-	/* 		dat->check[index + 1].owner != EMPTY) */
-	/* { */
-	/* 	/1* something is wrong, trying to use non-free nodes *1/ */
-	/* 	return -EINVAL; */
-	/* } */
-
-	/* dat->check[index].owner = owner; */
-	/* dat->check[index + 1].owner = owner; */
 	return index;
 }
 
@@ -167,7 +162,7 @@ uint32_t __find_lpm(arena_dat_t *dat, const uint8_t * const key,
 		uint32_t key_size)
 {
 	uint32_t node = root_index, lpm = EMPTY;
-	for (uint16_t i = 0; i < key_size && i < DAT_KEY_SIZE_BIT; i++) {
+	for (uint16_t i = 0; i < key_size && i < DAT_KEY_SIZE_BIT; i++) { //
 		/* check if we have found a new LPM */
 		if (IS_TERMINAL(dat->base[node].value_flag))
 			lpm = node;
@@ -201,7 +196,7 @@ struct dat_partial_lookup_state {
 	uint16_t offset;
 	uint32_t node;
 	uint32_t lpm;
-	bool done;
+	void __arena *val;
 };
 
 static __always_inline
@@ -211,22 +206,18 @@ void dat_lookup_partial_init(arena_dat_t *dat,
 	s->offset = 0;
 	s->node = root_index;
 	s->lpm = EMPTY;
-	s->done = false;
+	s->val = NULL;
 }
 
 static __always_inline
-void __arena *dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
+int dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
 		uint32_t key_size, struct dat_partial_lookup_state *s)
 {
-	/* prevent from calling this after the search is finished */
-	/* if (s->done) */
-	/* 	return NULL; */
-
 	const uint16_t i = s->offset;
 	const uint32_t node = s->node;
 
 	/* check the loop condition */
-	if (!(i < key_size && i < DAT_KEY_SIZE_BIT)) {
+	if (!(i < key_size && i < DAT_KEY_SIZE_BIT)) { //
 		goto ret_resp;
 	}
 
@@ -247,15 +238,15 @@ void __arena *dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
 
 	s->offset++;
 
-	return NULL;
+	return 1; /* continue */
 
 ret_resp:
-		s->done = true;
-		if (s->lpm == EMPTY)
-			return NULL;
-		const uint32_t lpm = s->lpm;
-		uint32_t index = EXTRACT_VALUE_INDEX(dat->base[lpm].value_flag);
-		return (void __arena *)dat->values[index].value;
+		if (s->lpm != EMPTY) {
+			const uint32_t lpm = s->lpm;
+			uint32_t index = EXTRACT_VALUE_INDEX(dat->base[lpm].value_flag);
+			s->val = (void __arena *)dat->values[index].value;
+		}
+		return 0; /* done */
 }
 /* ----------------------------------------------- */
 
@@ -296,7 +287,6 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 	 * tree
 	 * */
 	uint32_t node = leaf_node;
-	/* uint32_t last_node = -1; */
 	for (uint16_t i = bits; i < DAT_KEY_SIZE_BIT && i < key_size; i++) {
 		const uint16_t bit = get_bit(key, i);
 		if (dat->base[node].next != EMPTY) {
@@ -311,13 +301,8 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 		}
 		dat->base[node].next = free_node;
 		const uint32_t next_node = free_node + bit;
-		/* last_node = node; */
 		node = next_node;
 	}
-
-	/* if (last_node > dat->node_count) { */
-	/* 	log("something is wrong with last node\n"); */
-	/* } */
 
 	int val_index = __get_value(dat);
 	if (val_index > dat->value_count) {

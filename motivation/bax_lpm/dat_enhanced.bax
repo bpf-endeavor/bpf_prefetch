@@ -15,6 +15,7 @@
 #define PREFETCH /* Enable prefetching helpers */
 #include "honey/prefetching.h"
 
+
 #define ARENA_MAX_PAGES (1 << 20)
 
 struct {
@@ -26,6 +27,8 @@ struct {
 /* I need this dummy function to register arena with the XDP while not using
  * any sleepable function (it is from a kernel module that you have to load) */
 long my_kfunc_reg_arena(void *p__map) __ksym;
+
+#include "kfuncs/my_memcpy/api.h"
 
 #include "include/dat.h"
 
@@ -96,39 +99,39 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
 
     P((void *)&dat->base[1]);
 
-#pragma clang loop unroll(disable)
+// #pragma clang loop unroll(disable)
     for (int ii = 0; ii < DAT_KEY_SIZE_BIT; ii++) {
         if (finished >= batch_size)
             break;
 
         BAX_STAGE(DO_LOOKUP, `{
             __u8 *tmp = (void *)&pstate->key;
-            my_value_t __arena *v = dat_lookup_partial(dat, tmp,
-                    32 /* key size bits*/, &pstate->partial_state);
+            int ret = dat_lookup_partial(dat, tmp, 32 /* key size bits*/,
+                    &pstate->partial_state);
 
             /* do we need more iterations ? */
-            if (pstate->partial_state.done) {
-                finished++;
-                pstate->val = v;
-                /* bpf_printk("- %d", BAX_k); */
-                BAX_NEXT_STAGE(REPLY);
-            }
+            if (ret)
+                continue;
+
+            finished++;
+            BAX_NEXT_STAGE(PREPARE_PKT);
+            // TODO: check for early termination
         }')
     }
 
     // NOTE: it must never happen that a lookup is not finished in the limited
     // iteration of above loop
 
-    /* bpf_printk("%d/%d", finished, batch_size); */
-
-    BAX_STAGE(REPLY, `{
-        if (pstate->val == NULL) {
+    BAX_STAGE(PREPARE_PKT, `{
+        void *val = (void *)pstate->partial_state.val;
+        if (val == NULL) {
             __u8 *tmp = (void *)&pstate->key;
             bpf_printk(TAG"did not found! ip=%d.%d.%d.%d!",
                     tmp[0], tmp[1], tmp[2], tmp[3]);
             DROP();
         }
-        /* bpf_printk("* %d", BAX_k); */
+        P(val);
+        P(data + 64);
 
         __u16 target_size = sizeof(my_value_t);
         char *payload = (char *)(data + 42);
@@ -147,14 +150,40 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
             }
         }
 
+        BAX_NEXT_STAGE(DO_COPY);
+    }')
+
+    BAX_STAGE(DO_COPY, `{
+        uint64_t *val = (void *)pstate->partial_state.val;
+        void * payload = data + 42;
+
         if ((void *)(payload + sizeof(my_value_t)) > data_end) {
             bpf_printk(TAG"not enough space after adjusting the packet size");
             DROP();
         }
 
-        __builtin_memcpy(payload, (void *)pstate->val, sizeof(my_value_t));
-        payload += sizeof(my_value_t);
+        // __builtin_memcpy(payload, (void *)val, sizeof(my_value_t));
+        // NOTE: assumption is that sizeof(my_value_t) is multiple of 8
+#pragma clang loop unroll(full)
+        for (int i = 0; i < sizeof(my_value_t) / sizeof(uint64_t); i++) {
+            ((uint64_t *)payload)[i] = val[i];
+        }
 
+#ifdef PREFETCH
+        BAX_NEXT_STAGE(PREFETCH_HEADER);
+#else
+        BAX_NEXT_STAGE(PREPARE_AND_SEND);
+#endif
+    }')
+
+#ifdef PREFETCH
+    BAX_STAGE(PREFETCH_HEADER, `{
+        P(data);
+        BAX_NEXT_STAGE(PREPARE_AND_SEND);
+    }')
+#endif
+
+    BAX_STAGE(PREPARE_AND_SEND, `{
         // send reply back to netcat!
         __prepare_headers_before_send(pkt);
         TX();

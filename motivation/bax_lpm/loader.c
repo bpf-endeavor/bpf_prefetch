@@ -24,7 +24,7 @@
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 
 typedef enum {
-    BASELINE,
+    LPM_TRIE,
     ARENA_DAT,
     ARENA_DAT_BAX
 } prog_t;
@@ -45,6 +45,7 @@ static void usage(void)
 {
     printf("Usage: prog OPTIONS\n"
            "OPTIONS:\n"
+           "\t--lpm: use LPM Trie (default option)\n"
            "\t--dat: use the Arena Double Array Trie implementation\n"
            "\t--bax-dat: Beeswax version of Arena Double Array Trie\n"
            "ENV Vars:\n"
@@ -211,7 +212,7 @@ static void __prepare_dat(struct bpf_map *arena, arena_dat_t **_dat)
     arena_dat_alloc_t arg = {
         .area = area,
         .area_size = area_size,
-        .max_entries = MAX_ENTRIES, 
+        .max_entries = MAX_ENTRIES,
         .max_nodes = 200L * 1000L * 1000L,
         .out = _dat,
         .allocated_area =  &allocated_area,
@@ -366,11 +367,13 @@ int main(int argc, char *argv[])
     ifindex = if_nametoindex(ifacename);
     /* TODO: make sure it is running in zero copy mode */
     xdp_flags = 0;
-    selected_prog = BASELINE;
+    selected_prog = LPM_TRIE;
 
     for (int i = 1; i < argc; i++) {
         char *arg = argv[i];
-        if (strncmp(arg, "--dat", 5) == 0) {
+        if (strncmp(arg, "--lpm", 5) == 0) {
+            selected_prog = LPM_TRIE;
+        } else if (strncmp(arg, "--dat", 5) == 0) {
             selected_prog = ARENA_DAT;
         } else if (strncmp(arg, "--bax-dat", 9) == 0) {
             selected_prog = ARENA_DAT_BAX;
@@ -387,7 +390,7 @@ int main(int argc, char *argv[])
     }
 
     switch (selected_prog) {
-        case BASELINE:
+        case LPM_TRIE:
             printf("Scenario: baseline BPF_MAP_TYPE_LPM_TRIE\n");
             return launch_baseline();
             break;

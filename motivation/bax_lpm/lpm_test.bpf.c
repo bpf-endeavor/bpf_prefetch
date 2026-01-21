@@ -70,8 +70,12 @@ int lpm_test_main(struct xdp_md *xdp)
         return XDP_DROP;
     }
 
-    __builtin_memcpy(payload, v, sizeof(my_value_t));
-    payload += sizeof(my_value_t);
+    __u64 *val = (void *)v;
+    // NOTE: assumption is that sizeof(my_value_t) is multiple of 8
+#pragma clang loop unroll(full)
+    for (int i = 0; i < sizeof(my_value_t) / sizeof(__u64); i++) {
+        ((__u64 *)payload)[i] = val[i];
+    }
 
     // send reply back to netcat!
     __prepare_headers_before_send(xdp);
