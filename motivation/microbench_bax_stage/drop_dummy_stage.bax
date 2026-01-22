@@ -1,0 +1,56 @@
+// vim: et ts=4 sw=4 filetype=c:
+#include <stdint.h>
+#include <stdbool.h>
+
+#include <linux/bpf.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
+
+#include <linux/ip.h>
+#include <linux/udp.h>
+#include <linux/tcp.h>
+#include <linux/in.h>
+#include <linux/if_ether.h>
+
+#include "include/shared_struct.h"
+#include "include/xdp_helpers.h"
+
+#define PREFETCH /* Enable prefetching helpers */
+#include "honey/prefetching.h"
+#include "honey/report_throughput.h"
+
+/* Import BAX Framework ---------------------------------------------------- */
+/* The state we maintain per each packet */
+typedef struct {
+    int phase[0]; /* the phase is mandetory */
+} pkt_state_t;
+
+__u64 tmp = 0;
+
+/* import BAX DSL */
+#include "bax/bax.h"
+BAX_DECLARE_INIT_STAGE_NAME(FIRST);
+/* ------------------------------------------------------------------------- */
+
+SEC("xdp")
+int bbb_test_main(struct xdp_batch_md *batch)
+{
+    BAX_PROG_BEGIN();
+    BAX_INIT_BATCH_STATE();
+
+    BAX_STAGE(FIRST, `{
+            tmp++;
+        BAX_NEXT_STAGE(DUMMY);
+    }')
+
+    BAX_STAGE(DUMMY, `{
+        DROP();
+    }')
+
+    report_tput_batch(batch_size);
+
+    return 0;
+}
+
+BAX_END_OF_FILE()
+char _license[] SEC("license") = "GPL";

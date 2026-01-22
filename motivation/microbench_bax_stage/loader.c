@@ -18,11 +18,17 @@
 // sekeleton objects
 #include "include/dat.h"
 #include "dat_enhanced.skel.h"
+#include "dat_cost_of_dummy_stage.skel.h"
+#include "drop.skel.h"
+#include "drop_dummy_stage.skel.h"
 
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 
 typedef enum {
-    ARENA_DAT_BAX
+    BASELINE,
+    DUMMY_STAGE,
+    DROP,
+    DROP_DUMMY_STAGE,
 } prog_t;
 
 /* Some global vars */
@@ -41,9 +47,10 @@ static void usage(void)
 {
     printf("Usage: prog OPTIONS\n"
            "OPTIONS:\n"
-           "\t--lpm: use LPM Trie (default option)\n"
-           "\t--dat: use the Arena Double Array Trie implementation\n"
-           "\t--bax-dat: Beeswax version of Arena Double Array Trie\n"
+           "\t--baseline: Beeswax version of Arena Double Array Trie\n"
+           "\t--dummy-stage: \n"
+           "\t--drop: \n"
+           "\t--drop-dummy-stage: \n"
            "ENV Vars:\n"
            "\tNET_IFACE: name of the network interface to attach XDP program\n");
 }
@@ -159,7 +166,7 @@ static void __prepare_dat(struct bpf_map *arena, arena_dat_t **_dat)
     }
 }
 
-static int launch_arena_dat_bax(void)
+static int launch_baseline(void)
 {
     int ret;
     struct dat_enhanced *skel = dat_enhanced__open_and_load();
@@ -225,6 +232,142 @@ static int launch_arena_dat_bax(void)
     return 0;
 }
 
+static int launch_dummy_stage(void)
+{
+    int ret;
+    struct dat_cost_of_dummy_stage *skel = dat_cost_of_dummy_stage__open_and_load();
+    if (!skel) {
+        fprintf(stderr, "Failed to open and load skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    __prepare_dat(skel->maps.arena, &skel->bss->dat);
+
+    /* load entries into map */
+    printf("Updating the routing table. Please wait...\n");
+    my_key_t *keys = NULL;
+    int number_of_items = load_routing_dataset(&keys);
+    number_of_items = MIN(number_of_items, MAX_ENTRIES);
+    for (int i = 0; i < number_of_items; i++) {
+        my_key_t *k = &keys[i];
+        /* printf("%x/%d\n", k->data, k->prefixlen); */
+        my_value_t v;
+        memset(&v, 0, sizeof(v));
+        sprintf(v.msg, "hello %d\n", i);
+        /* const uint32_t ipv4_addr = htonl(k->data); */
+        const uint8_t *ipv4_addr = (void *)&k->data;
+        // printf("%d.%d.%d.%d\n", ipv4_addr[0], ipv4_addr[1], ipv4_addr[2], ipv4_addr[3]);
+        ret = dat_insert(skel->bss->dat,
+                ipv4_addr, k->prefixlen, (uint8_t *)&v);
+        if (ret != 0) {
+            fprintf(stderr, "Failed to update Arena DAT (err: %d)\n", ret);
+            assert(0);
+        }
+        if(i % 1024 == 0) {
+            printf("                                           \r");
+            printf("%d/%d", i, number_of_items);
+            printf("\r");
+            fflush(stdout);
+        }
+    }
+    printf("\n");
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(skel->progs.bbb_dat_test_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            dat_cost_of_dummy_stage__destroy(skel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Ready!\n");
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    dat_cost_of_dummy_stage__destroy(skel);
+    printf("Done!\n");
+    return 0;
+}
+
+static int launch_drop(void)
+{
+    int ret;
+    struct drop *skel = drop__open_and_load();
+    if (!skel) {
+        fprintf(stderr, "Failed to open and load skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(skel->progs.bbb_test_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            drop__destroy(skel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Ready!\n");
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    drop__destroy(skel);
+    printf("Done!\n");
+    return 0;
+}
+
+static int launch_drop_dummy_stage(void)
+{
+    int ret;
+    struct drop_dummy_stage *skel = drop_dummy_stage__open_and_load();
+    if (!skel) {
+        fprintf(stderr, "Failed to open and load skeleton\n");
+        return EXIT_FAILURE;
+    }
+
+    {
+        /* Attach XDP */
+        int prog_fd = bpf_program__fd(skel->progs.bbb_test_main);
+        if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags, NULL) != 0) {
+            fprintf(stderr, "Failed to attach XDP program\n");
+            bpf_xdp_detach(ifindex, xdp_flags, NULL);
+            drop_dummy_stage__destroy(skel);
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* Keep running and handle signals */
+    running = 1;
+    signal(SIGINT, handle_signal);
+    signal(SIGHUP, handle_signal);
+    printf("Ready!\n");
+    printf("Hit Ctrl+C to terminate ...\n");
+
+    while (running) { pause(); }
+
+    bpf_xdp_detach(ifindex, xdp_flags, NULL);
+    drop_dummy_stage__destroy(skel);
+    printf("Done!\n");
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     usage();
@@ -236,12 +379,18 @@ int main(int argc, char *argv[])
     ifindex = if_nametoindex(ifacename);
     /* TODO: make sure it is running in zero copy mode */
     xdp_flags = 0;
-    selected_prog = ARENA_DAT_BAX;
+    selected_prog = BASELINE;
 
     for (int i = 1; i < argc; i++) {
         char *arg = argv[i];
-        if (strncmp(arg, "--bax-dat", 9) == 0) {
-            selected_prog = ARENA_DAT_BAX;
+        if (strncmp(arg, "--baseline", 10) == 0) {
+            selected_prog = BASELINE;
+        } else if (strncmp(arg, "--dummy-stage", 13) == 0) {
+            selected_prog = DUMMY_STAGE;
+        } else if (strncmp(arg, "--drop-dummy-stage", 18) == 0) {
+            selected_prog = DROP_DUMMY_STAGE;
+        } else if (strncmp(arg, "--drop", 6) == 0) {
+            selected_prog = DROP;
         } else if (strncmp(arg, "--help", 6) == 0 ||
                 strncmp(arg, "-h", 2) == 0) {
             return 0;
@@ -255,10 +404,18 @@ int main(int argc, char *argv[])
     }
 
     switch (selected_prog) {
-        case ARENA_DAT_BAX:
-            printf("Scenario: Beeswax ARENA Double Array Trie\n");
-            return launch_arena_dat_bax();
-            break;
+        case BASELINE:
+            printf("Scenario: Baseline\n");
+            return launch_baseline();
+        case DUMMY_STAGE:
+            printf("Scenario: Dummy stage\n");
+            return launch_dummy_stage();
+        case DROP:
+            printf("Scenario: DROP\n");
+            return launch_drop();
+        case DROP_DUMMY_STAGE:
+            printf("Scenario: DROP with Dummy Stage\n");
+            return launch_drop_dummy_stage();
         default:
             exit(1);
     }

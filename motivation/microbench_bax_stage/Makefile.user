@@ -11,7 +11,7 @@ CFLAGS += -I ../../libs/
 LDFLAGS = $(shell pkg-config --libs libbpf)
 
 # Skeleton header files that loader relies on
-bpf_names = dat_enhanced
+bpf_names = $(basename $(wildcard *.bax))
 skeletons = $(addprefix $(skeleton_dir), $(addsuffix .skel.h, $(bpf_names)))
 $(info $(skeletons))
 
@@ -19,3 +19,4 @@ default: $(object)
 
 $(build_dir)/%.o: %.c $(skeletons)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
