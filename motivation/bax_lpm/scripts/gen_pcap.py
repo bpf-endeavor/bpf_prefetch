@@ -11,8 +11,8 @@ import math
 import sys
 
 # NOTE: this script relies on following config
-src_mac = '0c:42:a1:dd:59:24'
-dst_mac = '0c:42:a1:e2:a6:a0'
+src_mac = '0c:42:a1:e2:a6:98'
+dst_mac = '0c:42:a1:dd:5b:88'
 input_file = '../dataset/ipv4.txt'
 src_ip = '192.168.1.2'
 dst_ip = '192.168.1.1'

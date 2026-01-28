@@ -30,6 +30,9 @@ long my_kfunc_reg_arena(void *p__map) __ksym;
 
 #include "kfuncs/my_memcpy/api.h"
 
+// #define DAT_PREFETCH_LIMIT 3
+// #define DAT_FORWARD_EXPLORE 1
+
 #include "include/dat.h"
 
 /* Import BAX Framework ---------------------------------------------------- */
@@ -110,8 +113,9 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
                     &pstate->partial_state);
 
             /* do we need more iterations ? */
-            if (ret)
+            if (ret) {
                 continue;
+            }
 
             finished++;
             BAX_NEXT_STAGE(PREPARE_PKT);

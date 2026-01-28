@@ -26,6 +26,9 @@
 #ifndef DAT_VAL_SIZE_BYTE
 #define DAT_VAL_SIZE_BYTE 4  /* assume an integer */
 #endif
+
+//#define DAT_PREFETCH_LIMIT 0 <-- define this to only prefetch after certain level
+//#define DAT_FORWARD_EXPLORE 0 <-- define this to prefetch multiple levels deep
 /* ------------------- */
 
 #define DAT_KEY_SIZE_BIT (DAT_KEY_SIZE_BYTE * 8)
@@ -216,7 +219,8 @@ int dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
 	const uint16_t i = s->offset;
 	const uint32_t node = s->node;
 
-	/* check the loop condition */
+	/* check the loop condition: eBPF verifier requires it otherwise we can
+	 * probably remove it */
 	if (!(i < key_size && i < DAT_KEY_SIZE_BIT)) { //
 		goto ret_resp;
 	}
@@ -234,7 +238,18 @@ int dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
 	s->node = next;
 
 	/* prefetch next node */
+#if defined(DAT_PREFETCH_LIMIT)
+	// experiment if not prefetching top of trie improve performance
+	if (i >= DAT_PREFETCH_LIMIT)
+		P((void *)&dat->base[next]);
+#elif defined(DAT_FORWARD_EXPLORE)
+	// explore if deeper prefetching help
+	const uint32_t double_next = dat->base[next].next;
+	P((void *)&dat->base[double_next]);
+#else
+	// normal case
 	P((void *)&dat->base[next]);
+#endif
 
 	s->offset++;
 
