@@ -32,6 +32,8 @@ __u64 tmp = 0;
 BAX_DECLARE_INIT_STAGE_NAME(FIRST);
 /* ------------------------------------------------------------------------- */
 
+#define DUMMY_COUNT 4
+
 SEC("xdp")
 int bbb_test_main(struct xdp_batch_md *batch)
 {
@@ -40,12 +42,51 @@ int bbb_test_main(struct xdp_batch_md *batch)
 
     BAX_STAGE(FIRST, `{
             tmp++;
-        BAX_NEXT_STAGE(DUMMY);
+        BAX_NEXT_STAGE(DUMMY_1);
     }')
 
-    BAX_STAGE(DUMMY, `{
+#if (DUMMY_COUNT >= 1)
+    BAX_STAGE(DUMMY_1, `{
+    #if (DUMMY_COUNT == 1)
         DROP();
+    #else
+        BAX_NEXT_STAGE(DUMMY_2);
+    #endif
     }')
+
+    #if (DUMMY_COUNT >=2)
+    BAX_STAGE(DUMMY_2, `{
+    #if (DUMMY_COUNT == 2)
+        DROP();
+    #else
+        BAX_NEXT_STAGE(DUMMY_3);
+    #endif
+    }')
+
+    #if (DUMMY_COUNT >=3)
+    BAX_STAGE(DUMMY_3, `{
+    #if (DUMMY_COUNT == 3)
+        DROP();
+    #else
+        BAX_NEXT_STAGE(DUMMY_4);
+    #endif
+    }')
+
+
+    #if (DUMMY_COUNT >=4)
+    BAX_STAGE(DUMMY_4, `{
+    #if (DUMMY_COUNT == 4)
+        DROP();
+    #else
+        BAX_NEXT_STAGE(DUMMY_5);
+    #endif
+    }')
+
+
+#endif // >= 4
+#endif // >= 3
+#endif // >= 2
+#endif // >= 1
 
     report_tput_batch(batch_size);
 

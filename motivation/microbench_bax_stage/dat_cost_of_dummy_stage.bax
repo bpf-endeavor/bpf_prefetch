@@ -114,7 +114,7 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
                 continue;
 
             finished++;
-            BAX_NEXT_STAGE(DUMMY);
+            BAX_NEXT_STAGE(PREPARE_PKT);
             // TODO: check for early termination
         }')
     }
@@ -122,11 +122,11 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
     // NOTE: it must never happen that a lookup is not finished in the limited
     // iteration of above loop
 
-    finished = 0;
-    BAX_STAGE(DUMMY, `{
-            finished++;
-            BAX_NEXT_STAGE(PREPARE_PKT);
-    }')
+    dnl // finished = 0;
+    dnl // BAX_STAGE(DUMMY, `{
+    dnl //         finished++;
+    dnl //         BAX_NEXT_STAGE(PREPARE_PKT);
+    dnl // }')
 
     BAX_STAGE(PREPARE_PKT, `{
         void *val = (void *)pstate->partial_state.val;
@@ -136,8 +136,8 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
                     tmp[0], tmp[1], tmp[2], tmp[3]);
             DROP();
         }
-        P(val);
-        P(data + 64);
+        /* P(val); */
+        /* P(data + 64); */
 
         __u16 target_size = sizeof(my_value_t);
         char *payload = (char *)(data + 42);
@@ -184,7 +184,7 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
 
 #ifdef PREFETCH
     BAX_STAGE(PREFETCH_HEADER, `{
-        P(data);
+        // P(data);
         BAX_NEXT_STAGE(PREPARE_AND_SEND);
     }')
 #endif
