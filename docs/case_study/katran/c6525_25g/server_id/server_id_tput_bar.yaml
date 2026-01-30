@@ -1,29 +1,41 @@
-figsize: [2.5, 2.1]
-x: ['Katran', "Katran on\nBeeswax"]
-y: [ [1800, 0],
-     [0, 2390] ]
-color: ['tab:gray', 'tab:green']
-hatch: ['//', 'xx']
-bar_width: 0.25
-ylabel: 'Throughput (K Req/s)'
-yticks: [0, 1000, 2000, 3000]
+figsize: [2.0, 2.1]
+x: ['Katran', "Beeswax"]
+y: [ [2.090, 0],
+     [0, 2.890] ]
+     # label: ['Katran', 'Beeswax--', 'Beeswax']
+color: ['lightcoral', 'mediumspringgreen'] # 'papayawhip', 
+hatch: ['/', '-', 'x']
+bar_width: 0.50
+ylabel: 'Throughput (M Req/s)'
+yticks: [0, 1, 2, 3, 4]
+# Annotations
+annotate_line:
+  - xy1: [0, 2.090]
+    slope: 0
+    color: black
+    linestyle: --
+    linewidth: 1
+  - xy1: [0, 2.890]
+    slope: 0
+    color: black
+    linestyle: --
+    linewidth: 1
+report_numbers:
+  delta_y: 0.250
+  delta_x: -0.200
+  round: 1
 arrow:
-  - x: 0.45
-    y: 1800
+  - x: 0.33
+    y: 2.090
     dx: 0
-    dy: 590
+    dy: 0.800
     length_includes_head: true
     head_width: 0.05
-    head_length: 150
+    head_length: 0.150
     facecolor: k
 annotate:
-  - xy: [-0.15, 1900]
-    text: '1800'
-  - xy: [0.85, 2500]
-    text: '2390'
-  # Arrow label
-  - xy: [0.5, 2000]
-    text: '33%'
+  - xy: [0.35, 2.200]
+    text: '38%'
 output: 'katran_server_id_tput.pdf'
 grid: true
 comments: "

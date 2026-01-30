@@ -1,0 +1,15 @@
+figsize: [2.0, 2.1]
+x: ['Katran',  "Beeswax"]
+y: [ [10.5,  0],
+     [0 ,  10.9] ]
+color: ['lightcoral', 'mediumspringgreen']
+hatch: ['/', '-', 'x']
+bar_width: 0.50
+ylabel: 'Cache-miss / Packet'
+yticks: [0, 5, 10, 15]
+report_numbers:
+  delta_y: 0.250
+  delta_x: -0.250
+  round: 1
+output: 'katran_server_id_cache_miss.pdf'
+grid: true
