@@ -1,7 +1,7 @@
 figsize: [2.0, 2.1]
 x: ['Katran',  "Beeswax"]
-y: [ [10.5,  0],
-     [0 ,  10.9] ]
+y: [ [10.27,  0],
+     [0 ,  10.29] ]
 color: ['lightcoral', 'mediumspringgreen']
 hatch: ['/', '-', 'x']
 bar_width: 0.50

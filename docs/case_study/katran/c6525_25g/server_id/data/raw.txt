@@ -1,0 +1,66 @@
+Katran (original)
+tput: 2.09
+
+ Performance counter stats for 'CPU(s) 3' (3 runs):
+
+          1,002.23 msec cpu-clock                        #    1.000 CPUs utilized               ( +-  0.06% )
+     3,288,358,940      cycles                           #    3.281 GHz                         ( +-  0.06% )  (41.29%)
+     3,749,941,474      instructions                     #    1.14  insn per cycle
+                                                  #    0.17  stalled cycles per insn     ( +-  0.04% )  (41.29%)
+        88,236,973      cache-references                 #   88.040 M/sec                       ( +-  0.21% )  (41.35%)
+        21,248,758      cache-misses                     #   24.08% of all cache refs           ( +-  0.10% )  (41.75%)
+     1,558,742,272      L1-dcache-loads                  #    1.555 G/sec                       ( +-  0.06% )  (41.92%)
+        51,393,718      L1-dcache-load-misses            #    3.30% of all L1-dcache accesses   ( +-  0.05% )  (41.93%)
+       655,452,039      branches                         #  653.992 M/sec                       ( +-  0.08% )  (41.93%)
+        50,887,397      branch-misses                    #    7.76% of all branches             ( +-  0.07% )  (41.94%)
+                 0      page-faults                      #    0.000 /sec
+       621,476,114      stalled-cycles-frontend          #   18.90% frontend cycles idle        ( +-  0.17% )  (41.94%)
+     3,639,588,547      ex_ret_cops                      #    3.631 G/sec                       ( +-  0.06% )  (41.88%)
+       621,647,273      de_dis_uop_queue_empty_di0       #  620.263 M/sec                       ( +-  0.15% )  (41.48%)
+
+          1.002209 +- 0.000615 seconds time elapsed  ( +-  0.06% )
+
+
+-----------------------------------------
+Katran + Bax (without 2phase opt lookup)
+tput: 2.78 Mpps
+
+ Performance counter stats for 'CPU(s) 3' (3 runs):
+
+          1,002.53 msec cpu-clock                        #    1.000 CPUs utilized               ( +-  0.07% )
+     3,288,544,548      cycles                           #    3.280 GHz                         ( +-  0.06% )  (41.29%)
+     5,590,834,974      instructions                     #    1.70  insn per cycle
+                                                  #    0.09  stalled cycles per insn     ( +-  0.04% )  (41.29%)
+       140,910,441      cache-references                 #  140.555 M/sec                       ( +-  0.09% )  (41.32%)
+        27,867,129      cache-misses                     #   19.78% of all cache refs           ( +-  0.23% )  (41.72%)
+     2,123,363,187      L1-dcache-loads                  #    2.118 G/sec                       ( +-  0.03% )  (41.92%)
+        93,572,042      L1-dcache-load-misses            #    4.41% of all L1-dcache accesses   ( +-  0.06% )  (41.93%)
+       889,178,902      branches                         #  886.937 M/sec                       ( +-  0.03% )  (41.93%)
+        36,097,791      branch-misses                    #    4.06% of all branches             ( +-  0.04% )  (41.94%)
+                 0      page-faults                      #    0.000 /sec
+       481,206,934      stalled-cycles-frontend          #   14.63% frontend cycles idle        ( +-  0.05% )  (41.94%)
+     5,231,782,294      ex_ret_cops                      #    5.219 G/sec                       ( +-  0.03% )  (41.91%)
+       481,434,737      de_dis_uop_queue_empty_di0       #  480.221 M/sec
+-----------------------------------------
+Katran + Bax (with 2phase opt lookup)
+tput: 2.89 Mpps
+
+ Performance counter stats for 'CPU(s) 3' (3 runs):
+
+          1,002.53 msec cpu-clock                        #    1.000 CPUs utilized               ( +-  0.07% )
+     3,289,133,983      cycles                           #    3.281 GHz                         ( +-  0.07% )  (41.29%)
+     5,904,706,460      instructions                     #    1.80  insn per cycle
+                                                  #    0.08  stalled cycles per insn     ( +-  0.08% )  (41.29%)
+       155,791,836      cache-references                 #  155.398 M/sec                       ( +-  0.08% )  (41.32%)
+        29,747,024      cache-misses                     #   19.09% of all cache refs           ( +-  0.07% )  (41.72%)
+     2,233,212,457      L1-dcache-loads                  #    2.228 G/sec                       ( +-  0.06% )  (41.92%)
+       102,067,001      L1-dcache-load-misses            #    4.57% of all L1-dcache accesses   ( +-  0.06% )  (41.93%)
+       940,909,326      branches                         #  938.530 M/sec                       ( +-  0.06% )  (41.93%)
+        37,186,063      branch-misses                    #    3.95% of all branches             ( +-  0.06% )  (41.94%)
+                 0      page-faults                      #    0.000 /sec
+       468,563,132      stalled-cycles-frontend          #   14.25% frontend cycles idle        ( +-  0.06% )  (41.94%)
+     5,540,811,578      ex_ret_cops                      #    5.527 G/sec                       ( +-  0.08% )  (41.91%)
+       468,922,022      de_dis_uop_queue_empty_di0       #  467.736 M/sec                       ( +-  0.06% )  (41.52%)
+
+          1.002517 +- 0.000736 seconds time elapsed  ( +-  0.07% )
+

@@ -15,3 +15,5 @@ tags.*
 *.symvers
 *.mod
 *.mod.c
+.DS_Store/
+.DS_Store
