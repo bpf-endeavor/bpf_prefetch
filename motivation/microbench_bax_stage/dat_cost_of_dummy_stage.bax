@@ -136,8 +136,8 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
                     tmp[0], tmp[1], tmp[2], tmp[3]);
             DROP();
         }
-        /* P(val); */
-        /* P(data + 64); */
+        P(val);
+        P(data + 64);
 
         __u16 target_size = sizeof(my_value_t);
         char *payload = (char *)(data + 42);
@@ -176,7 +176,8 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
         }
 
 #ifdef PREFETCH
-        BAX_NEXT_STAGE(PREFETCH_HEADER);
+        // BAX_NEXT_STAGE(PREFETCH_HEADER);
+        BAX_NEXT_STAGE(PREPARE_AND_SEND);
 #else
         BAX_NEXT_STAGE(PREPARE_AND_SEND);
 #endif
@@ -184,7 +185,7 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
 
 #ifdef PREFETCH
     BAX_STAGE(PREFETCH_HEADER, `{
-        // P(data);
+        P(data);
         BAX_NEXT_STAGE(PREPARE_AND_SEND);
     }')
 #endif

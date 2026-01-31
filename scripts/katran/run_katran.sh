@@ -8,7 +8,7 @@ VIRTUAL_IP=10.10.0.1
 SERVICE_PORT=8080
 
 OTHER_SERVER_IP=192.168.1.2
-DEFAULT_MAC="0c:42:a1:dd:5e:94" # other server's mac
+DEFAULT_MAC="0c:42:a1:e2:a6:98" # other server's mac
 FORWARDING_CORE=3
 
 CURDIR=$(dirname $0)
@@ -103,7 +103,7 @@ on_signal() {
 
 usage() {
 	echo "Usage: run_katran.sh MODE EXP"
-	echo "   MODE: [--baseline | --batch ] which version of Katran to use in experiment"
+	echo "   MODE: [--baseline | --batch | --bax] which version of Katran to use in experiment"
 	echo "   EXP:  [--id-routing | --lru-routing ] select experiment configuration"
 }
 
@@ -116,6 +116,10 @@ parse_args() {
 				;;
 			--batch)
 				MODE=batch
+				shift;
+				;;
+			--bax)
+				MODE=bax
 				shift;
 				;;
 			--baseline)
@@ -193,3 +197,4 @@ main() {
 }
 
 main $@
+
