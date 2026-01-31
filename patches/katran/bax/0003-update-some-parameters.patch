@@ -1,7 +1,7 @@
-From 686bd1b08032b9142497690c517c78f47589e512 Mon Sep 17 00:00:00 2001
+From 502ee948a3b5e942cae98189dd227048e79e167a Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 12 Oct 2025 13:41:51 -0600
-Subject: [PATCH 03/12] update some parameters
+Subject: [PATCH 03/13] update some parameters
 
 ---
  katran/lib/bpf/balancer_consts.h | 7 +++++--

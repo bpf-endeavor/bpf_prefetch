@@ -1,0 +1,39 @@
+From 7c5babe8a6759e79125785a60de1f386dbe3346d Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Fri, 30 Jan 2026 17:13:37 -0700
+Subject: [PATCH 13/13] make sure the two structs of htab are the same size
+
+---
+ katran/lib/BalancerStructs.h      | 2 +-
+ katran/lib/bpf/balancer_structs.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/katran/lib/BalancerStructs.h b/katran/lib/BalancerStructs.h
+index 2fc5f8ff..03427d73 100644
+--- a/katran/lib/BalancerStructs.h
++++ b/katran/lib/BalancerStructs.h
+@@ -57,7 +57,7 @@ struct event_metadata {
+ // result of vip's lookup
+ struct vip_meta {
+   uint32_t flags;
+-  uint32_t vip_num;
++  uint64_t vip_num;
+ };
+ 
+ // generic struct for statistics counters
+diff --git a/katran/lib/bpf/balancer_structs.h b/katran/lib/bpf/balancer_structs.h
+index 82a79d0f..dab9ab85 100644
+--- a/katran/lib/bpf/balancer_structs.h
++++ b/katran/lib/bpf/balancer_structs.h
+@@ -71,7 +71,7 @@ struct vip_definition {
+ // result of vip's lookup
+ struct vip_meta {
+   __u32 flags;
+-  __u32 vip_num;
++  __u64 vip_num; /* make this the same size as real_pos_lru to use the same htab library */
+ };
+ 
+ // where to send client's packet from LRU_MAP
+-- 
+2.34.1
+

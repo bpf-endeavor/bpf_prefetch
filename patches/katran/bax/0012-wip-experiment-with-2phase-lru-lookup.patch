@@ -1,7 +1,7 @@
-From d7dd5133802f10cd65598cdbd46d35765fca1c12 Mon Sep 17 00:00:00 2001
+From aef2a9022c036ba435fdc6338c0ce43174ecd047 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Tue, 4 Nov 2025 12:51:24 -0700
-Subject: [PATCH 12/12] wip: experiment with 2phase lru lookup
+Subject: [PATCH 12/13] wip: experiment with 2phase lru lookup
 
 ---
  katran/lib/bpf/balancer.bpf.c     | 86 +++++++++++++++++++++++++++++--
