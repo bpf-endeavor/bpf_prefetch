@@ -1,14 +1,37 @@
-figsize: [3.0, 2.1]
-x: ["eBPF\nLPM Trie", "eBPF\nArena Trie", "Beeswax\nArena Trie"]
-y: [ [0.756, 0, 0], [0, 1.44, 0], [0, 0, 1.97] ]
+figsize: [2.0, 2.1]
+x: ["eBPF\nMAP", "eBPF\nArena", "Bax\nArena"]
+y: [ [0.756, 0, 0], [0, 1.34, 0], [0, 0, 1.97] ]
 color: ['lightcoral', 'papayawhip', 'mediumspringgreen']
 hatch: ['/', '-', 'x']
 bar_width: 0.50
-ylabel: 'Instrution / Cycle'
+ylabel: 'Throughput (Mpps)'
 yticks: [0, 1, 2, 3]
 report_numbers:
   delta_y: 0.125
-  delta_x: -0.150
-  round: 1
-output: 'lpm_tput.pdf'
+  delta_x: -0.300
+  round: 2
+annotate_line:
+  - xy1: [0, 1.34]
+    slope: 0
+    color: black
+    linestyle: --
+    linewidth: 1
+  - xy1: [0, 1.97]
+    slope: 0
+    color: black
+    linestyle: --
+    linewidth: 1
+arrow:
+  - x: 0.40
+    y: 1.34
+    dx: 0
+    dy: 0.63
+    length_includes_head: true
+    head_width: 0.05
+    head_length: 0.150
+    facecolor: k
+annotate:
+  - xy: [-0.30, 1.5]
+    text: 47%
 grid: true
+output: 'lpm_tput.pdf'

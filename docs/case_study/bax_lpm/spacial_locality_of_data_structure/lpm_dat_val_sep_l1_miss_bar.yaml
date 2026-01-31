@@ -1,0 +1,15 @@
+figsize: [2.0, 2.1]
+x: ["Value\nwith Node", "Value\nSeparate"]
+y: [ [60.5, 0], [0, 43.7] ]
+color: ['lightcoral',  'mediumspringgreen'] #'papayawhip',
+hatch: ['/', '-', 'x']
+bar_width: 0.50
+ylabel: 'L1 Cache-miss / Packet'
+yticks: [0, 25, 50, 75]
+report_numbers:
+  delta_y: 2.
+  delta_x: -0.250
+  round: 2
+output: 'lpm_val_sep_l1_miss.pdf'
+grid: true
+
