@@ -1,0 +1,3 @@
+ example:
+ cat data/batch_size_4.txt | python3 ./clean.py --cdf --list-output
+

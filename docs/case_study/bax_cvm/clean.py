@@ -3,8 +3,10 @@ Clean the histogram report to understand how much of a
 batch is active when we walk through the Treap.
 """
 import re
+from argparse import ArgumentParser
 
-def report(samples):
+def report(samples, list_output=False):
+    tmp_values = []
     N = len(samples)
     keys = list(sorted(samples[0].keys()))
     for k in keys:
@@ -13,7 +15,13 @@ def report(samples):
         q2 = vals[int(N * 0.50)]
         q3 = vals[int(N * 0.75)]
         iqr = round(q3 - q1, ndigits=1)
-        print(f'@bucket {k}: {q2}% (+- {iqr})')
+        tmp_values.append((k, q2, iqr))
+
+    if list_output:
+        print(list(map(lambda x: x[1], tmp_values)))
+    else:
+        for k, q2, iqr in tmp_values:
+            print(f'@bucket {k}: {q2}% (+- {iqr})')
 
 def convert_to_percentage(data):
     new = {}
@@ -24,7 +32,16 @@ def convert_to_percentage(data):
         new[k] = p
     return new
 
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('--cdf', action='store_true')
+    parser.add_argument('--list-output', action='store_true')
+    args = parser.parse_args()
+    return args
+
 def main():
+    args = parse_args()
+
     samples = []
     data = {}
     r = re.compile('@bucket (\d+): (\d+)')
@@ -53,7 +70,17 @@ def main():
         samples.append(ndata)
         data.clear()
 
-    report(samples)
+    if args.cdf:
+        for observation in samples:
+            accomulator = 0
+            keys = sorted(observation.keys())
+            for bucket in keys:
+                accomulator += observation[bucket]
+                observation[bucket] = accomulator
+        print('Reporting CDF:')
+        report(samples, list_output=args.list_output)
+    else:
+        report(samples, list_output=args.list_output)
 
 
 main()
