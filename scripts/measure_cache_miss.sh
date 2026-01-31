@@ -21,5 +21,6 @@ sudo perf stat -C $CORE \
 	-e stalled-cycles-frontend \
 	-e ex_ret_cops \
 	-e de_dis_uop_queue_empty_di0 \
+	-e de_dis_dispatch_token_stalls1.load_queue_token_stall \
 	-r 3  -- sleep 1
 

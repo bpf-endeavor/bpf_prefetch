@@ -213,7 +213,7 @@ static void __prepare_dat(struct bpf_map *arena, arena_dat_t **_dat)
         .area = area,
         .area_size = area_size,
         .max_entries = MAX_ENTRIES,
-        .max_nodes = 200L * 1000L * 1000L,
+        .max_nodes = 100L * 1000L * 1000L,
         .out = _dat,
         .allocated_area =  &allocated_area,
     };

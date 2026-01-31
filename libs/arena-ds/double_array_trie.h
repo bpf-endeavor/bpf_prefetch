@@ -33,7 +33,12 @@
 
 #define DAT_KEY_SIZE_BIT (DAT_KEY_SIZE_BYTE * 8)
 
-/* #define __DEBUG 1 */
+// #define __DEBUG 1
+
+
+/* NOTE: this should be off during actual performance tests ! */
+/* this is for benchamrking and showing the effect of this opt in the paper */
+// #define DO_NOT_SEPARATE_VALUE 1
 
 #ifdef __BPF__
 #define memcpy(x,y,z) __builtin_memcpy(x,y,z)
@@ -64,9 +69,18 @@ const static uint32_t EMPTY = (uint64_t)(0);
 #define IS_TERMINAL(flag) (!!(flag & TERMINAL_MASK))
 #define EXTRACT_VALUE_INDEX(flag) (flag & (~TERMINAL_MASK))
 
+struct dat_value {
+	uint8_t value[DAT_VAL_SIZE_BYTE];
+};
+typedef struct dat_value __arena arena_dat_value_t;
+
 struct dat_node {
 	uint32_t next;
 	uint32_t value_flag;
+
+#ifdef DO_NOT_SEPARATE_VALUE
+	struct dat_value value;
+#endif
 };
 typedef struct dat_node __arena arena_dat_node_t;
 
@@ -75,21 +89,22 @@ struct dat_check_info {
 };
 typedef struct dat_check_info __arena arena_dat_check_info_t;
 
-struct dat_value {
-	uint8_t value[DAT_VAL_SIZE_BYTE];
-};
-typedef struct dat_value __arena arena_dat_value_t;
-
 struct dat {
 	arena_dat_node_t *base;
 	/* arena_dat_check_info_t *check; */
+#ifndef DO_NOT_SEPARATE_VALUE
 	arena_dat_value_t *values;
+#endif
 	uint32_t __arena *free_stk;
+#ifndef DO_NOT_SEPARATE_VALUE
 	uint32_t __arena *value_free_stk;
+#endif
 	uint32_t node_count;
 	/* a stack tracking free value blocks */
+#ifndef DO_NOT_SEPARATE_VALUE
 	uint32_t value_count;
 	uint32_t value_stk_ptr;
+#endif
 	/* a stack tracking free blocks */
 	uint32_t stk_size;
 	uint32_t stk_ptr;
@@ -124,6 +139,7 @@ int __put_used_block(arena_dat_t *dat, uint32_t index)
 	return -1;
 }
 
+#ifndef DO_NOT_SEPARATE_VALUE
 static __always_inline
 int __get_value(arena_dat_t *dat) {
 	if (dat->value_stk_ptr > dat->value_count) {
@@ -138,6 +154,8 @@ int __get_value(arena_dat_t *dat) {
 }
 
 // TODO: implement the function freeing values... useful when deleting nodes
+
+#endif
 
 /* Walk the trie and find the longest match with the key. report how many bits
  * was matched
@@ -187,8 +205,12 @@ void __arena * dat_lookup(arena_dat_t *dat, const uint8_t * const key,
 {
 	const uint32_t node = __find_lpm(dat, key, key_size);
 	if (node != EMPTY) {
+#ifdef DO_NOT_SEPARATE_VALUE
+		return (void __arena *)dat->base[node].value.value;
+#else
 		uint32_t index = EXTRACT_VALUE_INDEX(dat->base[node].value_flag);
 		return (void __arena *)dat->values[index].value;
+#endif
 	}
 	return NULL;
 }
@@ -258,8 +280,12 @@ int dat_lookup_partial(arena_dat_t *dat, const uint8_t *const key,
 ret_resp:
 		if (s->lpm != EMPTY) {
 			const uint32_t lpm = s->lpm;
+#ifdef DO_NOT_SEPARATE_VALUE
+			s->val = (void __arena *)dat->base[lpm].value.value;
+#else
 			uint32_t index = EXTRACT_VALUE_INDEX(dat->base[lpm].value_flag);
 			s->val = (void __arena *)dat->values[index].value;
+#endif
 		}
 		return 0; /* done */
 }
@@ -278,17 +304,29 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 		/* log("updating an existing node\n"); */
 		uint32_t val_index = 0;
 		if (IS_TERMINAL(dat->base[leaf_node].value_flag)) {
+#ifdef DO_NOT_SEPARATE_VALUE
+			// nothing ...
+#else
 			// it has a value associated with it
 			val_index = EXTRACT_VALUE_INDEX(dat->base[leaf_node].value_flag);
+#endif
 		} else {
+#ifdef DO_NOT_SEPARATE_VALUE
+			val_index = 1;
+#else
 			val_index = __get_value(dat);
 			if (val_index > dat->value_count) {
 				// failed to allocate
 				return -2;
 			}
+#endif
 			dat->base[leaf_node].value_flag = (val_index | TERMINAL_MASK);
 		}
+#ifdef DO_NOT_SEPARATE_VALUE
+		memcpy(dat->base[leaf_node].value.value, val, DAT_VAL_SIZE_BYTE);
+#else
 		memcpy(dat->values[val_index].value, val, DAT_VAL_SIZE_BYTE);
+#endif
 		return 0;
 	} else if (bits > key_size) {
 		log("what is happening? %d > %d\n", bits, key_size);
@@ -319,13 +357,21 @@ int dat_insert(arena_dat_t *dat, const uint8_t * const key,
 		node = next_node;
 	}
 
+#ifdef DO_NOT_SEPARATE_VALUE
+	int val_index = 1;
+#else
 	int val_index = __get_value(dat);
 	if (val_index > dat->value_count) {
 		log("no free value block");
 		return -ENOSPC;
 	}
+#endif
 	dat->base[node].value_flag = val_index | TERMINAL_MASK;
+#ifdef DO_NOT_SEPARATE_VALUE
+	memcpy(dat->base[node].value.value, val, DAT_VAL_SIZE_BYTE);
+#else
 	memcpy(dat->values[val_index].value, val, DAT_VAL_SIZE_BYTE);
+#endif
 	// log("store: %d: %d\n", node, *(uint32_t *)val);
 	return 0;
 }
@@ -350,15 +396,27 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 		return -EINVAL;
 	}
 
+#ifdef DO_NOT_SEPARATE_VALUE
+	// the nodes and entries are in the same object, make sure we have enough
+	if (arg->max_nodes < arg->max_entries) {
+		return -EINVAL;
+	}
+#endif
+
 	const uint64_t size = arg->max_nodes;
 	const uint64_t value_count = arg->max_entries;
 	const uint64_t stack_entries = (size / alphabet_size) - 1;
 	const uint64_t required_size = sizeof(arena_dat_t) +
 						(size * sizeof(arena_dat_node_t)) +
-						(size * sizeof(arena_dat_check_info_t)) +
+						/* (size * sizeof(arena_dat_check_info_t)) + */
+#ifndef DO_NOT_SEPARATE_VALUE
 						(value_count * sizeof(arena_dat_value_t)) +
-						(stack_entries * sizeof(uint32_t)) +
-						(value_count * sizeof(uint32_t));
+#endif
+						(stack_entries * sizeof(uint32_t))
+#ifndef DO_NOT_SEPARATE_VALUE
+ 						+ (value_count * sizeof(uint32_t))
+#endif
+						;
 	const uint64_t num_pages = COUNT_OBJ(required_size, PAGE_SIZE);
 	log("DAT requires %lu memory pages\n", num_pages);
 
@@ -374,11 +432,16 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 	dat->node_count = arg->max_nodes; // maximum number of nodes we have
 
 	dat->base = (void *)(dat + 1);
+#ifdef DO_NOT_SEPARATE_VALUE
+	// the order of memory changes in this two cases
+	dat->free_stk = (void *)(dat->base) + (size * sizeof(arena_dat_node_t));
+#else
 	/* dat->check = (void *)(dat->base) + (size * sizeof(arena_dat_node_t)); */
 	/* dat->values = (void *)(dat->check) + (size * sizeof(arena_dat_check_info_t)); */
 	dat->values = (void *)(dat->base) + (size * sizeof(arena_dat_node_t));
 	dat->free_stk = (void *)(dat->values) + (value_count * sizeof(arena_dat_value_t));
 	dat->value_free_stk = (void *)(dat->free_stk) + (stack_entries * sizeof(uint32_t));
+#endif
 
 	 /* initialize connections */
 	for (int i = 0; i < size; i++) {
@@ -387,12 +450,14 @@ static int userspace_arena_dat_alloc(arena_dat_alloc_t *arg) {
 		/* dat->check[i].owner = EMPTY; */
 	}
 
+#ifndef DO_NOT_SEPARATE_VALUE
 	/* initialize value stack */
 	dat->value_stk_ptr = 0;
 	dat->value_count = value_count; // maximum number of values we can store
 	for (int i = 0; i < value_count; i++) {
 		dat->value_free_stk[i] = i;
 	}
+#endif
 
 	/* initialize free stack */
 	for (int i = 0; i < stack_entries; i++) {
