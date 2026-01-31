@@ -1,0 +1,14 @@
+figsize: [2.0, 2.1]
+x: ['Katran', "Beeswax"]
+y: [ [0.87, 0], [0, 1.81] ]
+color: ['lightcoral', 'mediumspringgreen'] # 'papayawhip', 
+hatch: ['/', '-']
+bar_width: 0.50
+ylabel: 'Instrution / Cycle'
+yticks: [0, 1, 2, 3]
+report_numbers:
+  delta_y: 0.125
+  delta_x: -0.150
+  round: 1
+output: 'katran_lru_routing_ipc.pdf'
+grid: true

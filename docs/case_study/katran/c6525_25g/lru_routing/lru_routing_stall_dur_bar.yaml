@@ -1,0 +1,15 @@
+figsize: [2.0, 2.1]
+x: ['Katran', "Beeswax"]
+y: [ [154.0, 0],
+     [0, 138.5] ]
+color: ['lightcoral', 'mediumspringgreen'] # 'papayawhip', 
+hatch: ['/', '-']
+bar_width: 0.50
+ylabel: 'Front-end Stall (ms)'
+yticks: [0, 100, 200, 300]
+report_numbers:
+  delta_y: 20
+  delta_x: -0.250
+  round: 1
+output: 'katran_lru_routing_stall.pdf'
+grid: true

@@ -1,0 +1,39 @@
+figsize: [2.0, 2.1]
+x: ['Katran', "Beeswax"]
+y: [ [1.51, 0],
+     [0, 2.69] ]
+color: ['lightcoral', 'mediumspringgreen'] # 'papayawhip', 
+hatch: ['/', '-']
+bar_width: 0.50
+ylabel: 'Throughput (Mpps)'
+yticks: [0, 1, 2, 3, 4]
+# Annotations
+annotate_line:
+  - xy1: [0, 1.51]
+    slope: 0
+    color: black
+    linestyle: --
+    linewidth: 1
+  - xy1: [0, 2.68]
+    slope: 0
+    color: black
+    linestyle: --
+    linewidth: 1
+report_numbers:
+  delta_y: 0.250
+  delta_x: -0.200
+  round: 1
+arrow:
+  - x: 0.33
+    y: 1.51
+    dx: 0
+    dy: 1.18
+    length_includes_head: true
+    head_width: 0.05
+    head_length: 0.150
+    facecolor: k
+annotate:
+  - xy: [0.35, 1.800]
+    text: '78%'
+output: 'katran_lru_routing_tput.pdf'
+grid: true
