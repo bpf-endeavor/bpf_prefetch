@@ -1,7 +1,7 @@
 From bc6e3a9502b81f0407d1ea076591f51cd1f5da48 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 12 Oct 2025 08:09:12 -0600
-Subject: [PATCH 02/13] compile with system installed clang and use system's
+Subject: [PATCH 02/14] compile with system installed clang and use system's
  linux headers
 
 ---

@@ -1,7 +1,7 @@
 From 3712e43a8ba96fd92c15f6f045dd3ff975df0826 Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Sun, 2 Nov 2025 15:24:34 -0700
-Subject: [PATCH 09/13] use arena_htab instead of vip_map
+Subject: [PATCH 09/14] use arena_htab instead of vip_map
 
 ---
  katran/lib/KatranLb.cpp       |  85 +++++----

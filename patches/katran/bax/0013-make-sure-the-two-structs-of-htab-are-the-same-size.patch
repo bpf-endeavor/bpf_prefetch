@@ -1,7 +1,7 @@
 From 7c5babe8a6759e79125785a60de1f386dbe3346d Mon Sep 17 00:00:00 2001
 From: Farbod Shahinfar <fshahinfar1@gmail.com>
 Date: Fri, 30 Jan 2026 17:13:37 -0700
-Subject: [PATCH 13/13] make sure the two structs of htab are the same size
+Subject: [PATCH 13/14] make sure the two structs of htab are the same size
 
 ---
  katran/lib/BalancerStructs.h      | 2 +-

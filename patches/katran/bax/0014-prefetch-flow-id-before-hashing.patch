@@ -1,0 +1,118 @@
+From 19f838f89c289ac6ebf06b5ebc7c5a8dd6a6b94e Mon Sep 17 00:00:00 2001
+From: Farbod Shahinfar <fshahinfar1@gmail.com>
+Date: Fri, 30 Jan 2026 17:42:19 -0700
+Subject: [PATCH 14/14] prefetch flow-id before hashing
+
+---
+ katran/lib/bpf/balancer.bpf.c     | 38 +++++++++++++++++++++++--------
+ katran/lib/bpf/balancer_structs.h |  1 +
+ 2 files changed, 29 insertions(+), 10 deletions(-)
+
+diff --git a/katran/lib/bpf/balancer.bpf.c b/katran/lib/bpf/balancer.bpf.c
+index 9fc048f4..22cabebb 100644
+--- a/katran/lib/bpf/balancer.bpf.c
++++ b/katran/lib/bpf/balancer.bpf.c
+@@ -1547,7 +1547,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+       pstate->phase = LRU_LOOKUP_P2;
+     } else {
+       check_udp_flow_migration(&dst, &pstate->pckt, vip_info, &pstate->vip);
+-      pstate->phase = CONSISTENT_HASH;
++      pstate->phase = PREFETCH_CONSISTENT_HASH;
+     }
+   }
+ 
+@@ -1568,16 +1568,16 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     dst_lru = htab_lookup_elem_p2(lru_map, &pckt->flow,
+         &pstate->lru_lookup_partial_state);
+     if (!dst_lru) {
+-      pstate->phase = CONSISTENT_HASH;
++      pstate->phase = PREFETCH_CONSISTENT_HASH;
+       continue;
+     }
+ 
+-    report_tput();
++    // report_tput();
+     if (pckt->flow.proto == IPPROTO_UDP) {
+       cur_time = bpf_ktime_get_ns();
+       if (cur_time - dst_lru->atime > LRU_UDP_TIMEOUT) {
+         // psuedo connection expired
+-        pstate->phase = CONSISTENT_HASH;
++        pstate->phase = PREFETCH_CONSISTENT_HASH;
+         continue;
+       }
+       dst_lru->atime = cur_time;
+@@ -1592,7 +1592,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+     struct vip_meta* vip_info = &pstate->vip_info;
+     check_udp_flow_migration(&dst, &pstate->pckt, vip_info, &pstate->vip);
+ 
+-    pstate->phase = CONSISTENT_HASH;
++    pstate->phase = PREFETCH_CONSISTENT_HASH;
+     if (dst != NULL) {
+       pstate->dst.is_valid = true;
+       pstate->dst.data = *dst;
+@@ -1635,7 +1635,7 @@ int bbb_balancer_ingress(struct xdp_batch_md* batch)
+ 
+     check_udp_flow_migration(&dst, &pstate->pckt, vip_info, &pstate->vip);
+ 
+-    pstate->phase = CONSISTENT_HASH;
++    pstate->phase = PREFETCH_CONSISTENT_HASH;
+ 
+     if (dst_was_not_valid && dst != NULL) {
+       pstate->dst.is_valid = true;
+@@ -1675,10 +1675,30 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+ #else
+     void* lru_map = bpf_map_lookup_elem(&lru_mapping, &cpu_num);
+ #endif
+-    if (!lru_map) {
+-      return 0;
++  if (!lru_map) {
++    return 0;
++  }
++
++  // A stage for prefetching the ipv4 field
++  for (int k = 0; k < BATCH_SIZE; k++) {
++    if (k >= batch->size)
++      break;
++    pkt_state_t *pstate = &bs->S[k];
++    if (pstate->phase != PREFETCH_CONSISTENT_HASH)
++      continue;
++
++    if (pstate->dst.is_valid) {
++      /* bpf_printk("go to encap and tx"); */
++      pstate->phase = ENCAP_AND_TX;
++      continue;
+     }
+ 
++    // prefetch the what we are hashing
++    P(&pstate->pckt.flow);
++    pstate->phase= CONSISTENT_HASH;
++    continue;
++  }
++
+   for (int k = 0; k < BATCH_SIZE; k++) {
+     if (k >= batch->size)
+       break;
+@@ -1734,8 +1754,6 @@ int bbb_consistent_hashing(struct xdp_batch_md* batch)
+       // we found dst. update it
+       pstate->dst.is_valid = true;
+       pstate->dst.data = *dst;
+-    } else {
+-      /* bpf_printk("not doing hashing"); */
+     }
+ 
+     /* bpf_printk("go to encap and tx"); */
+diff --git a/katran/lib/bpf/balancer_structs.h b/katran/lib/bpf/balancer_structs.h
+index dab9ab85..e9a02383 100644
+--- a/katran/lib/bpf/balancer_structs.h
++++ b/katran/lib/bpf/balancer_structs.h
+@@ -179,6 +179,7 @@ enum pkt_phase {
+   FIND_VIP,
+   SERVER_ID_MATCHING,
+   LRU_LOOKUP,
++  PREFETCH_CONSISTENT_HASH,
+   CONSISTENT_HASH,
+   ENCAP_AND_TX,
+   TCP_HDR_OPT_LOOKUP_2,
+-- 
+2.34.1
+
