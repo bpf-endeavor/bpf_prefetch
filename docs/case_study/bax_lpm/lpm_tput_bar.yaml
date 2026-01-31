@@ -1,0 +1,14 @@
+figsize: [3.0, 2.1]
+x: ["eBPF\nLPM Trie", "eBPF\nArena Trie", "Beeswax\nArena Trie"]
+y: [ [0.756, 0, 0], [0, 1.44, 0], [0, 0, 1.97] ]
+color: ['lightcoral', 'papayawhip', 'mediumspringgreen']
+hatch: ['/', '-', 'x']
+bar_width: 0.50
+ylabel: 'Instrution / Cycle'
+yticks: [0, 1, 2, 3]
+report_numbers:
+  delta_y: 0.125
+  delta_x: -0.150
+  round: 1
+output: 'lpm_tput.pdf'
+grid: true
