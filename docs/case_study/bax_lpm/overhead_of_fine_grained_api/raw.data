@@ -1,0 +1,7 @@
+Scenario,Tput(pps)
+eBPF LPM MAP,2549019
+eBPF Arena DAT,2138151
+Beeswax fine-grained (1 bit progress),2660549
+Beeswax fine-grained (2 bit progress),2718666
+Beeswax fine-grained (4 bit progress),2845398
+Beeswax fine-grained (32 bit progress),3245311
