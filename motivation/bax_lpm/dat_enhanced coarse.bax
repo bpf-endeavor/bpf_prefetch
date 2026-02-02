@@ -97,40 +97,50 @@ int bbb_dat_test_main(struct xdp_batch_md *batch)
 
         pstate->key = *r;
 
-        dat_lookup_partial_init(dat, &pstate->partial_state);
+       // dat_lookup_partial_init(dat, &pstate->partial_state);
         BAX_NEXT_STAGE(DO_LOOKUP);
     }')
 
     P((void *)&dat->base[1]);
 
 // #pragma clang loop unroll(disable)
-    for (int ii = 0; ii < DAT_KEY_SIZE_BIT; ii++) { //TODO: CHANGE THE UPPER LOOP
-        if (finished >= batch_size)
-            break;
+//    for (int ii = 0; ii < DAT_KEY_SIZE_BIT; ii++) { //TODO: CHANGE THE UPPER LOOP
+//        if (finished >= batch_size)
+//            break;
 
         BAX_STAGE(DO_LOOKUP, `{
+            
             // here replace with dat_lookup and remove  
             // dat_lookup_partial_init(dat, &pstate->partial_state); in the stage before.
-            //
+            // 
 
-            int ret = 0;    
-            for (int _b = 0; _b < BIT_FOR_ITERATION; _b++) {
-                __u8 *tmp = (void *)&pstate->key;
-                ret = dat_lookup_partial(dat, tmp, 32 /* key size bits*/,
-                    &pstate->partial_state);
-                if (ret == 0) break; // we are done
+            //int ret = 0;    
+            //for (int _b = 0; _b < BIT_FOR_ITERATION; _b++) {
+            //    __u8 *tmp = (void *)&pstate->key;
+            //    ret = dat_lookup_partial(dat, tmp, 32 /* key size bits*/,
+            //        &pstate->partial_state);
+            //    if (ret == 0) break; // we are done
+            //}
+//
+            ///* do we need more iterations ? */
+            //if (ret) {
+            //    continue;
+            //}
+            __u8 *tmp = (void *)&pstate->key;
+            void __arena *__val = dat_lookup(dat, tmp, 32 /* key size bits*/);
+             
+            if (__val) {pstate->partial_state.val = __val;}
+            else {
+                bpf_printk(TAG"did not found!");
+                DROP();
             }
 
-            /* do we need more iterations ? */
-            if (ret) {
-                continue;
-            }
 
             finished++;
             BAX_NEXT_STAGE(PREPARE_PKT);
             // TODO: check for early termination
         }')
-    }
+  //  }
 
     // NOTE: it must never happen that a lookup is not finished in the limited
     // iteration of above loop
