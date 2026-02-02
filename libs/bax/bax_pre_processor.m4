@@ -121,6 +121,35 @@ ifelse(index(stage_names, $1), `-1',
 define(`stage_count', incr(stage_count))', `')'dnl
 )
 
+dnl # dnl ----- a test
+dnl # define(`_BAX_STAGE_BPF_FOR',`dnl
+dnl # _check_pkt_state_type_is_defined()dnl
+dnl # ifelse(`$2', `', `', dnl
+dnl # `{
+dnl #     /* Scope isolation for multiple STAGE calls */
+dnl #     int BAX_it; 
+dnl #     bpf_for(BAX_it, 0, batch_size) {
+dnl #         unsigned short BAX_k = BAX_it;
+dnl         
+dnl #         /* Original safety bound check */
+dnl #         if (BAX_k >= XDP_MAX_BATCH_SIZE) break;
+dnl 
+dnl #         'pkt_state_type_name() `*pstate = &bs->S[BAX_k];
+dnl #         if (pstate->phase != $1) continue;
+dnl 
+dnl #         '_in_stage_define_vars()`
+dnl         
+dnl #         /* begin stage $1 code */
+dnl #         $2
+dnl #         /* end   stage $1 code */
+dnl #     }
+dnl # }')dnl
+dnl # ifelse(index(stage_names, $1), `-1',
+dnl # `define(`stage_names', stage_names`|'$1)
+dnl # define(`stage_count', incr(stage_count))', `')'dnl
+dnl # )
+dnl # dnl ---------------------------------
+
 dnl A helper for running a block of code for all packets irrespective of their
 dnl phase.
 define(`BAX_FOR_ALL', `dnl
