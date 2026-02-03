@@ -3,7 +3,7 @@ subplots:
   - lines:
     - label: "Beeswax LPM benchmark"
       x: [1,  8, 16, 32]
-      y: [2660549, 2718666, 2845398, 3245311]
+      y: [3245311, 2845398, 2718666, 2660549]
       scale: 0.000001
       color: tab:purple
       marker: o
@@ -11,7 +11,7 @@ subplots:
     xticks: [1, 8, 16, 32]
     xtick_labels: ["1 (32)", "8 (4)", "16 (2)", "32 (1)"]
     ylabel: "Throughput (Mpps)"
-    xlabel: "Number of lookup stages\n(Progress into trie per lookup)"
+    xlabel: "Number of lookup stages\n(Progress into trie per API call)"
     grid: true
     annotate_line:
       - xy1: [0, 2.660549]
@@ -24,14 +24,25 @@ subplots:
         linestyle: ':'
     arrow:
       - x: 25
-        y: 2.660649
+        y: 3.245311
         dx: 0
-        dy: 0.6
+        dy: -0.6
         length_includes_head: true
         head_width: 1.0
         head_length: 0.2
         facecolor: k
+      - x: 25.5
+        y: 2.2
+        dx: 6
+        dy: 0
+        length_includes_head: true
+        head_width: 0.15
+        head_length: 1.2
+        facecolor: k
     annotate:
-      - xy: [27, 2.8]
-        text: "22%"
+      - xy: [26, 2.95]
+        text: "-22%"
+      - xy: [16.0, 2.05]
+        text: "More stages &\nFiner API"
+        fontsize: 9
 output: 'lpm_stage_overhead.pdf'
