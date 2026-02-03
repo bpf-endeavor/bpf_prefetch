@@ -1,0 +1,36 @@
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Welcome to Ubuntu 22.04.2 LTS (GNU/Linux 6.15.0art-g680b721a3232 x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ * Introducing Expanded Security Maintenance for Applications.
+   Receive updates to over 25,000 software packages with your
+   Ubuntu Pro subscription. Free for personal use.
+
+     https://ubuntu.com/pro
+New release '24.04.3 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+
+ Performance counter stats for 'CPU(s) 3' (3 runs):
+
+          1,002.32 msec cpu-clock                        #    1.000 CPUs utilized               ( +-  0.06% )
+     3,290,426,895      cycles                           #    3.283 GHz                         ( +-  0.06% )  (41.29%)
+     4,231,770,728      instructions                     #    1.29  insn per cycle            
+                                                  #    0.17  stalled cycles per insn     ( +-  0.13% )  (41.29%)
+        94,609,838      cache-references                 #   94.390 M/sec                       ( +-  0.05% )  (41.29%)
+        15,557,517      cache-misses                     #   16.44% of all cache refs           ( +-  0.07% )  (41.33%)
+     1,635,592,794      L1-dcache-loads                  #    1.632 G/sec                       ( +-  0.12% )  (41.73%)
+        56,282,756      L1-dcache-load-misses            #    3.44% of all L1-dcache accesses   ( +-  0.10% )  (41.93%)
+       715,340,137      branches                         #  713.681 M/sec                       ( +-  0.12% )  (41.93%)
+        59,659,336      branch-misses                    #    8.34% of all branches             ( +-  0.12% )  (41.93%)
+                 0      page-faults                      #    0.000 /sec                      
+       725,767,215      stalled-cycles-frontend          #   22.06% frontend cycles idle        ( +-  0.24% )  (41.93%)
+     4,131,792,174      ex_ret_cops                      #    4.122 G/sec                       ( +-  0.12% )  (41.94%)
+       725,656,985      de_dis_uop_queue_empty_di0       #  723.974 M/sec                       ( +-  0.20% )  (41.90%)
+            14,090      de_dis_dispatch_token_stalls1.load_queue_token_stall #   14.057 K/sec                       ( +-  2.00% )  (41.50%)
+
+          1.002301 +- 0.000568 seconds time elapsed  ( +-  0.06% )
+
