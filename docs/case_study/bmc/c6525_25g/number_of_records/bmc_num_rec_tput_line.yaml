@@ -1,0 +1,38 @@
+figsize: [3,2.0]
+subplots:
+  - lines:
+      - label: 'Beeswax'
+        x: [1,  1000, 10000, 100000, 250000, 500000, 750000, 1000000]
+        y: [0.904159, 0.925476, 0.944877, 0.9144, 0.895463, 0.885506, 0.879471, 0.860849]
+        yerr: [0.0450321,0.0244314,0.0189796,0.0471788,0.033244,0.0253067,0.0256488,0.00920215]
+          # linewidth: 2
+        xscale: 0.000001
+        marker: ^
+        markersize: 4
+        color: tab:blue
+      - label: 'BMC'
+        x: [1, 1000, 10000, 100000, 250000, 500000, 750000, 1000000]
+        y: [0.942305,0.909681,0.888303,0.877441,0.836596,0.813033,0.777978,0.726881]
+        yerr: [0.0338423,0.0181455,0.0287709,0.0151586,0.00629317,0.00339614,0.00100565,0.0177668]
+          # linewidth: 2
+        xscale: 0.000001
+        marker: o
+        markersize: 4
+        color: tab:red
+    ylabel: 'Throughput (Mpps)'
+    xlabel: 'Number of records $(\times10^6)$'
+    grid: true
+    legend:
+      loc: lower right
+      ncol: 1
+      fontsize: 9
+    yticks: [0, 0.5, 1]
+    zoom:
+      - top_left: [-0.0001, 1]
+        bottom_right: [0.002, 0.8]
+        zoom_box_bottom_left: [0.1, 0.35]
+        zoom_box_width: 0.3
+        zoom_box_height: 0.400
+        grid: false
+output: "bmc_num_rec_tput.pdf"
+
