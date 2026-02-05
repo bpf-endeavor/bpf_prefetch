@@ -2,7 +2,7 @@ figsize: [2.0, 2.1]
 x: ['Katran', "Beeswax"]
 y: [ [1.51, 0],
      [0, 2.69] ]
-color: ['lightcoral', 'mediumspringgreen'] # 'papayawhip', 
+color: ['#8da0cb', '#fc8d62'] # 'papayawhip', 
 hatch: ['/', '-']
 bar_width: 0.50
 ylabel: 'Throughput (Mpps)'

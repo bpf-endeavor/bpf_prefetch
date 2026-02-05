@@ -1,22 +1,33 @@
-figsize: [2.5, 2.1]
+figsize: [2.0, 2.2]
 x: ['Naive', "CVM on\nBeeswax"]
 y: [[2.364, 0], [0, 3.297]]
 ylabel: 'Throughput (Mpps)'
 xlabel: 'Batch size'
 yticks: [0, 2.5, 5]
-color: ['tab:gray', 'lime']
-hatch: ['//' , 'o']
+  # color: ['tab:gray', 'lime']
+color: ['#8da0cb', '#fc8d62']
+hatch: ['/' , '-']
 grid: true
+bar_width: 0.5
 annotate:
   - xy: [-0.1, 2.5]
     text: '2.3'
   - xy: [0.9, 3.7]
     text: '3.3'
   # Arrow label
-  - xy: [0.5, 2.5]
+  - xy: [0.35, 2.5]
     text: '39%'
+annotate_line:
+  - color: black
+    xy1: [0, 2.364]
+    slope: 0
+    linestyle: ":"
+  - color: black
+    linestyle: ":"
+    slope: 0
+    xy1: [0, 3.297]
 arrow:
-  - x: 0.4
+  - x: 0.30
     y: 2.365
     dx: 0
     dy: 0.933

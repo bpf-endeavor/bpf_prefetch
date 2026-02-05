@@ -1,4 +1,4 @@
-figsize: [3.0, 2.0]
+figsize: [3.0, 2.2]
 subplots:
   - lines:
     - label: "Beeswax LPM benchmark"

@@ -3,10 +3,10 @@ x: ['Katran', "Beeswax"]
 y: [ [2.090, 0],
      [0, 2.890] ]
      # label: ['Katran', 'Beeswax--', 'Beeswax']
-color: ['lightcoral', 'mediumspringgreen'] # 'papayawhip', 
+color: ['#8da0cb', '#fc8d62'] # 'papayawhip', 
 hatch: ['/', '-', 'x']
 bar_width: 0.50
-ylabel: 'Throughput (M Req/s)'
+ylabel: 'Throughput (Mpps)'
 yticks: [0, 1, 2, 3, 4]
 # Annotations
 annotate_line:
