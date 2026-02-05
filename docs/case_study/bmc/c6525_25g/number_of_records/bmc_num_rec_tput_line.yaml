@@ -27,12 +27,33 @@ subplots:
       ncol: 1
       fontsize: 9
     yticks: [0, 0.5, 1]
+    ylim: [0, 1.2]
+    # [1,  1000, 10000, 100000, 250000, 500000, 750000, 1000000]
+    # [-4.0, 1.7, 6.4, 4.2, 7.0, 8.9, 13.0, 18.4]
+    annotate:
+      - xy: [0, 1.01]
+        text: "-4%"
+        fontsize: 9
+      - xy: [0.20, 1.01]
+        text: "7%"
+        fontsize: 9
+      - xy: [0.50, 1.01]
+        text: "9%"
+        fontsize: 9
+      - xy: [0.70, 1.01]
+        text: "13%"
+        fontsize: 9
+      - xy: [0.90, 1.01]
+        text: "18%"
+        fontsize: 9
     zoom:
       - top_left: [-0.0001, 1]
         bottom_right: [0.002, 0.8]
-        zoom_box_bottom_left: [0.1, 0.35]
+        zoom_box_bottom_left: [0.1, 0.21]
         zoom_box_width: 0.3
         zoom_box_height: 0.400
+        xticks: [0.000001, 0.002]
+        xtick_labels: ["$10^{-6}$", "0.002"]
         grid: false
 output: "bmc_num_rec_tput.pdf"
 
