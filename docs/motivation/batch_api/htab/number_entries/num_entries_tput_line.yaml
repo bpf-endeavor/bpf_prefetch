@@ -1,10 +1,10 @@
-figsize: [3.5,2.1]
+figsize: [3.0,2.1]
 subplots:
   - lines:
-    - label: "Batch &\nFetch"
+    - label: "Batch & PF"
       x: [1, 1000, 100000, 500000, 1000000, 1500000, 2000000, 2500000, 3000000, 3500000, 4000000, 5000000]
       y: [3420, 3402.22, 3179.56, 2738.33, 2652.78, 2588.0, 2573.67, 2538.67, 2456.44, 2500.0, 2466.78, 2438.11]
-      color: 'tab:red'
+      color: '#fc8d62'
       linestyle: '-'
       scale: 0.001
       xscale: 0.000001
@@ -13,7 +13,7 @@ subplots:
     - label: 'Batch'
       x: [1, 1000, 100000, 500000, 1000000, 1500000, 2000000, 2500000, 3000000, 3500000, 4000000, 5000000]
       y: [3679.44, 3397.56, 3021.89, 2384.44, 2271.56, 2242.78, 2181.0, 2133.22, 2160.44, 2040.44, 2062.11, 1977.78]
-      color: 'tab:blue'
+      color: '#8da0cb'
       linestyle: '-.'
       scale: 0.001
       xscale: 0.000001
@@ -29,18 +29,23 @@ subplots:
       marker: 'x'
       markersize: 4
     legend:
-      loc: "lower center"
+      outside: true
+      loc: "upper right"
       ncol: 3
       handletextpad: 0.5
       labelspacing: 0.2
       handlelength: 1.5
       columnspacing: 0.8
       fontsize: 9
+      frameon: false
+      fancybox: false
     ylabel: "Throughput (Mpps)"
     xlabel: "Number of entries ($x10^6$)"
     yticks: [0, 1, 2, 3, 4]
     xticks: [0, 1, 2, 3, 4]
     xlim: [-0.1, 4]
     # xlogscale: 10
+tight_layout:
+  rect: [0, 0, 1.0, 0.95]
 output: num_entries_trend.pdf
 
