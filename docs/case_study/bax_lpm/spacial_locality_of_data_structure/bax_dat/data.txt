@@ -1,0 +1,49 @@
+# No separation
+tput: 1.704 Mpps
+L1 miss/pkt: 63.49
+
+ Performance counter stats for 'CPU(s) 3' (3 runs):
+
+          1,002.50 msec cpu-clock                        #    1.000 CPUs utilized               ( +-  0.06% )
+     3,291,905,491      cycles                           #    3.284 GHz                         ( +-  0.07% )  (41.30%)
+     4,099,106,790      instructions                     #    1.25  insn per cycle
+                                                  #    0.08  stalled cycles per insn     ( +-  0.08% )  (41.30%)
+       154,560,497      cache-references                 #  154.175 M/sec                       ( +-  0.14% )  (41.30%)
+        52,961,714      cache-misses                     #   34.27% of all cache refs           ( +-  0.10% )  (41.31%)
+     1,438,876,070      L1-dcache-loads                  #    1.435 G/sec                       ( +-  0.08% )  (41.71%)
+       108,190,037      L1-dcache-load-misses            #    7.52% of all L1-dcache accesses   ( +-  0.14% )  (41.93%)
+       621,579,104      branches                         #  620.030 M/sec                       ( +-  0.06% )  (41.93%)
+        24,413,221      branch-misses                    #    3.93% of all branches             ( +-  0.06% )  (41.93%)
+                 0      page-faults                      #    0.000 /sec
+       308,098,118      stalled-cycles-frontend          #    9.36% frontend cycles idle        ( +-  0.07% )  (41.93%)
+     3,773,127,583      ex_ret_cops                      #    3.764 G/sec                       ( +-  0.05% )  (41.93%)
+       308,095,583      de_dis_uop_queue_empty_di0       #  307.328 M/sec                       ( +-  0.07% )  (41.92%)
+         1,772,022      de_dis_dispatch_token_stalls1.load_queue_token_stall #    1.768 M/sec                       ( +-  1.19% )  (41.52%)
+
+          1.002474 +- 0.000656 seconds time elapsed  ( +-  0.07% )
+
+
+# with separation
+tput: 2.054 Mpps
+L1 miss/pkt: 50.123
+
+ Performance counter stats for 'CPU(s) 3' (3 runs):
+
+          1,002.41 msec cpu-clock                        #    1.000 CPUs utilized               ( +-  0.06% )
+     3,292,519,131      cycles                           #    3.285 GHz                         ( +-  0.05% )  (41.40%)
+     4,981,060,034      instructions                     #    1.51  insn per cycle
+                                                  #    0.08  stalled cycles per insn     ( +-  0.04% )  (41.40%)
+       151,566,610      cache-references                 #  151.203 M/sec                       ( +-  0.15% )  (41.40%)
+        37,164,380      cache-misses                     #   24.52% of all cache refs           ( +-  0.06% )  (41.40%)
+     1,724,561,805      L1-dcache-loads                  #    1.720 G/sec                       ( +-  0.06% )  (41.80%)
+       102,953,773      L1-dcache-load-misses            #    5.97% of all L1-dcache accesses   ( +-  0.09% )  (41.85%)
+       753,645,280      branches                         #  751.835 M/sec                       ( +-  0.06% )  (41.85%)
+        29,542,345      branch-misses                    #    3.92% of all branches             ( +-  0.05% )  (41.86%)
+                 0      page-faults                      #    0.000 /sec
+       420,164,418      stalled-cycles-frontend          #   12.76% frontend cycles idle        ( +-  0.06% )  (41.86%)
+     4,682,761,043      ex_ret_cops                      #    4.672 G/sec                       ( +-  0.05% )  (41.86%)
+       420,274,878      de_dis_uop_queue_empty_di0       #  419.265 M/sec                       ( +-  0.04% )  (41.86%)
+           353,330      de_dis_dispatch_token_stalls1.load_queue_token_stall #  352.481 K/sec                       ( +-  0.58% )  (41.47%)
+
+          1.002379 +- 0.000548 seconds time elapsed  ( +-  0.05% )
+
