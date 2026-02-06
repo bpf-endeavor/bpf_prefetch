@@ -1,11 +1,13 @@
 figsize: [10, 2.5]
 subplots:
+  # Subplot 1
   - title: "Zipf: 0"
     grid: true
     ylabel: 'Throughput (Mpps)'
     yticks: [0, 1, 2, 3, 4]
-    xlabel: 'Number of flows'
-    xlogscale: 10
+    xlabel: 'Number of flows ($10^6$)'
+    xticks: [0, 2, 4, 6, 8]
+      # xlogscale: 10
     legend:
       # ncol: 2
       loc: lower left
@@ -15,6 +17,7 @@ subplots:
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2780303.8, 2718813.04, 2724678.67, 2713582.15, 2670334.62, 2658481.4, 2654804.96, 2569142.52, 2539059.95, 2578129.47]
         scale: 0.000001
+        xscale: 0.000001
         color: "#fc8d62"
         marker: "^"
         linestyle: "-."
@@ -22,21 +25,42 @@ subplots:
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2209804.85, 2154218.48, 2134451.18, 2179836.88, 1869097.7, 1391565.84, 1390500.98, 1379454.54, 1403568.94, 1353104.95]
         scale: 0.000001
+        xscale: 0.000001
         color: "#8da0cb"
         marker: "o"
         linestyle: "--"
-  # Other subplot
+    report_delta:
+      base_label: 'Katran'
+      target_label: 'Beeswax'
+      dx: -0.4
+      dy: 0.1
+      selection_map: [true, false, false, false, false, true, false, true, false, true]
+      selection_delta: [[0, 0.15],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [-0.2, 0],
+    ]
+      fontsize: 9
+  # Subplot 2
   - title: "Zipf: 0.5"
     grid: true
       # ylabel: 'Throughput (Mpps)'
     yticks: [0, 1, 2, 3, 4]
-    xlabel: 'Number of flows'
-    xlogscale: 10
+    xlabel: 'Number of flows ($10^6$)'
+    xticks: [0, 2, 4, 6, 8]
+      # xlogscale: 10
     lines:
       - label: "Katran"
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2181406.55, 2120431.29, 2160169.67, 2172302.55, 1703925.41, 1519983.49, 1484885.04, 1440435.6, 1385395.9, 1307487.89]
         scale: 0.000001
+        xscale: 0.000001
         color: "#8da0cb"
         marker: "o"
         linestyle: "--"
@@ -44,21 +68,42 @@ subplots:
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2701293.31, 2782755.23, 2718475.66, 2651904.02, 2697808.23, 2640171.76, 2687688.1, 2620508.65, 2580261.8, 2603143.26]
         scale: 0.000001
+        xscale: 0.000001
         color: "#fc8d62"
         marker: "^"
         linestyle: "-."
-  # Other subplot
+    report_delta:
+      base_label: 'Katran'
+      target_label: 'Beeswax'
+      dx: -0.4
+      dy: 0.1
+      selection_map: [true, false, false, false, false, true, false, true, false, true]
+      selection_delta: [[0, 0.30],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [-0.2, 0],
+    ]
+      fontsize: 9
+  # Subplot 3
   - title: "Zipf: 1.0"
     grid: true
       # ylabel: 'Throughput (Mpps)'
     yticks: [0, 1, 2, 3, 4]
-    xlabel: 'Number of flows'
-    xlogscale: 10
+    xlabel: 'Number of flows ($10^6$)'
+    xticks: [0, 2, 4, 6, 8]
+    # xlogscale: 10
     lines:
       - label: "Katran"
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2106960.36, 1974458.99, 2181406.17, 2004333.64, 2027157.2, 1893763.18, 1744696.37, 1674812.49, 1623049.19, 1699586.2]
         scale: 0.000001
+        xscale: 0.000001
         color: "#8da0cb"
         marker: "o"
         linestyle: "--"
@@ -66,21 +111,42 @@ subplots:
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2702980.35, 2680776.76, 2691974.71, 2659229.51, 2674103.66, 2581697.8, 2693697.32, 2696095.94, 2660511.94, 2662454.11]
         scale: 0.000001
+        xscale: 0.000001
         color: "#fc8d62"
         marker: "^"
         linestyle: "-."
-  # Other subplot
+    report_delta:
+      base_label: 'Katran'
+      target_label: 'Beeswax'
+      dx: -0.4
+      dy: 0.1
+      selection_map: [true, false, false, false, false, true, false, true, false, true]
+      selection_delta: [[0, 0.20],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [-0.2, 0],
+    ]
+      fontsize: 9
+  # Subplot 4
   - title: "Zipf: 1.5"
     grid: true
       # ylabel: 'Throughput (Mpps)'
     yticks: [0, 1, 2, 3, 4]
-    xlabel: 'Number of flows'
-    xlogscale: 10
+    xlabel: 'Number of flows ($10^6$)'
+    xticks: [0, 2, 4, 6, 8]
+    # xlogscale: 10
     lines:
       - label: "Katran"
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2133927.08, 2029424.79, 2233922.36, 2155373.0, 2230599.47, 1988356.54, 2107019.82, 1982997.8, 1999421.92, 1983081.56]
         scale: 0.000001
+        xscale: 0.000001
         color: "#8da0cb"
         marker: "o"
         linestyle: "--"
@@ -88,21 +154,42 @@ subplots:
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2651609.49, 2772099.79, 2634219.83, 2668900.58, 2734178.23, 2643804.18, 2711417.72, 2700787.14, 2692338.73, 2632415.13]
         scale: 0.000001
+        xscale: 0.000001
         color: "#fc8d62"
         marker: "^"
         linestyle: "-."
-  # Other subplot
+    report_delta:
+      base_label: 'Katran'
+      target_label: 'Beeswax'
+      dx: -0.4
+      dy: 0.1
+      selection_map: [true, false, false, false, false, true, false, true, false, true]
+      selection_delta: [[0, 0.30],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [-0.2, 0],
+    ]
+      fontsize: 9
+  # Subplot 5
   - title: "Zipf: 2.0"
     grid: true
       # ylabel: 'Throughput (Mpps)'
     yticks: [0, 1, 2, 3, 4]
-    xlabel: 'Number of flows'
-    xlogscale: 10
+    xlabel: 'Number of flows ($10^6$)'
+    xticks: [0, 2, 4, 6, 8]
+    # xlogscale: 10
     lines:
       - label: "Katran"
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2161767.13, 2002332.87, 1989126.94, 1895298.37, 2161492.95, 2127971.97, 2137061.5, 2135358.74, 1910796.91, 2147249.69]
         scale: 0.000001
+        xscale: 0.000001
         color: "#8da0cb"
         marker: "o"
         linestyle: "--"
@@ -110,10 +197,34 @@ subplots:
         x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
         y: [2647944.25, 2661058.06, 2644378.0, 2675183.68, 2637360.76, 2671495.92, 2739258.99, 2711883.79, 2738096.18, 2694982.92]
         scale: 0.000001
+        xscale: 0.000001
         color: "#fc8d62"
         marker: "^"
         linestyle: "-."
-
+    report_delta:
+      base_label: 'Katran'
+      target_label: 'Beeswax'
+      dx: -0.4
+      dy: 0.1
+      selection_map: [true, false, false, false, false, true, false, true, false, true]
+      selection_delta: [[0, 0.30],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [-0.2, 0],
+    ]
+      fontsize: 9
 output: "katran_workload_analysis.pdf"
 
-
+  # zipf: 0   [25.8, 26.2, 27.7, 24.5, 42.9, 91.0, 90.9, 86.2, 80.9, 90.5]
+  # zipf: 0.5 [23.8, 31.2, 25.8, 22.1, 58.3, 73.7, 81.0, 81.9, 86.2, 99.1]
+  # zipf: 1   [28.3, 35.8, 23.4, 32.7, 31.9, 36.3, 54.4, 61.0, 63.9, 56.7]
+  # zipf: 1.5 [24.3, 36.6, 17.9, 23.8, 22.6, 33.0, 28.7, 36.2, 34.7, 32.7]
+  # zipf: 2   [22.5, 32.9, 32.9, 41.1, 22.0, 25.5, 28.2, 27.0, 43.3, 25.5]
+  # max: 99.1
+  # min: 17.9

@@ -9,9 +9,9 @@ subplots:
       marker: o
     yticks: [2, 3, 4]
     xticks: [1, 8, 16, 32]
-    xtick_labels: ["1 (32)", "8 (4)", "16 (2)", "32 (1)"]
+    xtick_labels: ["1", "8", "16", "32"]
     ylabel: "Throughput (Mpps)"
-    xlabel: "Number of lookup stages\n(Progress into trie per API call)"
+    xlabel: "Number of lookup phases"
     grid: true
     annotate_line:
       - xy1: [0, 2.660549]
@@ -32,7 +32,7 @@ subplots:
         head_length: 0.2
         facecolor: k
       - x: 25.5
-        y: 2.2
+        y: 2.0
         dx: 6
         dy: 0
         length_includes_head: true
@@ -42,7 +42,7 @@ subplots:
     annotate:
       - xy: [26, 2.95]
         text: "-22%"
-      - xy: [16.0, 2.05]
-        text: "More stages &\nFiner API"
+      - xy: [16.5, 2.05]
+        text: "More phases"
         fontsize: 9
 output: 'lpm_stage_overhead.pdf'

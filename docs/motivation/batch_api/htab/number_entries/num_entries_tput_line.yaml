@@ -1,4 +1,4 @@
-figsize: [3.0,2.1]
+figsize: [2.5,2.1]
 subplots:
   - lines:
     - label: "Batch & PF"
@@ -29,14 +29,13 @@ subplots:
       marker: 'x'
       markersize: 4
     legend:
-      outside: true
-      loc: "upper right"
-      ncol: 3
+      loc: "lower right"
+      ncol: 2
       handletextpad: 0.5
       labelspacing: 0.2
       handlelength: 1.5
       columnspacing: 0.8
-      fontsize: 9
+      fontsize: 8
       frameon: false
       fancybox: false
     ylabel: "Throughput (Mpps)"
@@ -45,7 +44,7 @@ subplots:
     xticks: [0, 1, 2, 3, 4]
     xlim: [-0.1, 4]
     # xlogscale: 10
-tight_layout:
-  rect: [0, 0, 1.0, 0.95]
+# tight_layout:
+#   rect: [0, 0, 1.0, 0.90]
 output: num_entries_trend.pdf
 

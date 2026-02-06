@@ -1,5 +1,5 @@
-figsize: [2.0, 2.1]
-x: ["eBPF\nMAP", "eBPF\nArena", "Bax\nArena"]
+figsize: [2.2, 2.1]
+x: ["Native", "Arena", "Beeswax"]
 y: [ [0.756, 0, 0], [0, 1.34, 0], [0, 0, 1.97] ]
   # color: ['lightcoral', 'papayawhip', 'mediumspringgreen']
 color: ['#8da0cb', '#66c2a5', '#fc8d62']

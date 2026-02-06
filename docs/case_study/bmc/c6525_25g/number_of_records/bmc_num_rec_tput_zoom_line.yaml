@@ -1,0 +1,29 @@
+figsize: [2,2.2]
+subplots:
+  # zoom figure
+  - lines:
+      - label: 'Beeswax'
+        x: [1,100,1000,10000]
+        y: [978874.14,955993.39,969838.80,971576.47]
+        scale: 0.000001
+        marker: ^
+        markersize: 4
+        color: "#fc8d62"
+      - label: 'BMC'
+        x: [1,100,1000,10000]
+        y: [1009900.84,975785.15,959002.59,954444.94]
+        scale: 0.000001
+        marker: o
+        markersize: 4
+        color: "#8da0cb"
+    yticks: [0.9, 1, 1.1]
+    xticks: [0, 1000, 2000]
+    xlim: [-100, 2000]
+    xlabel: 'Number of records'
+    ylabel: 'Throughput (Mpps)'
+    report_delta:
+      base_label: 'BMC'
+      target_label: 'Beeswax'
+      dx: -10
+      dy: 0.001
+output: "bmc_num_rec_tput_zoom.pdf"
