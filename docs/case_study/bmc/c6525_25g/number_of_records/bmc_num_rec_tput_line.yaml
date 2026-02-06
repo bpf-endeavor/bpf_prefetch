@@ -21,7 +21,7 @@ subplots:
         marker: o
         markersize: 4
         color: "#8da0cb"
-    ylabel: 'Throughput (Mpps)'
+    ylabel: 'Throughput (M Req/s)'
     xlabel: 'Number of records $(\times10^6)$'
     grid: true
     legend:

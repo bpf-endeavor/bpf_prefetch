@@ -21,7 +21,7 @@ subplots:
     xlabel_rotation_deg: 30
     xlim: [-1000, 2000]
     xlabel: 'Number of records'
-    ylabel: 'Throughput (Mpps)'
+      # ylabel: 'Tput. (M Req/s)'
     report_delta:
       base_label: 'BMC'
       target_label: 'Beeswax'
