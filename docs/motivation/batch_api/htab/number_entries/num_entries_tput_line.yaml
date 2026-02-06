@@ -36,8 +36,8 @@ subplots:
       handlelength: 1.5
       columnspacing: 0.8
       fontsize: 8
-      frameon: false
-      fancybox: false
+        # frameon: false
+        # fancybox: false
     ylabel: "Throughput (Mpps)"
     xlabel: "Number of entries ($x10^6$)"
     yticks: [0, 1, 2, 3, 4]

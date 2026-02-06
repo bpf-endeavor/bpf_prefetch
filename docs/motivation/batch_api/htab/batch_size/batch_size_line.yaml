@@ -21,8 +21,8 @@ subplots:
       # marker: o
       # markersize: 2
     grid: true
-      # yticks: [0, 1, 2, 3, 4]
-    yticks: [0, 1, 2, 3]
+    yticks: [0, 1, 2, 3, 4]
+      #  yticks: [0, 1, 2, 3]
     # xlim: [0, 32]
     xticks: [0, 8, 16, 24, 32]
     ylabel: Throughput (Mpps)

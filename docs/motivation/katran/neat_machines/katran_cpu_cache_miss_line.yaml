@@ -1,4 +1,4 @@
-figsize: [2.5,2.1]
+figsize: [2.2,2.1]
 subplots:
   - lines:
     - x: [ 1, 100, 10000, 100000, 1000000, 2500000, 5000000, 7000000, 8000000,]
@@ -17,6 +17,7 @@ subplots:
     ylabel: 'Cache miss (%)'
     xlabel: 'Number of flows'
     yticks: [0, 10, 20, 30, 40, 50]
+    xticks: [1, 100, 10000, 1000000, 1000000, 100000000]
     legend: true
 output: 'katran_cpu_cache.pdf'
 

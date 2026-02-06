@@ -17,13 +17,19 @@ subplots:
         markersize: 4
         color: "#8da0cb"
     yticks: [0.9, 1, 1.1]
-    xticks: [0, 1000, 2000]
-    xlim: [-100, 2000]
+    xticks: [1, 1000, 2000]
+    xlabel_rotation_deg: 30
+    xlim: [-1000, 2000]
     xlabel: 'Number of records'
     ylabel: 'Throughput (Mpps)'
     report_delta:
       base_label: 'BMC'
       target_label: 'Beeswax'
-      dx: -10
+      dx: -300
       dy: 0.001
+      selection_delta: [
+        [-600, -0.01],
+        [0, -0.03],
+        [0, 0.02]
+      ]
 output: "bmc_num_rec_tput_zoom.pdf"

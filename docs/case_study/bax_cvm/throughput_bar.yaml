@@ -1,8 +1,7 @@
 figsize: [2.0, 2.2]
-x: ['Naive', "CVM on\nBeeswax"]
+x: ['Baseline', "Beeswax"]
 y: [[2.364, 0], [0, 3.297]]
 ylabel: 'Throughput (Mpps)'
-xlabel: 'Batch size'
 yticks: [0, 2.5, 5]
   # color: ['tab:gray', 'lime']
 color: ['#8da0cb', '#fc8d62']
@@ -15,7 +14,7 @@ annotate:
   - xy: [0.9, 3.7]
     text: '3.3'
   # Arrow label
-  - xy: [0.35, 2.5]
+  - xy: [0.33, 2.55]
     text: '39%'
 annotate_line:
   - color: black
