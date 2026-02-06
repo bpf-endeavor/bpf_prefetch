@@ -1,0 +1,38 @@
+figsize: [2.2,2.3]
+subplots:
+  - lines:
+    - x: [10, 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 6000000, 8000000]
+      y: [2209804.85, 2154218.48, 2134451.18, 2179836.88, 1869097.7, 1391565.84, 1390500.98, 1379454.54, 1403568.94, 1353104.95]
+      scale: 0.000001
+      color: '#8da0cb'
+      marker: 'o'
+      markersize: 4
+    xticks: [1, 100, 10000, 1000000, 1000000, 100000000]
+    xlogscale: 10
+    ylabel: 'Throughput (Mpps)'
+    xlabel: 'Number of flows'
+    yticks: [0, 1, 2, 3]
+    annotate_line:
+      - xy1: [0, 2.20]
+        slope: 0
+        linestyle: ':'
+        color: 'k'
+      - xy1: [0, 1.39]
+        slope: 0
+        linestyle: ':'
+        color: 'k'
+    arrow:
+      - x: 12
+        y: 2.20
+        dx: 0
+        dy: -0.81
+        color: k
+        head_width: 5.0
+        head_length: 0.2
+        length_includes_head: true
+    annotate:
+      - xy: [15, 1.7]
+        text: "36%"
+        fontsize: 9
+output: 'katran_tput.pdf'
+

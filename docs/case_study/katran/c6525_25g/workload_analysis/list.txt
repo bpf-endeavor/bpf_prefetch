@@ -1,0 +1,12 @@
+data/results/baseline/perf_1_0.txt
+data/results/baseline/perf_10_0.txt
+data/results/baseline/perf_100_0.txt
+data/results/baseline/perf_1000_0.txt
+data/results/baseline/perf_10000_0.txt
+data/results/baseline/perf_100000_0.txt
+data/results/baseline/perf_1000000_0.txt
+data/results/baseline/perf_2000000_0.txt
+data/results/baseline/perf_4000000_0.txt
+data/results/baseline/perf_6000000_0.txt
+data/results/baseline/perf_8000000_0.txt
+
