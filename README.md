@@ -1,5 +1,7 @@
 # Cache Efficient eBPF: Making eBPF Programs Blazing Fast
 
+* the modified kernel is at https://github.com/bpf-endeavor/kernel-sw-prefetch
+
 ## About
 
 ...
