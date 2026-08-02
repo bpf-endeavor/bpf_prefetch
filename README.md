@@ -53,6 +53,24 @@ Beeswax is a recipe for building eBPF programs that can effectively hide memory 
 3. Batch processing
 4. Arena MAP for implementing the data structures
 
+When number of entries in a MAP gets large, the chance of experiencing
+cache-misses on lookup operations increase. The cache-misses happens both when
+dereferencing the retun value (result of lookup operation) and also when the
+lookup is accessing the internal structure (e.g., such as bucket of hash map).
+
+By redesiging the API of data structure, the program can make partial progress,
+prefetch the memory address that may miss in cache, and switch to an
+independent task for some time and come back to unfinished operation and
+perform other phases of the operation.
+
+By pairing this idea with batch processing Beeswax programs are organized in
+multiple stages in which independant packets each make partial progress when
+accessing MAPs (for example performing the first phase). The time between each
+stage will allow the CPU to bring data into the cache, and when the program
+continues with the next phase of operations it will not experience cache-miss.
+
+### Programming Model
+
 A Beeswax program is capable of processing events in batches. As a strating point, we have extended the XDP hook to support batch packet processing (supporting mlx5 and virtio drivers).
 Below you can see a simple Beeswax program and layout of its context object. The batch processing programs start with `bbb_` prefix and receive `struct xdp_batch_md *` as context object.
 
@@ -92,9 +110,13 @@ More specifically, Beeswax programs are organized in multiple stages in which
 packets are processed. Every packet is associated with one. Intially all packet
 start from the stage indicated by `BAX_DECLARE_INIT_STAGE_NAME`.
 
-During each stage, the packet may finish processing (e.g., marked to be
-dropped), stay at same stage, or transition to another stage. The program goes
-through stages and processes packets that belong to that stage.
+A stage is defined using `BAX_STAGE(name, {...})` syntax. When the control-flow
+of program reaches a stage, it runs the code for each packet in the batch that
+is marked for that stage.
+
+During each stage, the packet may 1) finish processing (e.g., when dropped), 2)
+stay at same stage (when the block of code should be repeated), or 3)
+transition to another stage (using `BAX_NEXT_STAGE(name of next stage)`). 
 
 ```
 ...
@@ -127,15 +149,43 @@ int bbb_test_main(struct xdp_batch_md *batch)
         }
 
         // ...
+         BAX_NEXT_STAGE(CHECK_IN_MAP);
     }')
 
-    // ...
+    // another stage in which some packets are processed
+    BAX_STAGE(CHECK_IN_MAP, `{...}`)
+
+    // rest of the program ...
     return 0;
 }
 ```
 
+Each stage is unrolled to run on packets that are marked to belong for that
+stage. To make writing programs easier there are special keywords (some are
+shown in table below) that are valid in this context and simplify referencing
+different data.
 
-> TODO: write this
+| Keyword | Purpose |
+|:--------|:--------|
+|`pkt`| Pointr to the XDP context |
+|`pstate`| Pointer to the packet state (explained next) |
+|`data`| Pointer to the begining of packet buffer |
+|`data_end`| Pointer to the end of packet buffer |
+
+When deconmposing a program into multiple stages it is common to need to keep
+some state between stages. Beeswax simplify this task. The programmer can
+define `pkt_state_t` type to declare this information. Then the `pstate`
+keyword will point to the state of current packet at each stage.
+
+```
+typedef struct {
+    int phase[0]; /* the phase is mandetory */
+    int key;
+    struct dat_partial_lookup_state partial_state; /* dat parital lookup state */
+    my_value_t __arena *val;
+} pkt_state_t;
+```
+
 
 ### KFuncs Used
 
