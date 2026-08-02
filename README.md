@@ -44,6 +44,97 @@ The repository is structured as below:
 
 ## How Beeswax Works? (System Design)
 
+![Beeswax Design Overview](./docs/repository/batch_prefetch_design.jpg)
+
+Beeswax is a recipe for building eBPF programs that can effectively hide memory latency. For this purpose, the programs rely on:
+
+1. Desiging data structure API in multiple phases
+2. Prefetch instruction
+3. Batch processing
+4. Arena MAP for implementing the data structures
+
+A Beeswax program is capable of processing events in batches. As a strating point, we have extended the XDP hook to support batch packet processing (supporting mlx5 and virtio drivers).
+Below you can see a simple Beeswax program and layout of its context object. The batch processing programs start with `bbb_` prefix and receive `struct xdp_batch_md *` as context object.
+
+```
+SEC("xdp")
+int bbb_test_main(struct xdp_batch_md *batch)
+{
+    // This defines a scope in which Beeswax specific API is usable
+    BAX_PROG_BEGIN();
+
+    // batch_size a keyword 
+    bpf_printk("batch size: %d", batch_size);
+
+    // ...
+    return 0;
+}
+```
+
+The context object (`batch` in the example above) contains a fixed size array
+of original XDP context objects. The program can directly access the context to
+retrieve packet by their index from `buffs` array and write the verdict value
+(e.g., `XDP_PASS` or `XDP_DROP`) to actions array at the same index. But, this
+approach is hard to program and for this reason Beeswax inclues a library that
+provides programming support for batch processing.
+
+```
+#define XDP_MAX_BATCH_SIZE 32
+struct xdp_batch_md {
+    __u32 size;
+    __u32 __padding__;
+    struct xdp_md buffs[XDP_MAX_BATCH_SIZE];
+    __u32 actions[XDP_MAX_BATCH_SIZE];
+};
+```
+
+More specifically, Beeswax programs are organized in multiple stages in which
+packets are processed. Every packet is associated with one. Intially all packet
+start from the stage indicated by `BAX_DECLARE_INIT_STAGE_NAME`.
+
+During each stage, the packet may finish processing (e.g., marked to be
+dropped), stay at same stage, or transition to another stage. The program goes
+through stages and processes packets that belong to that stage.
+
+```
+...
+BAX_DECLARE_INIT_STAGE_NAME(FIRST);
+
+SEC("xdp")
+int bbb_test_main(struct xdp_batch_md *batch)
+{
+    __associate_arena();
+    BAX_PROG_BEGIN();
+    BAX_INIT_BATCH_STATE();
+    finished = 0;
+
+    // batch_size a keyword 
+    bpf_printk("batch size: %d", batch_size);
+
+    BAX_STAGE(FIRST, `{
+        /* data is a keyword which is a pointer to the begining of the packet */
+        struct ethhdr *eth = data; 
+        struct iphdr *ip = (void *)(eth+1);
+        struct udphdr *udp = (void *)(ip + 1);
+        /* query is inside the UDP payload */
+        __u32 *r = (__u32 *)(udp + 1);
+        if ((void *)(r + 1) > data_end) {
+            PASS(); /* packet is too small for our program */
+        }
+        __u16 tmp_port = bpf_ntohs(udp->dest);
+        if (!(tmp_port >= 8000 && tmp_port < 8128)) {
+            PASS();
+        }
+
+        // ...
+    }')
+
+    // ...
+    return 0;
+}
+```
+
+
 > TODO: write this
 
 ### KFuncs Used
