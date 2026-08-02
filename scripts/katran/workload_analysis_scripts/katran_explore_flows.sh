@@ -2,6 +2,7 @@
 
 DUT_SERVER=128.110.219.75
 DUT_USER=farbod
+IP_LOCAL=192.168.1.2
 
 DUT_REPO_LOCATION=/users/farbod/bpf_prefetch
 DUT_PERF_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts
@@ -52,7 +53,7 @@ generate_traffic() {
 		-a $NET_PCI --lcores "0@(2,4),1@(6,8)" -- \
 		--num-queue 2 \
 		--client \
-		--ip-local 192.168.1.2 \
+		--ip-local $IP_LOCAL \
 		--ip-dest 10.10.0.1 \
 		--duration $EXP_DURATION --rate 1700000 \
 		--no-arp $DUT_MAC_ADDR \

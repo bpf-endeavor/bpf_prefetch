@@ -2,7 +2,7 @@ CURDIR = $(shell pwd)
 DEPS_DIR = $(CURDIR)/deps
 
 
-commands = make_project build_libbpf install_deps load_kmod
+commands = make_project build_libbpf install_deps load_kmod configure4exp
 
 .PHONY: make_project build_libbpf install_deps
 
@@ -35,3 +35,7 @@ load_kmod:
 		$(MAKE) && \
 		$(MAKE) load
 	cd $(CURDIR)/libs/kfuncs/my_memcpy && $(MAKE) && $(MAKE) load
+
+configure4exp:
+	bash $(CURDIR)/scripts/setup_exp.sh
+
