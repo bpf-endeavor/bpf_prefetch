@@ -20,6 +20,9 @@ Mellanox Connect-X5 (MT27800 Family) NICs.
 
 ### Setup DUT (Device Under Test)
 
+> This section assumes that git, make, and build-essential packages are already installed (cloudlab images are like this). Other 3rd-party packages will be installed when following the instructions.
+
+
 Clone the the repository on DUT machine.
 
 ```

@@ -1,9 +1,3 @@
 [submodule "libs/libbpf"]
 	path = libs/libbpf
 	url = https://github.com/libbpf/libbpf.git
-[submodule "case_study/xdp-tools"]
-	path = case_study/xdp-tools
-	url = https://github.com/xdp-project/xdp-tools.git
-[submodule "case_study/noctornal"]
-	path = case_study/noctornal
-	url = git@github.com:fshahinfar1/noctornal.git
