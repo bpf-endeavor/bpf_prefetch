@@ -23,6 +23,7 @@ PROGRESS=$(read_progress)
 PROCESS_SIZE=${#PROCESS[@]}
 
 while [ $PROGRESS -lt $PROCESS_SIZE ]; do
+	echo "* STEP $PROGRESS: ${PROCESS[$PROGRESS]}"
 	func=${PROCESS[$PROGRESS]}
 	$func
 	PROGRESS=$((PROGRESS+1))

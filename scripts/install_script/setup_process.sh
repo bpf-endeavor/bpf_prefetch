@@ -27,6 +27,7 @@ PROCESS=(
 	get_custom_kernel
 	install_kernel_tools
 	barrier_make_sure_custom_kernel
+	build_libbpf
 	bring_bmc
 	bring_arena_kmod
 	bring_katran_p1

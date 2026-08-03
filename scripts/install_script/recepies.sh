@@ -27,7 +27,7 @@ install_pkgs() {
 }
 
 get_custom_kernel() {
-	git clone git@github.com:bpf-endeavor/kernel-sw-prefetch.git $KERNEL_SOURCE_DIR
+	git clone https://github.com/bpf-endeavor/kernel-sw-prefetch.git $KERNEL_SOURCE_DIR
 	cd $KERNEL_SOURCE_DIR || exit 1
 	mkdir ./build/
 	cd ./build/ || exit 1
@@ -46,6 +46,7 @@ get_custom_kernel() {
 }
 
 barrier_make_sure_custom_kernel() {
+	set +e
 	t=$(uname -r | grep -P "^6.15")
 	if [ $? -ne 0 ]; then
 		echo "You are running kernel \"$($uname -r)\"."
@@ -56,6 +57,7 @@ barrier_make_sure_custom_kernel() {
 		exit 1
 	fi
 	echo "Kernel version matched."
+	set -e
 }
 
 bring_bmc() {
@@ -133,7 +135,7 @@ bring_katran_p1() {
 		exit 1
 	fi
 
-	git clone git@github.com:facebookincubator/katran.git $KATRAN_DIR
+	git clone https://github.com/facebookincubator/katran.git $KATRAN_DIR
 	cd $KATRAN_DIR
 	SHA=bce70c8c4c13fd6e2d9786503f1472e2ca493cfb
 	git checkout $SHA
@@ -216,7 +218,7 @@ install_clang() {
 
 bring_arena_kmod() {
 	cd "$THIRD" || exit 1
-	git clone git@github.com:bpf-endeavor/ebpf-arena-tutorial.git arena_kmod
+	git clone https://github.com/bpf-endeavor/ebpf-arena-tutorial.git arena_kmod
 	ver_major=$(uname -r | cut -d '.' -f 1)
 	ver_minor=$(uname -r | cut -d '.' -f 2)
 	if [ $ver_major -lt 6 ] -o [ $ver_minor -lt 9 ]; then
@@ -229,12 +231,14 @@ bring_arena_kmod() {
 
 install_kernel_tools() {
 	## Install BPFTOOL
+	echo build bpftool
 	cd "$KERNEL_SOURCE_DIR/tools/bpf/" || exit 1
 	make clean
 	make -j
 	sudo make install
 
 	## Install perf
+	echo build perf
 	cd "$KERNEL_SOURCE_DIR/tools/perf" || exit 1
 	make clean
 	BUILD_NONDISTRO=1 make
@@ -245,6 +249,7 @@ install_kernel_tools() {
 	sudo ln -s "$KERNEL_SOURCE_DIR/tools/perf/perf" $target
 
 	## INSTALL CPU POWER
+	echo build cpupower
 	cd "$KERNEL_SOURCE_DIR/tools/power/cpupower" || exit 1
 	make -j
 	sudo make install
@@ -252,6 +257,7 @@ install_kernel_tools() {
 	sudo ldconfig
 
 	## INSTALL x86 Energy
+	echo build x86_energy_perf_policy
 	cd "$KERNEL_SOURCE_DIR/tools/power/x86/x86_energy_perf_policy" || exit 1
 	make
 	sudo make install
@@ -271,3 +277,10 @@ install_dwarf() {
 	sudo ldconfig
 }
 
+build_libbpf() {
+	DEPS_DIR="$ROOTDIR/deps"
+	if [ ! -d  $DEPS_DIR ]; then mkdir -p ${DEPS_DIR}; fi
+	# Build libbpf into deps directory
+	BUILD_STATIC_ONLY=y DESTDIR=${DEPS_DIR} OBJDIR=${DEPS_DIR} \
+		make -C ./libs/libbpf/src install
+}
