@@ -33,8 +33,25 @@ FLOW_COUNTS=("${KATRAN_FLOW_COUNTS[@]}")
 ZIPF_PARAMETERS=("${KATRAN_ZIPF_PARAMS[@]}")
 KATRAN_MODES=("${KATRAN_MODES[@]}")
 CPU_CORE="$KATRAN_CPU_CORE"
+EXPERIMENT_IP="$DUT_EXPERIMENT_IP"
+EXPERIMENT_MAC="$DUT_EXPERIMENT_MAC"
+EXPERIMENT_NIC="$DUT_NET_IFACE"
 
 # ===== SETUP & VALIDATION =====
+
+# Validate required configuration
+for VAR in DUT_IP DUT_USER DUT_SSH_KEY DUT_REPO_LOCATION EXPERIMENT_IP GEN_EXPERIMENT_IP GEN_NET_PCI CPU_CORE; do
+    if [ -z "${!VAR}" ]; then
+        echo "Error: $VAR not configured in $CONFIG_FILE"
+        exit 1
+    fi
+done
+
+# Validate SSH key exists
+if [ ! -f "$DUT_SSH_KEY" ]; then
+    echo "Error: SSH key not found at $DUT_SSH_KEY"
+    exit 1
+fi
 
 echo "=========================================="
 echo "Katran Experiment Configuration"
