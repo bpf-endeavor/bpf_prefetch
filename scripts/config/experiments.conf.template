@@ -1,0 +1,54 @@
+#!/bin/bash
+# Artifact Evaluation Configuration
+# Copy this file to experiments.conf and customize for your environment
+# All experiments use the same DUT connection and result storage
+
+# ===== COMMON CONFIGURATION =====
+# Control plane connection to DUT (for SSH commands, configuration management)
+DUT_CONTROL_IP="192.168.1.100"
+DUT_USER="root"
+DUT_SSH_KEY="$HOME/.ssh/id_rsa"
+
+# Result directory for all experiments
+RESULT_BASE_DIR="$PWD/output"
+
+# ===== KATRAN EXPERIMENT (Figure 5) =====
+# Katran load-balancer workload analysis
+KATRAN_ENABLED=true
+KATRAN_MODES=("baseline" "batch" "bax")
+KATRAN_FLOW_COUNTS=(1 10 100 1000 10000 100000 1000000 2000000 4000000 6000000 8000000)
+KATRAN_ZIPF_PARAMS=(0 0.5 1.0 1.5 2)
+KATRAN_DURATION=30
+KATRAN_RATE=1700000
+KATRAN_EXPERIMENT_NIC="10.10.0.1"
+KATRAN_EXPERIMENT_MAC="0c:42:a1:dd:5b:88"
+KATRAN_CPU_CORE=3
+
+# ===== BMC EXPERIMENT (Figure 6) =====
+# Buffer/Cache Miss classifier with Facebook workload
+BMC_ENABLED=true
+BMC_WORKLOAD="facebook"          # Uses mutilate for memcached workload
+BMC_DURATION=60
+BMC_NUM_CLIENTS=32
+
+# ===== LPM ROUTER EXPERIMENTS (Figures 7-10) =====
+# LPM-based routing with different implementations (native, Arena, Beeswax)
+LPM_ROUTER_ENABLED=true
+LPM_ROUTER_VARIANTS=("native" "arena" "beeswax")
+LPM_ROUTER_ENTRY_COUNTS=(10000 50000 100000)
+LPM_ROUTER_TRAFFIC_SKEW=(0 0.5 1.0 1.5)  # Zipf parameter for traffic
+
+# ===== LPM TRIE EXPERIMENTS (Figures 11-12) =====
+# LPM Trie microbenchmark with varying parameters
+LPM_TRIE_ENABLED=true
+LPM_TRIE_ENTRY_COUNTS=(1000 10000 100000 1000000)
+LPM_TRIE_BATCH_SIZES=(1 2 4 8 16 32)
+
+# ===== CVM EXPERIMENTS (Figures 13-15) =====
+# Context/Vector Map with Beeswax optimization
+# Tests multi-phase API and active batch size tracking
+CVM_ENABLED=true
+CVM_VARIANTS=("native" "beeswax")
+CVM_BATCH_SIZES=(1 4 8 16 32)
+CVM_NUM_ITEMS=100000
+CVM_OPERATIONS=1000000
