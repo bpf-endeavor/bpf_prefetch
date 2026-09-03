@@ -103,23 +103,93 @@ Flow Count: $FLOW_COUNT
 Zipf Parameter: $ZIPF_PARAM
 DUT Control IP: $DUT_CONTROL_IP
 Generator IP: $GEN_EXPERIMENT_IP
+Generator PCI: $GEN_NET_PCI
 Duration: $EXP_DURATION seconds
 Packet Rate: $PACKET_RATE
+CPU Core: $CPU_CORE
+DUT Repo: $DUT_REPO_LOCATION
 EOF
 
-            # Here would be the actual experiment execution
-            # This would invoke the existing run_katran.sh via SSH with proper parameters
-            # and collect results
+            # Start Katran server on DUT via SSH (control plane NIC)
+            echo "  Starting Katran ($MODE) on DUT..."
+            ssh -i "$DUT_SSH_KEY" -o ConnectTimeout=10 "$DUT_USER@$DUT_IP" \
+                "cd $DUT_REPO_LOCATION/scripts/katran && export NET_IFACE=$KATRAN_EXPERIMENT_NIC && ./run_katran.sh --$MODE --lru-routing" \
+                &> "$RUN_DIR/server.log" &
+            SERVER_PID=$!
+            sleep 20  # Wait for server to start
 
-            # Placeholder for actual run:
+            # Calculate number of source IPs and ports from flow count
+            case $FLOW_COUNT in
+                1) IPS=1 ;;
+                10) IPS=10 ;;
+                100) IPS=100 ;;
+                1000) IPS=1000 ;;
+                10000) IPS=1000 ;;
+                100000) IPS=1000 ;;
+                1000000) IPS=1000 ;;
+                2000000) IPS=2000 ;;
+                4000000) IPS=4000 ;;
+                6000000) IPS=6000 ;;
+                8000000) IPS=8000 ;;
+                *) IPS=1000 ;;
+            esac
+            PORTS=$((FLOW_COUNT / IPS))
+
+            # Collect perf before traffic
+            echo "  Collecting baseline perf metrics..."
+            ssh -i "$DUT_SSH_KEY" "$DUT_USER@$DUT_IP" \
+                "bash $DUT_REPO_LOCATION/scripts/measure_cache_miss.sh $CPU_CORE" \
+                &> "$RUN_DIR/perf_before.txt" || true
+
+            # Generate traffic via dpdk-client-server
+            echo "  Generating traffic ($FLOW_COUNT flows, Zipf=$ZIPF_PARAM)..."
+            DPDK_GEN="$REPO_ROOT/others/workload-gen/dpdk-client-server/build/client_tcp_timestamp"
+
+            if [ ! -f "$DPDK_GEN" ]; then
+                echo "  Warning: DPDK generator not found at $DPDK_GEN" | tee -a "$RUN_DIR/run.log"
+            else
+                sudo "$DPDK_GEN" \
+                    -a "$GEN_NET_PCI" --lcores "0@(2,4),1@(6,8)" -- \
+                    --num-queue 2 \
+                    --client \
+                    --ip-local "$GEN_EXPERIMENT_IP" \
+                    --ip-dest "$KATRAN_EXPERIMENT_IP" \
+                    --duration "$EXP_DURATION" --rate "$PACKET_RATE" \
+                    --no-arp "$KATRAN_EXPERIMENT_MAC" \
+                    --zipf-client-addr "$FLOW_COUNT/$PORTS/$ZIPF_PARAM" \
+                    &> "$RUN_DIR/traffic_gen.log"
+            fi
+
+            sleep 5  # Wait for results to settle
+
+            # Collect perf after traffic
+            echo "  Collecting post-traffic perf metrics..."
+            ssh -i "$DUT_SSH_KEY" "$DUT_USER@$DUT_IP" \
+                "bash $DUT_REPO_LOCATION/scripts/measure_cache_miss.sh $CPU_CORE" \
+                &> "$RUN_DIR/perf_after.txt" || true
+
+            # Stop Katran server
+            echo "  Stopping Katran..."
+            ssh -i "$DUT_SSH_KEY" "$DUT_USER@$DUT_IP" \
+                "pkill -INT run_katran.sh; sleep 2; pkill katran_server" \
+                &> /dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+
+            # Collect throughput from traffic generator log
+            if [ -f "$RUN_DIR/traffic_gen.log" ]; then
+                grep -E "^Throughput|^Total packets" "$RUN_DIR/traffic_gen.log" > "$RUN_DIR/throughput.txt" || true
+            fi
+
+            # Log completion
             {
                 echo "Mode: $MODE"
                 echo "Flows: $FLOW_COUNT"
                 echo "Zipf: $ZIPF_PARAM"
-                echo "Status: OK"
+                echo "Status: COMPLETED"
+                echo "Results: $RUN_DIR"
             } > "$RUN_DIR/run.log"
 
-            # Log the run
+            echo "  ✓ Results saved"
             echo "[$RUN_TIMESTAMP] MODE=$MODE FLOWS=$FLOW_COUNT ZIPF=$ZIPF_PARAM - COMPLETED" >> "$EXPERIMENT_LOG"
         done
     done

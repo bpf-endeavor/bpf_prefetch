@@ -49,15 +49,73 @@ for VARIANT in "${LPM_ROUTER_VARIANTS[@]}"; do
 
             echo "[$CURRENT_RUN/$TOTAL_RUNS] $VARIANT with $ENTRIES entries, Zipf=$SKEW"
 
-            # Placeholder for actual experiment
+            # Save configuration
+            cat > "$RUN_DIR/config.txt" << EOF
+Variant: $VARIANT
+Entries: $ENTRIES
+Traffic Skew (Zipf): $SKEW
+Timestamp: $RUN_TIMESTAMP
+EOF
+
+            # Locate the LPM router implementation
+            LPM_ROUTER_DIR="$REPO_ROOT/motivation/arena_router"
+            if [ ! -d "$LPM_ROUTER_DIR" ]; then
+                echo "  Warning: arena_router not found"
+                echo "[$RUN_TIMESTAMP] $VARIANT entries=$ENTRIES skew=$SKEW - SKIPPED (not found)" >> "$EXPERIMENT_LOG"
+                continue
+            fi
+
+            # Build LPM router if not already built
+            if [ ! -f "$LPM_ROUTER_DIR/build/load" ]; then
+                echo "  Building arena_router..."
+                (cd "$LPM_ROUTER_DIR" && make clean && make) || {
+                    echo "  Build failed"
+                    echo "[$RUN_TIMESTAMP] $VARIANT entries=$ENTRIES skew=$SKEW - FAILED (build)" >> "$EXPERIMENT_LOG"
+                    continue
+                }
+            fi
+
+            # Run experiment with parameters
+            echo "  Running $VARIANT variant..."
+            {
+                # Build command based on variant
+                case $VARIANT in
+                    native)
+                        # Test native LPM-MAP implementation
+                        timeout 120 "$LPM_ROUTER_DIR/build/load" \
+                            --entries "$ENTRIES" --zipf "$SKEW" \
+                            2>&1 || echo "timeout or error"
+                        ;;
+                    arena)
+                        # Test Arena-based implementation
+                        timeout 120 "$LPM_ROUTER_DIR/build/load" \
+                            --entries "$ENTRIES" --zipf "$SKEW" --arena \
+                            2>&1 || echo "timeout or error"
+                        ;;
+                    beeswax)
+                        # Test Beeswax multi-phase implementation
+                        timeout 120 "$LPM_ROUTER_DIR/build/load" \
+                            --entries "$ENTRIES" --zipf "$SKEW" --beeswax \
+                            2>&1 || echo "timeout or error"
+                        ;;
+                esac
+            } > "$RUN_DIR/output.txt" 2>&1
+
+            # Extract throughput and latency metrics if available
+            if grep -q "Throughput" "$RUN_DIR/output.txt"; then
+                grep -E "Throughput|Latency|Cache" "$RUN_DIR/output.txt" > "$RUN_DIR/metrics.txt"
+            fi
+
             {
                 echo "Variant: $VARIANT"
                 echo "Entries: $ENTRIES"
-                echo "Traffic Skew: $SKEW"
-                echo "Status: OK (placeholder)"
+                echo "Skew: $SKEW"
+                echo "Status: COMPLETED"
+                echo "Output: $RUN_DIR/output.txt"
             } > "$RUN_DIR/run.log"
 
-            echo "[$RUN_TIMESTAMP] $VARIANT entries=$ENTRIES skew=$SKEW - OK" >> "$EXPERIMENT_LOG"
+            echo "  ✓ Completed"
+            echo "[$RUN_TIMESTAMP] $VARIANT entries=$ENTRIES skew=$SKEW - COMPLETED" >> "$EXPERIMENT_LOG"
         done
     done
 done

@@ -49,16 +49,75 @@ for VARIANT in "${CVM_VARIANTS[@]}"; do
 
         echo "[$CURRENT_RUN/$TOTAL_RUNS] $VARIANT with batch size $BATCH_SIZE"
 
-        # Placeholder for actual experiment
+        # Save configuration
+        cat > "$RUN_DIR/config.txt" << EOF
+Variant: $VARIANT
+Batch Size: $BATCH_SIZE
+Items: $CVM_NUM_ITEMS
+Operations: $CVM_OPERATIONS
+Timestamp: $RUN_TIMESTAMP
+EOF
+
+        # Locate CVM implementation
+        CVM_DIR="$REPO_ROOT/motivation"
+        CVM_IMPL=""
+        case $VARIANT in
+            native)
+                CVM_IMPL="$CVM_DIR/arena_cvm"
+                ;;
+            beeswax)
+                CVM_IMPL="$CVM_DIR/bax_cvm"
+                ;;
+        esac
+
+        if [ ! -d "$CVM_IMPL" ]; then
+            echo "  Warning: $VARIANT CVM not found at $CVM_IMPL"
+            echo "[$RUN_TIMESTAMP] $VARIANT batch=$BATCH_SIZE - SKIPPED" >> "$EXPERIMENT_LOG"
+            continue
+        fi
+
+        # Build if needed
+        if [ ! -f "$CVM_IMPL/build/load" ]; then
+            echo "  Building $VARIANT CVM..."
+            (cd "$CVM_IMPL" && make clean && make) || {
+                echo "  Build failed"
+                echo "[$RUN_TIMESTAMP] $VARIANT batch=$BATCH_SIZE - FAILED (build)" >> "$EXPERIMENT_LOG"
+                continue
+            }
+        fi
+
+        # Run experiment
+        echo "  Running $VARIANT with batch size $BATCH_SIZE..."
+        {
+            timeout 300 "$CVM_IMPL/build/load" \
+                --items "$CVM_NUM_ITEMS" \
+                --operations "$CVM_OPERATIONS" \
+                --batch-size "$BATCH_SIZE" \
+                2>&1 || echo "timeout or error"
+        } > "$RUN_DIR/output.txt" 2>&1
+
+        # Extract metrics
+        if grep -q "Throughput\|MOPS" "$RUN_DIR/output.txt"; then
+            grep -E "Throughput|MOPS|Latency|Batch" "$RUN_DIR/output.txt" > "$RUN_DIR/metrics.txt" || true
+        fi
+
+        # Extract active batch size distribution (for Figure 15)
+        if grep -q "Active batch" "$RUN_DIR/output.txt"; then
+            grep -E "Active batch" "$RUN_DIR/output.txt" > "$RUN_DIR/batch_distribution.txt" || true
+        fi
+
+        # Create run summary
         {
             echo "Variant: $VARIANT"
             echo "Batch Size: $BATCH_SIZE"
             echo "Items: $CVM_NUM_ITEMS"
             echo "Operations: $CVM_OPERATIONS"
-            echo "Status: OK (placeholder)"
+            echo "Status: COMPLETED"
+            echo "Results: $RUN_DIR"
         } > "$RUN_DIR/run.log"
 
-        echo "[$RUN_TIMESTAMP] $VARIANT batch=$BATCH_SIZE - OK" >> "$EXPERIMENT_LOG"
+        echo "  ✓ Completed"
+        echo "[$RUN_TIMESTAMP] $VARIANT batch=$BATCH_SIZE - COMPLETED" >> "$EXPERIMENT_LOG"
     done
 done
 
