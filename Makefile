@@ -38,3 +38,6 @@ load_kmod:
 configure4exp:
 	bash $(CURDIR)/scripts/setup_exp.sh
 
+setup_generators:
+	bash $(CURDIR)/scripts/setup_generators.sh
+

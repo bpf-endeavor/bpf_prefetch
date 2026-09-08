@@ -1,201 +1,292 @@
-#! /usr/bin/python3
+#!/usr/bin/env python3
+
 """
-Generate a pcap file to be used by the workload generator
-(DPDK Burst Replay)
+Generate PCAP files for DPDK Burst Replay.
+
+Generates one PCAP for each Zipf parameter:
+    0, 0.5, 1, 1.5, 2
 """
+
 from scapy.all import Ether, IP, UDP, Raw, wrpcap
 from argparse import ArgumentParser
+import ipaddress
 import random
-import string
-import math
+import os
 import sys
 
-# NOTE: this script relies on following config
-src_mac = '0c:42:a1:e2:a6:98'
-dst_mac = '0c:42:a1:dd:5b:88'
-input_file = '../dataset/ipv4.txt'
-src_ip = '192.168.1.2'
-dst_ip = '192.168.1.1'
-zipf_parameter = 0.0
-src_port = 3030
-dst_port = 8080
 
-# used for defining the payload of UDP packets
-# random_table = ''.join(random.choices(string.ascii_lowercase, k=1500))
+ZIPF_PARAMETERS = [0.0, 0.5, 1.0, 1.5, 2.0]
 
-# used in the payload of UDP packets
+INPUT_FILE = "../dataset/ipv4.txt"
+
+SRC_IP = "192.168.1.2"
+DST_IP = "192.168.1.1"
+
+SRC_PORT = 3030
+DST_PORT = 8080
+
 table = []
 
 
 class Zipf:
     def __init__(self, n, s):
-        # Commulative probabilities
-        self.c_probs = [0.0 for i in range(n+1)]
-        # Harmonic
-        h = 0
-        # Also called alpha
-        self.s = s
-        #  Number of ranks
+        self.c_probs = [0.0 for _ in range(n + 1)]
         self.n = n
+        self.s = s
 
-        for i in range(1, n+1):
+        h = 0.0
+        for i in range(1, n + 1):
             h += 1.0 / (i ** s)
 
-        self.c_probs[0] = 0
-        for i in range(1, n+1):
-            self.c_probs[i] = self.c_probs[i - 1] + (1.0 / ((i ** s) * h));
+        for i in range(1, n + 1):
+            self.c_probs[i] = (
+                self.c_probs[i - 1]
+                + 1.0 / ((i ** s) * h)
+            )
 
     def sample(self):
+        """
+        Return a ZERO-BASED index in [0, n-1].
+        """
         rnd = random.random()
+
         low = 1
         high = self.n
+
         while low <= high:
-            mid = int((low + high) / 2)
-            if rnd > self.c_probs[mid - 1] and rnd <= self.c_probs[mid]:
-                return mid
+            mid = (low + high) // 2
+
+            if self.c_probs[mid - 1] < rnd <= self.c_probs[mid]:
+                return mid - 1
+
             if self.c_probs[mid] < rnd:
                 low = mid + 1
             else:
                 high = mid - 1
-        raise Exception('This must not happen')
 
-
-class ProgIndicator:
-    def __init__(self):
-        self.prime()
-
-    def prime(self):
-        self.state = 0
-        self.count = 0
-        self.first = True
-
-    def out(self):
-        print('\r                    ')
-
-    def __call__(self):
-        x = '/-\|-\|'
-        c = x[self.state]
-        self.count += 1
-        self.state = (self.state + 1) % len(x)
-
-        if self.count % (701) != 1:
-            return
-
-        if self.first:
-            self.first = False
-            s = f'\n{c}'
-        else:
-            s = f'\r{c}'
-        s += f' {self.count}'
-        print(s, end='', sep='')
-
-I = ProgIndicator()
-
-
-def form_packet(saddr: str, source: int, daddr: str, dest: int, payload: str):
-    eth_header = Ether(src=src_mac, dst=dst_mac)
-    ip_header = IP(src=saddr, dst=daddr, ttl=64)
-    udp_header = UDP(dport=dest, sport=source)
-    packet = eth_header / ip_header / udp_header / Raw(load=payload)
-
-    packet[IP].chksum = None
-    packet[UDP].chksum = None
-    return packet
-
-
-def create_pcap_file(n, r, output):
-    payload = 'hello world\n'
-    pkts = []
-    print('Notice: the source/dest ip address is hardcoded')
-    print('src ip:', src_ip)
-    print('dst ip:', dst_ip)
-
-    print('Notice: the random number generator seed is set to a fix value')
-    random.seed(127)
-
-    if n <= 0:
-        n = len(table)
-
-    MSS = 1440
-    z = Zipf(n, zipf_parameter)
-    I.prime()
-    for i in range(r):
-        # payload_size = math.ceil(random.paretovariate(3) * MSS)
-        # payload = random_table[0:payload_size]
-
-        selectd_query = z.sample()
-        payload = table[selectd_query]
-
-        pkt = form_packet(src_ip, src_port, dst_ip, dst_port, payload)
-        pkts.append(pkt)
-        I()
-    I.out()
-
-    wrpcap(output, pkts)
-    print(f'Generated a pcap file with {r} record using {n} flows')
+        raise RuntimeError("Zipf sampling failed")
 
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument('--num-flows', '-n', default=1 << 15, type=int, help='number of flows used in pcap file. use -1 for using all rules in the table')
-    parser.add_argument('--num-records', '-r', default=300000, type=int, help='number of records in pcap file')
-    parser.add_argument('--output', '-o', default='test.pcap', type=str, help='output file path')
-    args = parser.parse_args()
 
-    if args.num_flows > args.num_records:
-        print('You have request more flows than total flows in the file!')
-        sys.exit(1)
-    return args
+    parser.add_argument(
+        "--src-mac",
+        required=True,
+        help="MAC address of workload-generator NIC",
+    )
+
+    parser.add_argument(
+        "--dst-mac",
+        required=True,
+        help="MAC address of DUT NIC",
+    )
+
+    parser.add_argument(
+        "--num-flows",
+        "-n",
+        default=1 << 15,
+        type=int,
+        help="number of routing entries used; -1 means all entries",
+    )
+
+    parser.add_argument(
+        "--num-records",
+        "-r",
+        default=300000,
+        type=int,
+        help="number of packets in each PCAP",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        default=".",
+        help="directory where generated PCAP files are written",
+    )
+
+    parser.add_argument(
+        "--input-file",
+        default=INPUT_FILE,
+        help=f"routing table file (default: {INPUT_FILE})",
+    )
+
+    return parser.parse_args()
 
 
-def ipv4_to_int(ip_string):
-    """
-    Converts an IPv4 string (e.g., '192.168.1.1') to a 32-bit integer.
-    """
-    # Split the string into four parts
-    octets = ip_string.split('.')
+def parse_input_and_fill_table(input_file):
+    table.clear()
 
-    # Calculate the integer value using bitwise shifts
-    # Octet 1: shift left 24 bits
-    # Octet 2: shift left 16 bits
-    # Octet 3: shift left 8 bits
-    # Octet 4: shift left 0 bits
-    ip_int = (int(octets[0]) << 24) + \
-             (int(octets[1]) << 16) + \
-             (int(octets[2]) << 8) + \
-             int(octets[3])
+    with open(input_file, "r") as f:
+        for line in f:
+            line = line.strip()
 
-    return ip_int
-
-
-def parse_input_and_fill_table():
-    with open(input_file, 'r') as F:
-        for line in F:
-            try:
-                net, range = line.strip().split('/')
-                range = int(range)
-                if range == 32:
-                    table.append(net)
-                else:
-                    # select a concerete instance of that IP range
-                    # TODO: maybe I need to do this better ...
-                    instance = net[:-1] + '1'
-                    val = ipv4_to_int(instance)
-                    val = val.to_bytes(4, byteorder='big')
-                    table.append(val)
-            except ValueError as e:
-                print(e)
+            if not line:
                 continue
 
-if __name__ == "__main__":
-    args = parse_args()
-    print('Notice: the source/dest MAC address is hardcoded')
-    print('src mac:', src_mac)
-    print('dst mac:', dst_mac)
-    parse_input_and_fill_table()
+            try:
+                network = ipaddress.IPv4Network(line, strict=False)
 
-    if args.num_flows > len(table):
-        print('You requested more distinct flows than what exists in our table')
+                # Pick a concrete IP address belonging to this prefix.
+                if network.prefixlen == 32:
+                    address = network.network_address
+                else:
+                    address = network.network_address + 1
+
+                # The XDP program consumes the first four bytes of the
+                # UDP payload as the lookup address.
+                table.append(address.packed)
+
+            except ValueError as e:
+                print(f"Skipping invalid entry {line!r}: {e}")
+
+
+def form_packet(src_mac, dst_mac, payload):
+    eth_header = Ether(
+        src=src_mac,
+        dst=dst_mac,
+    )
+
+    ip_header = IP(
+        src=SRC_IP,
+        dst=DST_IP,
+        ttl=64,
+    )
+
+    udp_header = UDP(
+        sport=SRC_PORT,
+        dport=DST_PORT,
+    )
+
+    packet = eth_header / ip_header / udp_header / Raw(load=payload)
+
+    packet[IP].chksum = None
+    packet[UDP].chksum = None
+
+    return packet
+
+
+def create_pcap_file(
+    num_flows,
+    num_records,
+    zipf_parameter,
+    output,
+    src_mac,
+    dst_mac,
+):
+    print()
+    print(f"Generating {output}")
+    print(f"  Zipf alpha : {zipf_parameter}")
+    print(f"  Flows      : {num_flows}")
+    print(f"  Packets    : {num_records}")
+
+    # Same traffic sequence for reproducibility.
+    random.seed(127)
+
+    z = Zipf(num_flows, zipf_parameter)
+
+    packets = []
+
+    for i in range(num_records):
+        selected_query = z.sample()
+        payload = table[selected_query]
+
+        packet = form_packet(
+            src_mac,
+            dst_mac,
+            payload,
+        )
+
+        packets.append(packet)
+
+        if (i + 1) % 10000 == 0:
+            print(
+                f"\r  generated {i + 1}/{num_records}",
+                end="",
+                flush=True,
+            )
+
+    print()
+
+    wrpcap(output, packets)
+
+    print(f"  wrote: {output}")
+
+
+def zipf_filename(alpha):
+    # 0.0 -> 0
+    # 1.0 -> 1
+    # 0.5 -> 0.5
+    if alpha.is_integer():
+        return str(int(alpha))
+
+    return str(alpha)
+
+
+def main():
+    args = parse_args()
+
+    if not os.path.isfile(args.input_file):
+        print(
+            f"Input routing table does not exist: {args.input_file}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    create_pcap_file(args.num_flows, args.num_records, args.output)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    print("Configuration:")
+    print(f"  source MAC : {args.src_mac}")
+    print(f"  dest MAC   : {args.dst_mac}")
+    print(f"  source IP  : {SRC_IP}")
+    print(f"  dest IP    : {DST_IP}")
+    print(f"  input file : {args.input_file}")
+
+    parse_input_and_fill_table(args.input_file)
+
+    print(f"  routes     : {len(table)}")
+
+    if not table:
+        print("No valid routes were found.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.num_flows <= 0:
+        num_flows = len(table)
+    else:
+        num_flows = args.num_flows
+
+    if num_flows > len(table):
+        print(
+            f"Requested {num_flows} flows, "
+            f"but dataset only contains {len(table)} routes.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if num_flows > args.num_records:
+        print(
+            "Number of flows cannot exceed number of packets.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    for alpha in ZIPF_PARAMETERS:
+        alpha_name = zipf_filename(alpha)
+
+        output = os.path.join(
+            args.output_dir,
+            f"lpm_zipf_{alpha_name}.pcap",
+        )
+
+        create_pcap_file(
+            num_flows=num_flows,
+            num_records=args.num_records,
+            zipf_parameter=alpha,
+            output=output,
+            src_mac=args.src_mac,
+            dst_mac=args.dst_mac,
+        )
+
+
+if __name__ == "__main__":
+    main()

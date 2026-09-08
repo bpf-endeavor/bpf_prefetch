@@ -14,7 +14,10 @@ with 0.5 MB of L1, 8 MB of L2, and 128 MB of LLC; has 128 GB of memory; and a
 Mellanox Connect-X5 (MT27800 Family) NICs.
 
 
-> TODO: make the repository a cloudlab profile
+This is the profile to use: https://www.cloudlab.us/p/ProgStack/beeswax-artifact
+Note: In this repository we'll use the following convention
+- Node 0 is the Device Under Test (DUT)
+- Node 1 is the generator device.
 
 ## Installing Dependencies
 
@@ -49,9 +52,13 @@ make load_kmod
 make configure4exp
 ```
 
-### Setup Workload Generator
+### Setup Workload Generator 
 
-> TODO: To be written
+
+```bash
+make setup_generators
+source ~/.bashrc  
+```
 
 
 ## Application Experiment 1: Katran
@@ -90,3 +97,74 @@ The script will gather raw data and store them at `RESULT_DIR=~/results/`. For a
 ## Application Experiment 2: BMC
 
 > TODO: To be written
+
+
+## Application Experiment LPM -- Figure 7-8
+
+### DUT
+
+On tmux open two panes:
+1. In the first pane run `cd $HOME/bpf_prefetch && make configure4exp`. This will configure the machine in a predictable way.
+2. In the second pane 
+```bash
+cd $HOME/bpf_prefetch/motivation/bax_lpm
+make
+sudo ./build/loader.o 
+```
+The loader takes the following arguments: 
+```
+Usage: prog OPTIONS
+OPTIONS:
+        --lpm: use LPM Trie (default option)
+        --dat: use the Arena Double Array Trie implementation
+        --bax-dat: Beeswax version of Arena Double Array Trie
+```
+These map to the three bars that appear in Figure 7 of the paper: Native (--lpm), Arena(--dat) and Beeswax (--bax-dat)
+
+Now, let's setup the generator node.
+
+
+### Generator Setup
+In order to perform the experiments with the LPM is necessary to build PCAPs of the traces. It is necessary to build the PCAP with the correct MAC addresses.
+
+The mac addresses of the experiment's interfaces should be in the env variable  $NET_MAC.
+
+On the Generator machine run:
+```bash
+cd motivation/bax_lpm/scripts/
+python gen_pcap.py --src-mac $NET_MAC --dst-mac <mac address of the DUT from the step before> # This will generate the pcaps
+```
+
+Before running the actual generator, modify the config.yaml in motivation/bax_lpm/scripts/ with the $NET_PCI variable, which is the PCI address of the NIC.
+
+Now we are ready to generate packets!
+
+```bash
+sudo dpdk-replay --config config.yaml
+```
+
+By default the config.yaml replays the lpm_zipf_0.pcap trace (Figure 7),
+For repoducing Figure 8 change the config.yaml to replay lpm_zipf_0.5.pcap and so on to the lpm_zipf_2.pcap
+
+
+## Application Experiment LPM -- Figure 10
+
+### DUT
+
+Remember to have make config4exp running in a another terminal/tmux pane.
+
+Here we are changing the code of the application, so it is needed to recompile everytime.
+
+```bash
+cd $HOME/bpf_prefetch/motivation/bax_lpm
+BPF_CFLAGS="-D BIT_FOR_ITERATION=1" make 
+``` 
+Change the flag to 1,8,16,32 as in Figure 10.
+
+
+### Generator 
+This is the same setup as you would do for Figure 7.
+
+
+
+
