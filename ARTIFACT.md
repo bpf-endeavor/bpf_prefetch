@@ -25,16 +25,17 @@ Note: In this repository we'll use the following convention
 
 > This section assumes that git, make, and build-essential packages are already installed (cloudlab images are like this). Other 3rd-party packages will be installed when following the instructions.
 
+**Time estimate: 1-2 houres** (it performs a kernel compilation which may take long depending on the system) 
 
 Clone the the repository on DUT machine.
 
 ```
 git clone https://github.com/bpf-endeavor/bpf_prefetch.git
 cd bpf_prefetch
-make install_deps
+make setup_dut
 ```
 
-The `install_deps` is expect to exit completing its task because the rest of
+The `setup_dut` is expect to exit completing its task because the rest of
 setup requires a kernel with Beeswax support. Install as follows: 
 
 ```
@@ -47,7 +48,7 @@ the new kernel, and later continue following commands from the root of
 `bpf_prefetch/` direcotry:
 
 ```
-make install_deps # continues from previous step 
+make setup_dut # continues from previous step 
 make load_kmod
 make configure4exp
 ```

@@ -2,28 +2,21 @@ CURDIR = $(shell pwd)
 DEPS_DIR = $(CURDIR)/deps
 
 
-commands = install_deps load_kmod configure4exp
+commands = setup_dut setup_generators load_kmod configure4exp
 
-.PHONY: make_project build_libbpf install_deps
+.PHONY: setup_dut setup_generators load_kmod configure4exp
 
 help:
 	@for c in ${commands}; do \
 		echo "  * $$c"; \
 	done
 
-# build_libbpf: ./libs/libbpf/
-# 	# Update submodules
-# 	git submodule update --init
-# 	# Pull large files
-# 	# git lfs pull # NOTE: I do not need it always, so lets not use large files now
-# 	# # Create 3rd-party deps directory
-# 	if [ ! -d  ${DEPS_DIR} ]; then mkdir -p ${DEPS_DIR}; fi
-# 	# Build libbpf into deps directory
-# 	BUILD_STATIC_ONLY=y DESTDIR=${DEPS_DIR} OBJDIR=${DEPS_DIR} $(MAKE) -C $</src install
-
-install_deps:
+setup_dut:
 	git submodule update --init
 	bash $(CURDIR)/scripts/install_script/main.sh
+
+setup_generators:
+	bash $(CURDIR)/scripts/install_script/setup_generators.sh
 
 load_kmod:
 	if [ ! -d $(CURDIR)/others/arena_kmod/kmod/ ]; then  \
@@ -38,6 +31,4 @@ load_kmod:
 configure4exp:
 	bash $(CURDIR)/scripts/setup_exp.sh
 
-setup_generators:
-	bash $(CURDIR)/scripts/setup_generators.sh
 

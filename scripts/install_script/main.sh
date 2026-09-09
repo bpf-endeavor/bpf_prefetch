@@ -14,7 +14,7 @@ KERNEL_SOURCE_DIR="$THIRD/kernel-sw-prefetch"
 # make sure this directory exists
 mkdir -p "$THIRD"
 
-source $CURDIR/recepies.sh
+source $CURDIR/recipes.sh
 source $CURDIR/setup_process.sh
 
 # How far have we gone
