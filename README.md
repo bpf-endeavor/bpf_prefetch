@@ -30,7 +30,6 @@ The repository is structured as below:
 .
 ├── Makefile # Used for preparing experiment envrionment
 ├── docs # The result of experiments and scripts to plot them are here
-├── case_study # This have some programs we explored
 ├── motivation # Some microbenchmarks
 ├── docs # The result of experiments and scripts to plot them are here
 ├── libs

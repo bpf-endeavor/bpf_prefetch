@@ -5,7 +5,7 @@ DUT_USER=farbod
 IP_LOCAL=192.168.1.2
 
 DUT_REPO_LOCATION=/users/farbod/bpf_prefetch
-DUT_PERF_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts
+DUT_PERF_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts/perf
 DUT_KATRAN_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts/katran
 LOAD_GEN_LOCATION=/users/farbod/gen/dpdk-client-server/
 
