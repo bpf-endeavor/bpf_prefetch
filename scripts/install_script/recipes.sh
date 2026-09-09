@@ -128,6 +128,30 @@ install_go() {
 	popd
 }
 
+# The version of facebook's folly to use
+FOLLY_SHA="0c3b30c7256d5aa3c8e620e82b339d6c043f7db1"
+fix_folly() {
+	# fix the bug with folly version compatibility being out of sync (folly is much newer that the version of katran I used during experiments)
+echo "diff --git a/build_katran.sh b/build_katran.sh
+index 034b58fa..7f4f6c0c 100755
+--- a/build_katran.sh
++++ b/build_katran.sh
+@@ -282,7 +282,10 @@ get_folly() {
+
+     pushd .
+     echo -e "${COLOR_GREEN}[ INFO ] Cloning folly repo ${COLOR_OFF}"
+-    git clone https://github.com/facebook/folly --depth 1 "$FOLLY_DIR"
++    git clone https://github.com/facebook/folly "$FOLLY_DIR"
++    pushd $FOLLY_DIR
++    git checkout 0c3b30c7256d5aa3c8e620e82b339d6c043f7db1
++    popd
+     echo -e "${COLOR_GREEN}[ INFO ] Building Folly ${COLOR_OFF}"
+     mkdir -p "$FOLLY_BUILD_DIR"
+     cd "$FOLLY_BUILD_DIR" || exit" > fix_folly_version.patch
+
+	git apply ./fix_folly_version.patch
+}
+
 bring_katran_p1() {
 	KATRAN_DIR=$THIRD/katran
 	if [ -d $KATRAN_DIR ]; then
@@ -140,7 +164,12 @@ bring_katran_p1() {
 	SHA=bce70c8c4c13fd6e2d9786503f1472e2ca493cfb
 	git checkout $SHA
 
+    fix_folly
+
 	bash ./build_katran.sh
+
+    # checkout so we can switch branches
+    git checkout ./build_katran.sh
 }
 
 bring_katran_p2() {
@@ -181,6 +210,8 @@ bring_katran_p3() {
 		# create a branch and apply the patch
 		git checkout -b $branch_name
 		git am $PATCH_DIR/$branch_name/*.patch
+
+        fix_folly
 
 		# compile
 		bash ./build_katran.sh
