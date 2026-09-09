@@ -17,8 +17,12 @@
 set -euo pipefail
 
 DPDK_VERSION="23.11"
+CURDIR=$(dirname $0)
 GEN_DIR="$HOME/gen"
 DEV_DIR="$HOME/dev"
+
+PROGFILE="$DEV_DIR/_progress_level.txt"
+SCRIPT_PATH="$CURDIR/setup_generators.sh"
 
 DPDK_CLIENT_SERVER_REPO="https://github.com/fshahinfar1/dpdk-client-server.git"
 MUTILATE_REPO="https://github.com/fshahinfar1/mutilate.git"
@@ -30,6 +34,19 @@ BURST_REPLAY_BRANCH="multicore-txrate"
 ###############################################################################
 # Helpers
 ###############################################################################
+
+store_progress() {
+	echo "$1" > "$PROGFILE"
+}
+
+read_progress() {
+	R=$(cat "$PROGFILE")
+	if [ -z "$R" ]; then
+		echo 0
+	else
+		echo "$R"
+	fi
+}
 
 log()
 {
@@ -181,7 +198,7 @@ configure_hugepages()
 # Mellanox OFED installation
 ###############################################################################
 
-function install_ofed {
+install_ofed() {
 	mkdir -p $HOME/dev/
 	cd $HOME/dev/
 	# OFED
@@ -205,6 +222,17 @@ function install_ofed {
 	fi
 }
 
+do_reboot() {
+	# register this script to run after reboot
+	echo "@reboot $SCRIPT_PATH" | crontab -
+	sudo reboot
+}
+
+remove_reboot_crontab() {
+	# remove all crontab job running this script
+	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH" | crontab - || true
+}
+
 
 ###############################################################################
 # DPDK
@@ -212,8 +240,6 @@ function install_ofed {
 
 install_dpdk()
 {
-
-    install_ofed
     log "Installing DPDK $DPDK_VERSION"
 
     # If a usable DPDK is already installed, don't rebuild it.
@@ -389,22 +415,39 @@ show_summary()
 # Main
 ###############################################################################
 
-main()
-{
+
+PROCESS=(
     install_packages
-
-    mkdir -p "$GEN_DIR" "$DEV_DIR"
-
     configure_network_env
     configure_hugepages
+    install_ofed
+	do_reboot
+	remove_reboot_crontab
     install_dpdk
-
     install_dpdk_client_server
     install_mutilate
     install_dpdk_burst_replay
     install_bpf_prefetch_scripts
-
     show_summary
+)
+
+main()
+{
+    mkdir -p "$GEN_DIR" "$DEV_DIR"
+
+	# How far have we gone
+	PROGRESS=$(read_progress)
+	# How many steps we should do
+	PROCESS_SIZE=${#PROCESS[@]}
+
+	while [ $PROGRESS -lt $PROCESS_SIZE ]; do
+		echo "* STEP $PROGRESS: ${PROCESS[$PROGRESS]}"
+		func=${PROCESS[$PROGRESS]}
+		$func
+		PROGRESS=$((PROGRESS+1))
+		store_progress $PROGRESS
+	done
+
 }
 
 main "$@"
