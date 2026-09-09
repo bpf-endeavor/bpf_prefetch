@@ -109,7 +109,10 @@ install_packages()
         libzmq3-dev \
         autoconf \
         automake \
-        libtool
+        libtool \
+        libyaml-dev \
+		libcsv-dev \
+        lshw
 
     python3 -m pip install --user scapy
 }
