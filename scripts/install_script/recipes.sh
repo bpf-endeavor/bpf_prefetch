@@ -128,11 +128,11 @@ install_go() {
 	popd
 }
 
-# The version of facebook's folly to use
+# The version of facebook's folly to use, the variable is not used, but the SHA is hardcoded!
 FOLLY_SHA="0c3b30c7256d5aa3c8e620e82b339d6c043f7db1"
 fix_folly() {
 	# fix the bug with folly version compatibility being out of sync (folly is much newer that the version of katran I used during experiments)
-echo "diff --git a/build_katran.sh b/build_katran.sh
+echo 'diff --git a/build_katran.sh b/build_katran.sh
 index 034b58fa..7f4f6c0c 100755
 --- a/build_katran.sh
 +++ b/build_katran.sh
@@ -147,7 +147,7 @@ index 034b58fa..7f4f6c0c 100755
 +    popd
      echo -e "${COLOR_GREEN}[ INFO ] Building Folly ${COLOR_OFF}"
      mkdir -p "$FOLLY_BUILD_DIR"
-     cd "$FOLLY_BUILD_DIR" || exit" > fix_folly_version.patch
+     cd "$FOLLY_BUILD_DIR" || exit' > fix_folly_version.patch
 
 	git apply ./fix_folly_version.patch
 }
