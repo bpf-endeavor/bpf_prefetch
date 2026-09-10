@@ -411,8 +411,9 @@ show_summary()
     echo "  source ~/.bashrc"
 }
 
-
-
+notify_done() {
+    echo "DONE" > /var/log/beeswax_setup_status.txt
+}
 
 ###############################################################################
 # Main
@@ -432,6 +433,7 @@ PROCESS=(
     install_dpdk_burst_replay
     install_bpf_prefetch_scripts
     show_summary
+    notify_done
 )
 
 main()

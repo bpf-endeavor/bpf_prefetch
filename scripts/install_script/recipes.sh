@@ -43,6 +43,23 @@ get_custom_kernel() {
 		cores=32
 	fi
 	make -j $cores
+
+    # Install it
+    echo "Installing the Linux kernel with Beeswax runtime support ..."
+    cd $KERNEL_SOURCE_DIR
+    ./install.sh
+}
+
+SCRIPT_PATH=$CURDIR/main.sh
+do_reboot() {
+	# register this script to run after reboot
+	echo "@reboot $SCRIPT_PATH &> /var/log/beeswax_setup_dut_log_after_reboot.txt" | crontab -
+	sudo reboot
+}
+
+remove_reboot_crontab() {
+	# remove all crontab job running this script
+	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH" | crontab - || true
 }
 
 barrier_make_sure_custom_kernel() {
@@ -179,7 +196,7 @@ bring_katran_p2() {
 	sudo apt -y purge $(sudo apt list --installed 2> /dev/null | grep ^go | cut -d / -f 1) || true
 
 	# Install a newer version of go
-	install_go
+	# install_go
 
 	# Compile the grpc client
 	cd $KATRAN_DIR/example_grpc/
@@ -314,4 +331,8 @@ build_libbpf() {
 	# Build libbpf into deps directory
 	BUILD_STATIC_ONLY=y DESTDIR=${DEPS_DIR} OBJDIR=${DEPS_DIR} \
 		make -C ./libs/libbpf/src install
+}
+
+notify_done() {
+    echo "DONE" > /var/log/beeswax_setup_status.txt
 }

@@ -21,17 +21,20 @@ read_progress() {
 }
 
 PROCESS=(
-	install_pkgs
-	install_clang
-	install_dwarf
-	get_custom_kernel
-	install_kernel_tools
-	barrier_make_sure_custom_kernel
-	build_libbpf
-	bring_bmc
-	bring_arena_kmod
-	bring_katran_p1
-	bring_katran_p2
-	bring_katran_p3
+    install_pkgs
+    install_clang
+    install_dwarf
+    install_go
+    get_custom_kernel
+    install_kernel_tools
+    do_reboot
+    remove_reboot_crontab
+    barrier_make_sure_custom_kernel
+    build_libbpf
+    bring_bmc
+    bring_arena_kmod
+    bring_katran_p1
+    bring_katran_p2
+    bring_katran_p3
 )
 
