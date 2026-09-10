@@ -185,8 +185,9 @@ bring_katran_p1() {
 
 	bash ./build_katran.sh
 
-    # checkout so we can switch branches
-    git checkout ./build_katran.sh
+    # clear the changes so we can switch branches
+	git checkout .
+	git clean -f
 }
 
 bring_katran_p2() {
@@ -216,9 +217,9 @@ bring_katran_p3() {
 	# Apply patches
 	PATCH_DIR=$(realpath $ROOTDIR/patches/katran)
 	for branch_name in $(ls $PATCH_DIR); do
-		git checkout $SHA
 		git checkout .
 		git clean -f
+		git checkout $SHA
 
 		if [ -n "$(git branch | grep $branch_name)" ]; then
 			git branch -D $branch_name
@@ -245,10 +246,10 @@ bring_katran_p3() {
 		cp ./katran_client $BIN_DIR
 		cd ../
 
-		git checkout $SHA
 		# Make sure we have discarded every change
 		git checkout .
 		git clean -f
+		git checkout $SHA
 	done
 }
 
@@ -331,6 +332,13 @@ build_libbpf() {
 	# Build libbpf into deps directory
 	BUILD_STATIC_ONLY=y DESTDIR=${DEPS_DIR} OBJDIR=${DEPS_DIR} \
 		make -C ./libs/libbpf/src install
+
+	# Install the libbpf globally, there are other components that are using it
+	cd ./libs/libbpf/src
+	sudo make install
+	# make sure system knows about its installation location
+	echo "/usr/lib64" | sudo tee /etc/ld.so.conf.d/libbpf.conf
+	sudo ldconfig
 }
 
 notify_done() {
