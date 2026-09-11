@@ -254,6 +254,19 @@ GEN_USER="$GEN_USER"           # SSH username for generator
 GEN_NET_IFACE="$GEN_NET_IFACE" # experiment NIC name on generator
 GEN_MAC_ADDR="$GEN_MAC_ADDR"   # MAC of generator's experiment NIC
 DUT_EXP_IP="$DUT_EXP_IP"      # experiment IP of DUT (192.168.1.1)
+
+_check_config() {
+    # The script including this can define an array with `_must_define` and
+    # then use this function to enforce it
+    for field in ${_must_define[@]}; do
+        if [ -z "${!field}" ]; then
+            echo "Error:"
+            echo "\"$field\" was not defined"
+            echo "This script requires all these variables: ${_must_define[@]}"
+            exit 1
+        fi
+    done
+}
 EOF
 
 echo "  Pushing config.sh to DUT ..."
