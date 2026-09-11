@@ -1,4 +1,5 @@
 #! python3
+import os
 from subprocess import check_output, PIPE
 
 
@@ -12,7 +13,14 @@ def get_tput_samples(file_path):
 
 
 def main():
-    result_dir = './results'
+    home = os.environ.get('HOME')
+    result_dir = os.path.join(home, 'results/katran')
+    if not os.path.isdir(result_dir):
+        print('ERROR:')
+        print('Expected the results to be in:', result_dir)
+        print('but they were not found!')
+        return
+
     modes = ['baseline', 'bax']
     # TODO: '1' for some reason I'm measing measurements for 1
     flows = ['10','100','1000','10000','100000','1000000','2000000','4000000', '6000000', '8000000']

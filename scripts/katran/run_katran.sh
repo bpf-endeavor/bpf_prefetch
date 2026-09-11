@@ -3,22 +3,21 @@
 MODE=NOT_SET
 EXP=NOT_SET
 
+CURDIR=$(dirname $0)
+OTHERS=$(realpath $CURDIR/../../others)
+source $CURDIR/../../config.sh
+
+_must_define=( NET_IFACE GEN_EXP_IP GEN_MAC_ADDR )
+_check_config
+
 # Generate traffic towards this IP
 VIRTUAL_IP=10.10.0.1
 SERVICE_PORT=8080
 
-OTHER_SERVER_IP=192.168.1.2
-DEFAULT_MAC="0c:42:a1:e2:a6:98" # other server's mac
+OTHER_SERVER_IP=$GEN_EXP_IP # the generator's experiment IP
+DEFAULT_MAC=$GEN_MAC_ADDR # other server's (generator's) mac
 FORWARDING_CORE=3
 
-CURDIR=$(dirname $0)
-OTHERS=$(realpath $CURDIR/../../others)
-
-if [ -z "${NET_IFACE}" ]
-then
-	echo NET_IFACE is not set
-	exit 1
-fi
 
 
 FILL_SERVER_ID_PROG=./fill_katran_server_id_map/build/a.out

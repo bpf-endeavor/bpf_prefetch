@@ -2,20 +2,9 @@
 
 DUT_REPO_LOCATION=$(realpath "$(dirname $0)/../../../")
 
-_must_define=( DUT_SERVER DUT_USER IP_LOCAL DUT_NET_IFACE DUT_MAC_ADDR )
 source $DUT_REPO_LOCATION/config.sh
-
-for field in ${_must_define[@]}; do
-    if [ -z "${!field}" ]; then
-        echo \"$field\" was not defined
-        echo "This script requires all these variables: ${_must_define[@]}"
-        exit 1
-    fi
-done
-
-# DUT_SERVER=128.110.219.75
-# DUT_USER=farbod
-# IP_LOCAL=192.168.1.2
+_must_define=( DUT_SERVER DUT_USER GEN_EXP_IP DUT_NET_IFACE DUT_MAC_ADDR )
+_check_config
 
 DUT_PERF_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts/perf
 DUT_KATRAN_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts/katran
@@ -23,9 +12,6 @@ LOAD_GEN_LOCATION=$HOME/gen/dpdk-client-server/
 
 EXP_DURATION=30
 CPU_CORE=3 # katran is configured to run on this core
-# DUT_NET_IFACE=enp65s0f0np0
-# DUT_MAC_ADDR=0c:42:a1:dd:5b:88
-# TODO: load gen parameters are hardcoded
 
 PERF_TMP_FILE=/tmp/perf_logs.txt
 LOADGEN_TMP_FILE=/tmp/load_gen_log.txt
@@ -66,7 +52,7 @@ generate_traffic() {
 		-a $NET_PCI --lcores "0@(2,4),1@(6,8)" -- \
 		--num-queue 2 \
 		--client \
-		--ip-local $IP_LOCAL \
+		--ip-local $GEN_EXP_IP \
 		--ip-dest 10.10.0.1 \
 		--duration $EXP_DURATION --rate 1700000 \
 		--no-arp $DUT_MAC_ADDR \
