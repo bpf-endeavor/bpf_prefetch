@@ -2,13 +2,14 @@
 
 DUT_REPO_LOCATION=$(realpath "$(dirname $0)/../../../")
 
-_must_define ( DUT_SERVER DUT_USER IP_LOCAL DUT_NET_IFACE DUT_MAC_ADDR )
+_must_define=( DUT_SERVER DUT_USER IP_LOCAL DUT_NET_IFACE DUT_MAC_ADDR )
 source $DUT_REPO_LOCATION/config.sh
 
 for field in ${_must_define[@]}; do
     if [ -z "${!field}" ]; then
         echo \"$field\" was not defined
         echo "This script requires all these variables: ${_must_define[@]}"
+        exit 1
     fi
 done
 
