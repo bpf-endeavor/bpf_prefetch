@@ -53,13 +53,20 @@ get_custom_kernel() {
 SCRIPT_PATH=$CURDIR/main.sh
 do_reboot() {
 	# register this script to run after reboot
-	echo "@reboot $SCRIPT_PATH &> /var/log/beeswax_setup_dut_log_after_reboot.txt" | crontab -
+	echo "@reboot 'cd $ROOTDIR; make setup_dut 2>&1 > $HOME/beeswax_setup_dut_log_after_reboot.txt'" | crontab -
+
+    # Manually increment the counter because when we reboot, we do not get the
+    # chance to increment
+    PROGRESS=$(read_progress)
+	PROGRESS=$((PROGRESS+1))
+	store_progress $PROGRESS
+
 	sudo reboot
 }
 
 remove_reboot_crontab() {
 	# remove all crontab job running this script
-	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH" | crontab - || true
+	crontab -l 2>/dev/null | grep -F -v "make setup_dut" | crontab - || true
 }
 
 barrier_make_sure_custom_kernel() {
@@ -342,5 +349,5 @@ build_libbpf() {
 }
 
 notify_done() {
-    echo "DONE" > /var/log/beeswax_setup_status.txt
+    echo "DONE" > $HOME/beeswax_setup_status.txt
 }

@@ -1,24 +1,36 @@
 #!/bin/bash
 
-DUT_SERVER=128.110.219.75
-DUT_USER=farbod
-IP_LOCAL=192.168.1.2
+DUT_REPO_LOCATION=$(realpath "$(dirname $0)/../../../")
 
-DUT_REPO_LOCATION=/users/farbod/bpf_prefetch
+_must_define ( DUT_SERVER DUT_USER IP_LOCAL DUT_NET_IFACE DUT_MAC_ADDR )
+source $DUT_REPO_LOCATION/config.sh
+
+for field in ${_must_define[@]}; do
+    if [ -z "${!field}" ]; then
+        echo \"$field\" was not defined
+        echo "This script requires all these variables: ${_must_define[@]}"
+    fi
+done
+
+# DUT_SERVER=128.110.219.75
+# DUT_USER=farbod
+# IP_LOCAL=192.168.1.2
+
 DUT_PERF_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts/perf
 DUT_KATRAN_SCRIPT_LOCATION=$DUT_REPO_LOCATION/scripts/katran
-LOAD_GEN_LOCATION=/users/farbod/gen/dpdk-client-server/
+LOAD_GEN_LOCATION=$HOME/gen/dpdk-client-server/
 
 EXP_DURATION=30
 CPU_CORE=3 # katran is configured to run on this core
-DUT_NET_IFACE=enp65s0f0np0
-DUT_MAC_ADDR=0c:42:a1:dd:5b:88
+# DUT_NET_IFACE=enp65s0f0np0
+# DUT_MAC_ADDR=0c:42:a1:dd:5b:88
 # TODO: load gen parameters are hardcoded
 
 PERF_TMP_FILE=/tmp/perf_logs.txt
 LOADGEN_TMP_FILE=/tmp/load_gen_log.txt
 
-RESULT_DIR=~/results/
+RESULT_DIR=$HOME/results/katran/
+mkdir -p "$RESULT_DIR"
 
 
 generate_traffic() {

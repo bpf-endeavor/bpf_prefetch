@@ -25,7 +25,7 @@ Note: In this repository we'll use the following convention
 
 > This section assumes that git, make, and build-essential packages are already installed (cloudlab images are like this). Other 3rd-party packages will be installed when following the instructions.
 
-**Time estimate: 1-2 houres** (it performs a kernel compilation which may take long depending on the system) 
+**Time estimate: 1-2 houres** (it performs a kernel compilation which takes time) 
 
 Clone the the repository on DUT machine.
 
@@ -55,14 +55,25 @@ make configure4exp
 
 ### Setup Workload Generator 
 
-
 ```bash
 make setup_generators
 source ~/.bashrc  
 ```
 
+## Application Experiment
 
-## Application Experiment 1: Katran
+### Figure 5: Katran - L4 Load Balancer
+
+**Instruction:**
+
+- On workload generator machine
+
+```bash
+cd beeswax/scripts/katran/workload_analysis_scripts/
+./katran_explore_flows
+```
+
+---
 
 During setup phase, the script has cloned Katran and applied patches to adopt
 Beeswax design. Both the original version and one with Beeswax design is

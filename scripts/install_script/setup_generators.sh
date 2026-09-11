@@ -220,20 +220,28 @@ install_ofed() {
 		wget "https://content.mellanox.com/ofed/MLNX_OFED-23.10-1.1.9.0/MLNX_OFED_LINUX-23.10-1.1.9.0-ubuntu$ubuntu_release-x86_64.tgz"
 		tar -xf "./$tar_name.tgz"
 		cd $tar_name/
-		yes | sudo ./mlnxofedinstall --dkms --dpdk
+        $(yes | sudo ./mlnxofedinstall --dkms --dpdk) || true
+        # note: a leap of faith that installing ofed does not fail!
 		echo You will need to reboot
 	fi
 }
 
 do_reboot() {
 	# register this script to run after reboot
-	echo "@reboot $SCRIPT_PATH" | crontab -
+	echo "@reboot $SCRIPT_PATH 2>&1 >$HOME/beeswax_gen_setup_log.txt" | crontab -
+
+    # Manually increment the counter because when we reboot, we do not get the
+    # chance to increment
+    PROGRESS=$(read_progress)
+	PROGRESS=$((PROGRESS+1))
+	store_progress $PROGRESS
+
 	sudo reboot
 }
 
 remove_reboot_crontab() {
 	# remove all crontab job running this script
-	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH" | crontab - || true
+	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH 2>&1 > /var/log/beeswax_setup_gen_log.txt" | crontab - || true
 }
 
 
@@ -412,7 +420,7 @@ show_summary()
 }
 
 notify_done() {
-    echo "DONE" > /var/log/beeswax_setup_status.txt
+    echo "DONE" > $HOME/beeswax_setup_status.txt
 }
 
 ###############################################################################
@@ -425,8 +433,8 @@ PROCESS=(
     configure_network_env
     configure_hugepages
     install_ofed
-	do_reboot
-	remove_reboot_crontab
+    do_reboot
+    remove_reboot_crontab
     install_dpdk
     install_dpdk_client_server
     install_mutilate
