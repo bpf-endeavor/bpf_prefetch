@@ -182,19 +182,12 @@ configure_network_env()
 configure_hugepages()
 {
     log "Configuring hugepages"
-
     # DPDK only needs a reasonable hugepage pool for these generators.
-    # Use 2 MB pages so that we do not require a GRUB change/reboot.
-    local wanted=2048
+    local wanted=8
 
-    sudo sysctl -w vm.nr_hugepages="$wanted"
-
-    if ! mountpoint -q /dev/hugepages; then
-        sudo mkdir -p /dev/hugepages
-        sudo mount -t hugetlbfs nodev /dev/hugepages
-    fi
-
-    grep -E 'HugePages|Hugepagesize' /proc/meminfo
+    # Persist across the OFED-install reboot via the kernel cmdline.
+    grep -q 'hugepagesz=1G' /etc/default/grub || sudo sed -i "s/^GRUB_CMDLINE_LINUX=\"/GRUB_CMDLINE_LINUX=\"hugepagesz=1G hugepages=$wanted default_hugepagesz=1G /" /etc/default/grub
+    sudo update-grub
 }
 
 ###############################################################################
@@ -241,7 +234,7 @@ do_reboot() {
 
 remove_reboot_crontab() {
 	# remove all crontab job running this script
-	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH 2>&1 > /var/log/beeswax_setup_gen_log.txt" | crontab - || true
+	crontab -l 2>/dev/null | grep -F -v "$SCRIPT_PATH 2>&1 > $HOME/beeswax_setup_gen_log.txt" | crontab - || true
 }
 
 
