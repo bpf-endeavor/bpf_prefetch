@@ -21,6 +21,8 @@ Note: In this repository we'll use the following convention
 
 ## Installing Dependencies
 
+**NOTE THE SETUP PROCESS REQUIRES A REBOOT, THE SCRIPTS WILL DO THE REBOOT!**
+
 ### Setup DUT (Device Under Test)
 
 > This section assumes that git, make, and build-essential packages are already installed (cloudlab images are like this). Other 3rd-party packages will be installed when following the instructions.
@@ -35,17 +37,9 @@ cd bpf_prefetch
 make setup_dut
 ```
 
-The `setup_dut` is expect to exit completing its task because the rest of
-setup requires a kernel with Beeswax support. Install as follows: 
-
-```
-cd ./others/kernel-sw-prefetch
-./install.sh
-```
-
-By this poinrt, a new kernel should be installed. Reboot the machies to load
-the new kernel, and later continue following commands from the root of
-`bpf_prefetch/` direcotry:
+The script will cause a reboot! By this poinrt, a new kernel should be
+installed. Reboot the machies to load the new kernel, and later continue
+following commands from the root of `bpf_prefetch/` direcotry:
 
 ```
 make setup_dut # continues from previous step 
@@ -57,8 +51,18 @@ make configure4exp
 
 ```bash
 make setup_generators
-source ~/.bashrc  
 ```
+
+The script will cause a reboot! You should again invoke the `make
+setup_generators` to finish the procedure.
+
+
+### Configurations
+
+`configh.sh` holds the variables that help the system know how to connect and
+run experiments. Configure them with value (IP addres, MAC address, Interface
+names, ...) on both machines.
+
 
 ## Application Experiment
 
