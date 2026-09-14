@@ -24,10 +24,14 @@ fi
 
 # Global variables
 CURDIR=$(dirname $0)
+source $CURDIR/../../config.sh
+_must_define=( DUT_EXP_IP )
+_check_config
+
 OTHERS=$CURDIR/../../others
 MEMCD=$OTHERS/memcached/memcached
 IFINDEX=$(ip -j addr show $NET_IFACE | jq .[0].ifindex)
-SERVER_IP=192.168.1.1
+SERVER_IP=$DUT_EXP_IP # DUT MACHINE
 UDP_PORT=11211
 PID_FILE=/tmp/M1_PID
 

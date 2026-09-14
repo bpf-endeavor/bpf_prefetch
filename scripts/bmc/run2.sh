@@ -1,78 +1,108 @@
 #!/bin/bash
 set -e
 
-# Make sure we can create many sockets
-if [ "$(ulimit -n)" -lt 16384 ]; then
-	echo "Increase limit on the number of open files/sockets (ulimit -n)"
-	ulimit -n 65536
-	if [ $? -ne 0 ]; then
-		echo "Failed to increase the limit"
-		exit 1
-	fi
-fi
+MUTILATE_DIR=$HOME/gen/mutilate
+CURDIR=$(dirname $0)
 
-SERVER_HOST=192.168.1.1
-SERVER_PORT=11211
-SERVER_UDP_PORT=11211
+SERVER_PORT=11211 # memcached port
+SERVER_UDP_PORT=11211 # memcached port
 # NOTE: Experiment duration in seconds
 TIME=40
 REPEAT=1
-LOG_FILE=/tmp/bmc_performance.txt
+LOG_DIR=$HOME/results/bmc/
 
 LOCALHOST=`hostname`
 AGENT=$LOCALHOST
 NUM_AGENTS=24
 CONN_PER_AGENT=16
 
-# COUNT_RECORDS=1
-# COUNT_RECORDS=1000
-# COUNT_RECORDS=100000
-# COUNT_RECORDS=300000
-COUNT_RECORDS=500000
-# COUNT_RECORDS=1000000
-
 WRK="facebook"
-case $WRK in
-  facebook)
-    WORKLOAD_DESC="--records=$COUNT_RECORDS --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"
-    ;;
-  twitter)
-    WORKLOAD_DESC="--records=$COUNT_RECORDS --popularity=zipf:1.5 --keysize=pareto:40,15,0.05 --valuesize=pareto:100,50,0.7 --update=0" # --iadist=fb_ia
-    ;;
-  test)
-    WORKLOAD_DESC="--records=$COUNT_RECORDS -K 100 -V 100 --update=0"
-    ;;
-  *)
-    echo "invalid workload name"
-    exit 1
-esac
+COUNT_RECORDS_LIST=( 1 1000 100000 300000 500000 1000000 )
 
-trap "handle_signal" SIGINT SIGHUP
+check_ulimit() {
+	# Make sure we can create many sockets
+	if [ "$(ulimit -n)" -lt 16384 ]; then
+		echo "Increase limit on the number of open files/sockets (ulimit -n)"
+		ulimit -n 65536
+		if [ $? -ne 0 ]; then
+			echo "Failed to increase the limit"
+			exit 1
+		fi
+	fi
+}
 
+load_config() {
+	source $CURDIR/../../config.sh
+	_must_define=( DUT_EXP_IP )
+	_check_config
 
-function handle_signal {
+	SERVER_HOST=$DUT_EXP_IP # DUT machine
+}
+
+build_workload_desc() {
+	local count_records=$1
+	case $WRK in
+		facebook)
+			WORKLOAD_DESC="--records=$count_records --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0"
+			;;
+		twitter)
+			WORKLOAD_DESC="--records=$count_records --popularity=zipf:1.5 --keysize=pareto:40,15,0.05 --valuesize=pareto:100,50,0.7 --update=0" # --iadist=fb_ia
+			;;
+		test)
+			WORKLOAD_DESC="--records=$count_records -K 100 -V 100 --update=0"
+			;;
+		*)
+			echo "invalid workload name"
+			exit 1
+			;;
+	esac
+}
+
+handle_signal() {
 	pkill mutilateudp
 }
 
-echo Loading ...
-./mutilate -s $SERVER_HOST:$SERVER_PORT $WORKLOAD_DESC --loadonly -t 1
-sleep 1
+run_experiment() {
+	local count_records=$1
+	local log_file=$LOG_DIR/bmc_performance_${count_records}.txt
 
-for i in $(seq $REPEAT); do
-	echo Running agents ...
-	./mutilateudp -A --threads $NUM_AGENTS &
-	echo Running experiment $i ...
-	TOTAL_CONN=$((CONN_PER_AGENT*NUM_AGENTS))
-	./mutilateudp --time=$TIME $WORKLOAD_DESC \
-		--server=$SERVER_HOST:$SERVER_UDP_PORT \
-		--qps=0 \
-		--noload --threads=1 --connections=$TOTAL_CONN \
-		--measure_connections=1 --measure_qps=2000 \
-		--agent=$AGENT &>> $LOG_FILE
-	# Terminate
-	handle_signal
+	build_workload_desc $count_records
+
+	echo Loading ...
+	./mutilate -s $SERVER_HOST:$SERVER_PORT $WORKLOAD_DESC --loadonly -t 1
 	sleep 1
-done
 
-echo '=============================='
-cat $LOG_FILE
+	for i in $(seq $REPEAT); do
+		echo Running agents ...
+		./mutilateudp -A --threads $NUM_AGENTS &
+		echo Running experiment $i ...
+		TOTAL_CONN=$((CONN_PER_AGENT*NUM_AGENTS))
+		./mutilateudp --time=$TIME $WORKLOAD_DESC \
+			--server=$SERVER_HOST:$SERVER_UDP_PORT \
+			--qps=0 \
+			--noload --threads=1 --connections=$TOTAL_CONN \
+			--measure_connections=1 --measure_qps=2000 \
+			--agent=$AGENT &>> $log_file
+		# Terminate
+		handle_signal
+		sleep 1
+	done
+
+	echo '=============================='
+	cat $log_file
+}
+
+main() {
+	check_ulimit
+	load_config
+	mkdir -p $LOG_DIR
+
+	trap "handle_signal" SIGINT SIGHUP
+
+	cd $MUTILATE_DIR
+	for count_records in ${COUNT_RECORDS_LIST[@]}; do
+		run_experiment $count_records
+	done
+}
+
+main

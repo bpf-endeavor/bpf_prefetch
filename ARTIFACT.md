@@ -78,9 +78,7 @@ leave the password empty. Then copy the public key of each machine to the
 `~/.ssh/authorized_hosts` of the other machine.
 
 
-## Application Experiment
-
-### Figure 5: Katran - L4 Load Balancer
+## Figure 5: Katran - L4 Load Balancer
 
 **Instruction:**
 
@@ -135,9 +133,56 @@ The script will gather raw data and store them at
 `./script/katran/workload_analysis_scripts/clean_exp_results.py`
 
 
-## Application Experiment 2: BMC
+## Figure 6: BMC - In-Kernel Key-Value Cache
 
-> TODO: To be written
+**Instruction:**
+
+- On DUT:
+
+* Make sure `make configure4exp` is running (it configures the environment, including the flow-steering rules `run_server.sh` relies on; you can close it with Ctrl+C)
+
+- On workload generator machine
+
+```bash
+cd beeswax/scripts/bmc/workload_analysis_scripts/
+./bmc_explore_records.sh
+```
+
+- Results
+
+Raw results are stored at `$HOME/results/bmc/<mode>/bmc_performance_<num_records>.txt`, one file per record count, for `<mode>` in `baseline` and `batch-pf` (the two configurations shown in Figure 6).
+
+---
+
+**Longer Explanation:**
+
+During setup phase (`make setup_dut`), the script has cloned Memcached and BMC-cache (an in-kernel key-value cache built on top of Memcached) and applied patches to build four variants ready for experimentation: baseline (`enhanced`), with prefetching (`enhanced_prefetch`), batch-aware (`batch`), and batch-aware with prefetching (`batch_prefetch`).
+
+The `./scripts/bmc/run_server.sh` is the script for launching Memcached and, optionally, BMC, preparing them for performance measurement.
+The flags for running the script are described below.
+
+```
+Usage run_server: default behaviour: only run the memcached
+  --bmc-baseline: run with baseline bmc
+  --bmc-prefetch: run bmc with prefetching
+  --bmc-batch: run with batch aware bmc
+  --bmc-batch-pf: run with batch aware bmc + prefetching
+```
+
+> **Important note:** The script relies on environment values set in `config.sh` in root directory of the repository, and requires `$NET_IFACE` to be exported to the interface name used for the experiment.
+
+The `./scripts/bmc/run2.sh` script drives the `mutilate`/`mutilateudp` workload generator against the DUT. It sweeps over the record counts used in the paper (1, 1,000, 100,000, 300,000, 500,000, 1,000,000), storing each count's result in its own log file, so it can also be run standalone against an already-running `run_server.sh` for a single manual test.
+
+To repeat the experiment in Figure 6 (exploring BMC with different cache
+footprints), there is a helper script:
+`./script/bmc/workload_analysis_scripts/bmc_explore_records.sh`.
+This script runs on the workload generator machine, and uses `SSH` to connect
+to DUT to start `run_server.sh` with the correct flag for each configuration,
+then runs `run2.sh` locally to sweep all record counts, before tearing the
+server down and moving on to the next configuration.
+
+The script will gather raw data and store them at
+`RESULT_DIR=$HOME/results/bmc/<mode>`.
 
 
 ## Application Experiment LPM -- Figure 7-8
