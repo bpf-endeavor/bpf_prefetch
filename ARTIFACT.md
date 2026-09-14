@@ -44,8 +44,10 @@ following commands from the root of `bpf_prefetch/` direcotry:
 ```
 make setup_dut # continues from previous step 
 make load_kmod
-make configure4exp
+NET_IFACE=<NIC Iface name> make configure4exp
 ```
+
+> Remember to set `NET_IFACE` to the interface name of the NIC that is used during experiments
 
 ### Setup Workload Generator 
 
@@ -126,7 +128,7 @@ and memory footprint), there is a helper script:
 This scripts runs on the workload generator machine, and uses `SSH` to connect
 to DUT and run `run_katran.sh` script with correct flags.
 
-> **Important note:** There are some IP address and MAC address that needs to be configured in the script in order to correctly work
+> The workload generator is configured to stress the system with 3.4 Mpps. This was sufficient to saturate the system in the our testbed. Generating more loads either did not increased throughput or made it worse. Under a different setup/hardware this value must be adjusted.
 
 The script will gather raw data and store them at
 `RESULT_DIR=$HOME/results/katran`. For analysing the result you can use the

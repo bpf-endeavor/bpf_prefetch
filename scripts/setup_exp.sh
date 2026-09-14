@@ -151,8 +151,14 @@ function main {
 
 
 if [ "x$NET_IFACE" = "x" ]; then
-	echo "NET_IFACE is not set"
+	echo "NET_IFACE is not set: it should be the name of the experiment interface on current machine"
 	exit 1
 fi
+
+NET_PCI="$(
+        ethtool -i "$NET_IFACE" 2>/dev/null \
+        | awk '/bus-info:/ {print $2}' \
+        | sed 's/^0000://'
+    )"
 
 main
