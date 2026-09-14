@@ -84,8 +84,8 @@ leave the password empty. Then copy the public key of each machine to the
 
 - On DUT:
 
-* Make sure you have run `make load_kmod`
-* Make sure `make configure4exp` is running (it configures the environment you can close it with Ctrl+C)
+    * Make sure you have run `make load_kmod`
+    * Make sure `make configure4exp` is running (it configures the environment you can close it with Ctrl+C)
 
 - On workload generator machine
 
@@ -139,7 +139,7 @@ The script will gather raw data and store them at
 
 - On DUT:
 
-* Make sure `make configure4exp` is running (it configures the environment, including the flow-steering rules `run_server.sh` relies on; you can close it with Ctrl+C)
+    * Make sure `make configure4exp` is running (it configures the environment, including the flow-steering rules `run_server.sh` relies on; you can close it with Ctrl+C)
 
 - On workload generator machine
 
