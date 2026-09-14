@@ -1,4 +1,4 @@
-#! python3
+#! /usr/bin/python3
 import os
 from subprocess import check_output, PIPE
 

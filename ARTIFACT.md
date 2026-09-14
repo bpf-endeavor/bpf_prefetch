@@ -59,9 +59,21 @@ setup_generators` to finish the procedure.
 
 ### Configurations
 
+**System configurations:**
+
 `configh.sh` holds the variables that help the system know how to connect and
 run experiments. Configure them with value (IP addres, MAC address, Interface
 names, ...) on both machines.
+
+**Passwordless SSH:**
+
+Make sure both DUT and generator machine have `ssh` access to each other
+without password. Some scripts automatically setup DUT and workload generator
+and rely on `ssh` for it.
+
+To configure passwordless `ssh`,on both machines, generate a new ssh-key (`ssh-keygen`) and
+leave the password empty. Then copy the public key of each machine to the
+`~/.ssh/authorized_hosts` of the other machine.
 
 
 ## Application Experiment
@@ -70,6 +82,11 @@ names, ...) on both machines.
 
 **Instruction:**
 
+- On DUT:
+
+* Make sure you have run `make load_kmod`
+* Make sure `make configure4exp` is running (it configures the environment you can close it with Ctrl+C)
+
 - On workload generator machine
 
 ```bash
@@ -77,7 +94,16 @@ cd beeswax/scripts/katran/workload_analysis_scripts/
 ./katran_explore_flows
 ```
 
+- Results
+
+```
+cd beeswax/scripts/katran/workload_analysis_scripts/
+python3 ./clean_exp_results.py
+```
+
 ---
+
+**Longer Explanation:**
 
 During setup phase, the script has cloned Katran and applied patches to adopt
 Beeswax design. Both the original version and one with Beeswax design is
@@ -86,27 +112,24 @@ compiled and are ready for experimentation.
 The `./scripts/katran/run_katran.sh` is the script for launching the load-balancer and preparing it for performance measurement.
 The flags for running the script is described below. 
 
-> **Important note:** `OTHER_SERVER_IP` and `DEFAULT_MAC` has to updated in the script based on experiment network configurations.
-
-> TODO: make the script autodiscover these values
-
 ```
 Usage: run_katran.sh MODE EXP
   MODE: [--baseline | --batch | --bax] which version of Katran to use in experiment
   EXP:  [--id-routing | --lru-routing ] select experiment configuration
 ```
 
+> **Important note:** The scripts relies on environment values set in `config.sh` in root directory of the repository.
+
 To repeat the experiment in Figure 5 (exploring katran with different workloads
 and memory footprint), there is a helper script:
 `./script/katran/workload_analysis_scripts/katran_explore_flows.sh`.
-This scripts runs on the workload generator machine, but using `SSH`, it will
-also connect to DUT and run `run_katran.sh` script with correct flags.
+This scripts runs on the workload generator machine, and uses `SSH` to connect
+to DUT and run `run_katran.sh` script with correct flags.
 
 > **Important note:** There are some IP address and MAC address that needs to be configured in the script in order to correctly work
 
-> TODO: make the script autodiscover these values
-
-The script will gather raw data and store them at `RESULT_DIR=~/results/`. For analysing the result you can use the 
+The script will gather raw data and store them at
+`RESULT_DIR=$HOME/results/katran`. For analysing the result you can use the
 `./script/katran/workload_analysis_scripts/clean_exp_results.py`
 
 
