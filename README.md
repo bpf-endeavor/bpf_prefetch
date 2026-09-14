@@ -1,44 +1,57 @@
 # Beeswax: A Study in eBPF Runtime Support for Cache Efficiency
 
-This is the home repository of **Beeswax** which hosts our prototype for
-answering how we can address the cache-miss challenges of eBPF programs
-especially when their working size (e.g., number of entries in the MAPs they
-use) increase. The full discussion of motivating examples and trade-offs of the
-solution can be found in the paper
+This is repository presents **Beeswax**: our prototype for
+answering how one can address the cache-miss challenges faced by the eBPF
+programs, especially when their memory working size (e.g., number of entries in
+the MAPs) is large. The full discussion of motivating examples and trade-offs
+of the solution can be found in our paper
 ["Don't Stall Me Now: Hiding Memory Latency in eBPF"](https://fshahinfar1.github.io/papers/dont_stall_me_now_hiding_memory_latency_in_ebpf.pdf)
-presented in the ACM SIGCOMM'26, Denvor USA.
+which is presented at the ACM SIGCOMM 2026 (Denver USA).
+The recorded video of the presentation is [available on SIGCOMM's YouTube channel](https://youtu.be/7E7xA2gXxK8?si=YHa84nJ9lW_WInKN&t=104).
 
 Our solution requires few new runtime features:
 
 1. Support for CPU prefetch instructions
-2. Supoprt for batch event processing
+2. Support for batch event processing
 
 A modified version of kernel with these supports is available [here](https://github.com/bpf-endeavor/kernel-sw-prefetch).
+We then describe a recipe to use these features along with eBPF [Arena MAP](https://fshahinfar1.github.io/blog/04_ebpf_arena/build/blog.html)
+to implement more efficient eBPF programs. 
+
+**You can contact `farbod.shahinfar [at] polimi .it` for your questions.**
 
 ## About
 
-This repository is meant as the acompanying artifact of our paper and we share
-requiremd matterial to understand the details of the system and experiments performed.
-This includes code for programs used in experiments, and scripts for prepareing
+This repository is meant as the accompanying artifact of our paper and we share
+required material to understand the details of the system and experiments performed.
+This includes code for programs used in experiments, and scripts for preparing
 and setting up the experiment environment. **The step-by-step guide for
 reproducing the artifact is found [ARTIFACT.md](./ARTIFACT.md)**
 
 The repository is structured as below:
 
-> TODO: the `case_study` and `motivation` is a weird way of organizing the experiments, and they have lost their meaning. Fix it.
 ```
 .
-├── Makefile # Used for preparing experiment envrionment
+├── Makefile # Used for preparing experiment environment
 ├── docs # The result of experiments and scripts to plot them are here
 ├── motivation # Some microbenchmarks
-├── docs # The result of experiments and scripts to plot them are here
 ├── libs
-│   ├── arena-ds # Some data structures implmeneted using eBPF Arena feature
-│   ├── bax # The libarary and syntax extension for Beeswax
+│   ├── arena-ds # Some data structures implemented using eBPF Arena feature
+│   ├── bax # The library and syntax extension for Beeswax
 │   ├── honey # Some eBPF library
 │   └── kfuncs # Some kernel modules that expose kfuncs needed for eBPF/Beeswax
 ├── patches # Patches to enable Beeswax support in applications used in evaluation 
 └── scripts # Scripts for setting up environment and running experiments
+    ├── katran # Scripts for repeating Katran experiment (Figure 5 of paper)
+    ├── bmc # Scripts for repeating BMC (in-kernel key-value store) experiment (Figure 6 of paper)
+    ├── install_scripts # Scripts for installing dependencies
+    ...
+│
+├── others/ # The 3rd-party programs and libraries such as libbpf, katran, bmc,
+│           # customized-kernel, ... are stored here during build
+│
+├── config.sh # Fill this file with details of experiment environment such as IP and MAC addresses
+...
 ```
 
 ## How Beeswax Works? (System Design)
@@ -47,17 +60,17 @@ The repository is structured as below:
 
 Beeswax is a recipe for building eBPF programs that can effectively hide memory latency. For this purpose, the programs rely on:
 
-1. Desiging data structure API in multiple phases
+1. Designing data structure API in multiple phases
 2. Prefetch instruction
 3. Batch processing
 4. Arena MAP for implementing the data structures
 
 When number of entries in a MAP gets large, the chance of experiencing
 cache-misses on lookup operations increase. The cache-misses happens both when
-dereferencing the retun value (result of lookup operation) and also when the
+dereferencing the return value (result of lookup operation) and also when the
 lookup is accessing the internal structure (e.g., such as bucket of hash map).
 
-By redesiging the API of data structure, the program can make partial progress,
+By redesigning the API of data structure, the program can make partial progress,
 prefetch the memory address that may miss in cache, and switch to an
 independent task for some time and come back to unfinished operation and
 perform other phases of the operation.
@@ -70,7 +83,7 @@ continues with the next phase of operations it will not experience cache-miss.
 
 ### Programming Model
 
-A Beeswax program is capable of processing events in batches. As a strating point, we have extended the XDP hook to support batch packet processing (supporting mlx5 and virtio drivers).
+A Beeswax program is capable of processing events in batches. As a starting point, we have extended the XDP hook to support batch packet processing (supporting mlx5 and virtio drivers).
 Below you can see a simple Beeswax program and layout of its context object. The batch processing programs start with `bbb_` prefix and receive `struct xdp_batch_md *` as context object.
 
 ```
@@ -106,7 +119,7 @@ struct xdp_batch_md {
 ```
 
 More specifically, Beeswax programs are organized in multiple stages in which
-packets are processed. Every packet is associated with one. Intially all packet
+packets are processed. Every packet is associated with one. Initially all packet
 start from the stage indicated by `BAX_DECLARE_INIT_STAGE_NAME`.
 
 A stage is defined using `BAX_STAGE(name, {...})` syntax. When the control-flow
@@ -133,7 +146,7 @@ int bbb_test_main(struct xdp_batch_md *batch)
     bpf_printk("batch size: %d", batch_size);
 
     BAX_STAGE(FIRST, `{
-        /* data is a keyword which is a pointer to the begining of the packet */
+        /* data is a keyword which is a pointer to the beginning of the packet */
         struct ethhdr *eth = data; 
         struct iphdr *ip = (void *)(eth+1);
         struct udphdr *udp = (void *)(ip + 1);
@@ -166,19 +179,19 @@ different data.
 
 | Keyword | Purpose |
 |:--------|:--------|
-|`pkt`| Pointr to the XDP context |
+|`pkt`| Pointer to the XDP context |
 |`pstate`| Pointer to the packet state (explained next) |
-|`data`| Pointer to the begining of packet buffer |
+|`data`| Pointer to the beginning of packet buffer |
 |`data_end`| Pointer to the end of packet buffer |
 
-When deconmposing a program into multiple stages it is common to need to keep
+When decomposing a program into multiple stages it is common to need to keep
 some state between stages. Beeswax simplify this task. The programmer can
 define `pkt_state_t` type to declare this information. Then the `pstate`
 keyword will point to the state of current packet at each stage.
 
 ```
 typedef struct {
-    int phase[0]; /* the phase is mandetory */
+    int phase[0]; /* the phase is mandatory */
     int key;
     struct dat_partial_lookup_state partial_state; /* dat parital lookup state */
     my_value_t __arena *val;
@@ -213,5 +226,5 @@ publisher={ACM}
 
 **Text:**
 
-Farbod Shahinfar, Marco Molè, Aurojit Panda, and Gianni Antichi. 2026. Don't Stall Me Now: Hiding Memory Latency in eBPF. In Proceedings of the ACM Special Interest Group on Data Communication (SIGCOMM).
+> Farbod Shahinfar, Marco Molè, Aurojit Panda, and Gianni Antichi. 2026. Don't Stall Me Now: Hiding Memory Latency in eBPF. In Proceedings of the ACM Special Interest Group on Data Communication (SIGCOMM).
 

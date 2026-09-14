@@ -27,9 +27,9 @@ Note: In this repository we'll use the following convention
 
 > This section assumes that git, make, and build-essential packages are already installed (cloudlab images are like this). Other 3rd-party packages will be installed when following the instructions.
 
-**Time estimate: 1-2 houres** (it performs a kernel compilation which takes time) 
+**Time estimate: 1-2 hours** (it performs a kernel compilation which takes time) 
 
-Clone the the repository on DUT machine.
+Clone the repository on DUT machine.
 
 ```
 git clone https://github.com/bpf-endeavor/bpf_prefetch.git
@@ -37,9 +37,9 @@ cd bpf_prefetch
 make setup_dut
 ```
 
-The script will cause a reboot! By this poinrt, a new kernel should be
-installed. Reboot the machies to load the new kernel, and later continue
-following commands from the root of `bpf_prefetch/` direcotry:
+The script will cause a reboot! By this point, a new kernel should be
+installed. Reboot the machines to load the new kernel, and later continue
+following commands from the root of `bpf_prefetch/` directory:
 
 ```
 make setup_dut # continues from previous step 
@@ -63,8 +63,8 @@ setup_generators` to finish the procedure.
 
 **System configurations:**
 
-`configh.sh` holds the variables that help the system know how to connect and
-run experiments. Configure them with value (IP addres, MAC address, Interface
+`config.sh` holds the variables that help the system know how to connect and
+run experiments. Configure them with value (IP address, MAC address, Interface
 names, ...) on both machines.
 
 **Passwordless SSH:**
@@ -75,7 +75,7 @@ and rely on `ssh` for it.
 
 To configure passwordless `ssh`,on both machines, generate a new ssh-key (`ssh-keygen`) and
 leave the password empty. Then copy the public key of each machine to the
-`~/.ssh/authorized_hosts` of the other machine.
+`~/.ssh/authorized_keys` of the other machine.
 
 
 ## Figure 5: Katran - L4 Load Balancer
@@ -90,14 +90,14 @@ leave the password empty. Then copy the public key of each machine to the
 - On workload generator machine
 
 ```bash
-cd beeswax/scripts/katran/workload_analysis_scripts/
-./katran_explore_flows
+cd bpf_prefetch/scripts/katran/workload_analysis_scripts/
+./katran_explore_flows.sh
 ```
 
 - Results
 
 ```
-cd beeswax/scripts/katran/workload_analysis_scripts/
+cd bpf_prefetch/scripts/katran/workload_analysis_scripts/
 python3 ./clean_exp_results.py
 ```
 
@@ -123,10 +123,10 @@ Usage: run_katran.sh MODE EXP
 To repeat the experiment in Figure 5 (exploring katran with different workloads
 and memory footprint), there is a helper script:
 `./script/katran/workload_analysis_scripts/katran_explore_flows.sh`.
-This scripts runs on the workload generator machine, and uses `SSH` to connect
+This script runs on the workload generator machine, and uses `SSH` to connect
 to DUT and run `run_katran.sh` script with correct flags.
 
-> The workload generator is configured to stress the system with 3.4 Mpps. This was sufficient to saturate the system in the our testbed. Generating more loads either did not increased throughput or made it worse. Under a different setup/hardware this value must be adjusted.
+> The workload generator is configured to stress the system with 3.4 Mpps. This was sufficient to saturate the system in the our testbed. Generating more loads either did not increase throughput or made it worse. Under a different setup/hardware this value must be adjusted.
 
 The script will gather raw data and store them at
 `RESULT_DIR=$HOME/results/katran`. For analysing the result you can use the
@@ -144,7 +144,7 @@ The script will gather raw data and store them at
 - On workload generator machine
 
 ```bash
-cd beeswax/scripts/bmc/workload_analysis_scripts/
+cd bpf_prefetch/scripts/bmc/workload_analysis_scripts/
 ./bmc_explore_records.sh
 ```
 
@@ -230,14 +230,14 @@ sudo dpdk-replay --config config.yaml
 ```
 
 By default the config.yaml replays the lpm_zipf_0.pcap trace (Figure 7),
-For repoducing Figure 8 change the config.yaml to replay lpm_zipf_0.5.pcap and so on to the lpm_zipf_2.pcap
+For reproducing Figure 8 change the config.yaml to replay lpm_zipf_0.5.pcap and so on to the lpm_zipf_2.pcap
 
 
 ## Application Experiment LPM -- Figure 10
 
 ### DUT
 
-Remember to have make config4exp running in a another terminal/tmux pane.
+Remember to have make configure4exp running in another terminal/tmux pane.
 
 Here we are changing the code of the application, so it is needed to recompile everytime.
 
